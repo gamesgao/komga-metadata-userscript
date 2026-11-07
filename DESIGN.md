@@ -25,3 +25,38 @@ Unit and fixture browser tests cover failure/lock/merge behavior. Real isolated 
 
 ## Provenance
 Reference behavior: Snd-R/komf2.1.0 MIT, dyphire/komf-rs1.14.5 MIT, dyphire/KomgaBangumi2.11.0 MIT. Preserve notices for copied/substantial ports. Source data licenses are distinct from source code licenses; do not redistribute full catalogs without checking. Research notes/source snapshots are available to developers outside repo at ~/.hermes/research/komga-userscript-feasibility/ and the corresponding Obsidian note; never commit raw local notes or hidden credentials.
+
+## Component 1 implementation
+
+`src/model.ts` defines the stable provider/record/context interfaces and optional
+`CatalogExtension`; `Registry.register` attaches online or future offline
+providers without changing writer behavior. Capabilities separate gallery,
+volume metadata, and volume-cover-only sources. `workerAssetBase` is a compile
+time static directory, not a runtime service. Component 2's worker/VFS/schema
+and builders are not implemented by component 1.
+
+`src/transport.ts` provides anonymous GM cross-origin requests (explicit ExH
+cookies only), per-source serialization, maximum queue 50, at most two retries,
+60-second maximum Retry-After, cancellation, and retained source cooldown.
+`src/komga.ts` owns session fetch and deployment/route detection. Detection is
+DOM-only and conservative before any network, storage, UI or menu effects.
+`src/providers/` validates JSON/HTML boundaries and IDs; remote DOM is never
+inserted into the host page.
+
+`src/plan.ts` creates selected-field edits with scoped originals and lock
+guards. Explicit book IDs take precedence over uniquely verified metadata
+volume numbers; One-shot must have exactly one associated server book.
+`src/writer.ts` preflights every target, serially rereads/writes/verifies each,
+tracks independent partial outcomes, and restores only snapshots whose
+current fields still equal the attempted new values. Metadata snapshots are
+retained even when write delivery/readback is uncertain, so undo can safely
+attempt recovery without pretending success. Cover snapshots retain previous
+selection and byte hashes; cleanup requires a newly returned upload ID not
+present before upload. No user-cover sweeping is performed.
+
+Komga offers no atomic conditional PATCH in the API used here, so a small
+read-to-write race remains; the implementation does not claim transactional
+updates. Server image-byte transformations intentionally fail strict content
+verification. `src/ui.ts` mounts safe vanilla DOM in Shadow DOM, persists only
+GM settings/undo, shows editable previews and concrete partial/error outcomes,
+and fades only the local successful metadata action indicator.

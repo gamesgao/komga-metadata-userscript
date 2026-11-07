@@ -1,0 +1,12 @@
+import type { Candidate, MetadataRecord, Provider } from '../../src/model.js';
+import { CatalogClient } from '../src/client.mjs';
+import { catalogProvider } from '../src/panel.mjs';
+import { BrowserCatalogBuilder, browserBuildCapability } from '../src/browser-builder.mjs';
+const client = new CatalogClient('/worker.mjs');
+const candidates: Promise<Candidate[]> = client.search('作品', 'bangumi');
+const record: Promise<MetadataRecord> = client.get('bangumi', '1');
+const provider: Provider = catalogProvider(client, 'bangumi');
+const builder = new BrowserCatalogBuilder('/build-worker.mjs');
+const capability: boolean = browserBuildCapability().available;
+const built: Promise<{ provider: string; count: number; sourceVersion: string }> = builder.build(new File([], 'input.zip'), 'bangumi');
+void [candidates, record, provider, capability, built];
