@@ -2,11 +2,14 @@
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
 // @version      0.1.0
-// @description  桌面 Komga 元数据搜索、预览与安全写入（组件 1）
+// @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
+// @downloadURL  https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
+// @updateURL    https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
 // @license      MIT
 // @match        http://*/*
 // @match        https://*/*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_download
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
@@ -29,6 +32,18 @@
 // @connect      www.webtoons.com
 // @connect      raw.githubusercontent.com
 // @connect      github.com
+// @connect      api.github.com
+// @connect      release-assets.githubusercontent.com
+// @connect      objects.githubusercontent.com
+// @connect      lain.bgm.tv
+// @connect      cdn.mangaupdates.com
+// @connect      s4.anilist.co
+// @connect      ehgt.org
+// @connect      hath.network
+// @connect      static.bookwalker.com
+// @connect      api.mangabaka.org
+// @connect      mangabaka.dev
+// @connect      mangabaka.org
 // @connect      *
 // @run-at       document-idle
 // ==/UserScript==
@@ -98,6 +113,7 @@ SOFTWARE.
       }));
     }
   };
+  var workerAssetBase = false ? "" : "https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/catalog/";
 
   // src/providers/data.ts
   function obj(value) {
@@ -135,14 +151,14 @@ SOFTWARE.
     const m = text2.match(/(?:\bvol(?:ume)?\.?\s*|\(|（)(\d+(?:\.\d+)?)(?:\)|）|\b)/i);
     return m ? Number(m[1]) : void 0;
   }
-  function record(provider, id, url, raw) {
-    return { provider, id, url, raw, titles: [], tags: [], genres: [], authors: [], covers: [], links: [{ label: provider, url }] };
+  function record(provider, id, url2, raw) {
+    return { provider, id, url: url2, raw, titles: [], tags: [], genres: [], authors: [], covers: [], links: [{ label: provider, url: url2 }] };
   }
-  function candidate(provider, id, title, url) {
-    return { provider, id, title: required(title), url };
+  function candidate(provider, id, title, url2) {
+    return { provider, id, title: required(title), url: url2 };
   }
-  async function json(t, url, signal, body, headers) {
-    const r = await t.request({ url, method: body === void 0 ? "GET" : "POST", headers: { Accept: "application/json", ...body === void 0 ? {} : { "Content-Type": "application/json" }, ...headers }, body: body === void 0 ? void 0 : JSON.stringify(body) }, signal);
+  async function json(t, url2, signal, body, headers) {
+    const r = await t.request({ url: url2, method: body === void 0 ? "GET" : "POST", headers: { Accept: "application/json", ...body === void 0 ? {} : { "Content-Type": "application/json" }, ...headers }, body: body === void 0 ? void 0 : JSON.stringify(body) }, signal);
     try {
       return obj(JSON.parse(r.text));
     } catch (e) {
@@ -206,9 +222,9 @@ SOFTWARE.
     let basePath = "";
     if (api) basePath = api.pathname.split("/api/v1/")[0];
     else if (asset) basePath = new URL(asset.getAttribute("src"), location2.origin + location2.pathname).pathname.replace(/\/(?:assets|_nuxt|js)\/.*$/, "");
-    const base = doc.querySelector("base[href]")?.getAttribute("href");
-    if (base) {
-      const u = new URL(base, location2.origin + location2.pathname);
+    const base2 = doc.querySelector("base[href]")?.getAttribute("href");
+    if (base2) {
+      const u = new URL(base2, location2.origin + location2.pathname);
       if (u.origin !== location2.origin) return void 0;
       basePath = u.pathname.replace(/\/$/, "");
     }
@@ -296,19 +312,19 @@ SOFTWARE.
     }
   };
   function safeUrl(input2) {
-    let url;
+    let url2;
     try {
-      url = new URL(input2);
+      url2 = new URL(input2);
     } catch {
       throw new MetadataError("invalid-id", "\u94FE\u63A5\u683C\u5F0F\u65E0\u6548");
     }
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new MetadataError("invalid-id", "\u4EC5\u652F\u6301\u65E0\u5185\u5D4C\u51ED\u636E\u7684 HTTP(S) \u94FE\u63A5");
-    return url.href;
+    if (!["http:", "https:"].includes(url2.protocol) || url2.username || url2.password) throw new MetadataError("invalid-id", "\u4EC5\u652F\u6301\u65E0\u5185\u5D4C\u51ED\u636E\u7684 HTTP(S) \u94FE\u63A5");
+    return url2.href;
   }
   var GMTransport = class {
     request(input2, signal) {
       cancelled(signal);
-      const url = safeUrl(input2.url);
+      const url2 = safeUrl(input2.url);
       return new Promise((resolve, reject) => {
         let handle;
         const finish2 = (fn) => {
@@ -320,7 +336,7 @@ SOFTWARE.
           finish2(() => reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88")));
         };
         handle = GM_xmlhttpRequest({
-          url,
+          url: url2,
           method: input2.method ?? "GET",
           headers: input2.headers,
           data: input2.body,
@@ -334,7 +350,7 @@ SOFTWARE.
               const i = line.indexOf(":");
               if (i > 0) headers[line.slice(0, i).toLowerCase()] = line.slice(i + 1).trim();
             }
-            resolve({ status: r.status, headers, text: r.responseText ?? "", blob: r.response instanceof Blob ? r.response : void 0, finalUrl: r.finalUrl || url });
+            resolve({ status: r.status, headers, text: r.responseText ?? "", blob: r.response instanceof Blob ? r.response : void 0, finalUrl: r.finalUrl || url2 });
           }),
           onerror: () => finish2(() => reject(new MetadataError("http", "\u8DE8\u57DF\u8BF7\u6C42\u5931\u8D25\uFF08\u7F51\u7EDC\u6216\u7BA1\u7406\u5668\u6743\u9650\uFF09"))),
           ontimeout: () => finish2(() => reject(new MetadataError("http", "\u6765\u6E90\u8BF7\u6C42\u8D85\u65F6"))),
@@ -430,10 +446,10 @@ SOFTWARE.
   function addCover(r, value, number, language) {
     if (str(value)) r.covers.push({ url: safeUrl(str(value)), volume: number, language });
   }
-  async function pages(t, base, c) {
+  async function pages(t, base2, c) {
     const rows = [];
     for (let page = 0; page < 10; page++) {
-      const data = await json(t, `${base}${base.includes("?") ? "&" : "?"}limit=100&offset=${page * 100}`, c.signal);
+      const data = await json(t, `${base2}${base2.includes("?") ? "&" : "?"}limit=100&offset=${page * 100}`, c.signal);
       const batch = arr(data.data);
       rows.push(...batch);
       if (batch.length < 100 || typeof data.total === "number" && rows.length >= data.total) return rows;
@@ -459,10 +475,10 @@ SOFTWARE.
     }
     async get(id, c) {
       numeric(id);
-      const base = `https://next.bgm.tv/p1/subjects/${id}`;
-      const x = await json(this.t, base, c.signal);
+      const base2 = `https://next.bgm.tv/p1/subjects/${id}`;
+      const x = await json(this.t, base2, c.signal);
       checkId(x.id, id);
-      const staff = await pages(this.t, `${base}/staffs/persons`, c);
+      const staff = await pages(this.t, `${base2}/staffs/persons`, c);
       const r = record(this.id, id, `https://bgm.tv/subject/${id}`, { subject: x, staff });
       titles(r, x.name, x.nameCN);
       r.summary = str(x.summary) || void 0;
@@ -488,7 +504,7 @@ SOFTWARE.
         if (["\u522B\u540D", "\u4E2D\u6587\u540D"].includes(str(row.key)) && value) r.titles.push({ text: value, type: "alias" });
       }
       if (x.series === true) {
-        const relations = await pages(this.t, `${base}/relations?type=1&offprint=true`, c);
+        const relations = await pages(this.t, `${base2}/relations?type=1&offprint=true`, c);
         r.books = relations.filter((v) => obj(obj(v).relation).id === 1003).map((v) => {
           const subject = obj(obj(v).subject), sid = numeric(idText(subject.id));
           const b = record(this.id, sid, `https://bgm.tv/subject/${sid}`, v);
@@ -559,8 +575,8 @@ SOFTWARE.
     for (const size of ["x350", "x250", "x150"]) {
       if (x[size]) {
         const s = obj(x[size]);
-        const url = str(s.x3) || str(s.x2) || str(s.x1);
-        if (url) return url;
+        const url2 = str(s.x3) || str(s.x2) || str(s.x1);
+        if (url2) return url2;
       }
     }
     return "";
@@ -845,8 +861,8 @@ SOFTWARE.
   function meta(doc, name) {
     return doc.querySelector(`meta[property="${name}"]`)?.getAttribute("content") ?? "";
   }
-  function href(value, base) {
-    return safeUrl(new URL(value, base).href);
+  function href(value, base2) {
+    return safeUrl(new URL(value, base2).href);
   }
   function image(r, value) {
     if (value) r.covers.push({ url: href(value, r.url), volume: r.volume });
@@ -878,13 +894,13 @@ SOFTWARE.
       return `${numeric(m[1])}:${m[2].toLowerCase()}`;
     }
     async search(q, c) {
-      const config = this.config(c), base = `https://${config.host}/`;
-      const response = await this.t.request({ url: `${base}?f_search=${encodeURIComponent(q)}`, cookie: config.cookie }, c.signal);
+      const config = this.config(c), base2 = `https://${config.host}/`;
+      const response = await this.t.request({ url: `${base2}?f_search=${encodeURIComponent(q)}`, cookie: config.cookie }, c.signal);
       const doc = documentOf(response.text);
       known(doc, ".itg, #searchbox, #searchnav, .searchtext");
       const found = /* @__PURE__ */ new Map();
       for (const a of doc.querySelectorAll("a[href]")) {
-        const u = new URL(a.getAttribute("href"), base);
+        const u = new URL(a.getAttribute("href"), base2);
         const m = u.pathname.match(/^\/g\/([1-9]\d*)\/([a-f0-9]{10})\/?$/i);
         if (m && ["e-hentai.org", "exhentai.org"].includes(u.hostname)) {
           const name = a.textContent?.trim() || a.querySelector("img")?.getAttribute("alt");
@@ -962,7 +978,7 @@ SOFTWARE.
           { Authorization: `Bearer ${key}` }
         );
         return Promise.all(arr(x.results).map(async (v) => {
-          const row = obj(v), url = required(obj(row.url).raw), id = await this.resolveLink(url);
+          const row = obj(v), url2 = required(obj(row.url).raw), id = await this.resolveLink(url2);
           return candidate(this.id, id, required(obj(row.title).raw), href(id, this.base));
         }));
       }
@@ -1001,9 +1017,9 @@ SOFTWARE.
       return [...results.values()].slice(0, 20);
     }
     async get(input2, c) {
-      const id = await this.resolveLink(input2), url = href(id, this.base);
-      const response = await this.t.request({ url, headers: this.id === "webtoons" ? { Referer: "https://www.webtoons.com/en" } : void 0 }, c.signal);
-      const doc = documentOf(response.text), r = record(this.id, id, url, { htmlUrl: response.finalUrl });
+      const id = await this.resolveLink(input2), url2 = href(id, this.base);
+      const response = await this.t.request({ url: url2, headers: this.id === "webtoons" ? { Referer: "https://www.webtoons.com/en" } : void 0 }, c.signal);
+      const doc = documentOf(response.text), r = record(this.id, id, url2, { htmlUrl: response.finalUrl });
       const canonical = meta(doc, "og:url") || doc.querySelector('link[rel="canonical"]')?.getAttribute("href");
       if (canonical) {
         const resolved = await this.resolveLink(href(canonical, this.base));
@@ -1074,7 +1090,7 @@ SOFTWARE.
               const name = a.textContent?.trim();
               if (!name) continue;
               const bid = await this.resolveLink(href(a.getAttribute("href"), this.base));
-              const b = record(this.id, bid, href(bid, this.base), { relationUrl: url });
+              const b = record(this.id, bid, href(bid, this.base), { relationUrl: url2 });
               b.titles = [{ text: name, type: "native" }];
               b.volume = volume(name);
               const cover = a.querySelector("img");
@@ -1114,6 +1130,381 @@ SOFTWARE.
     return registry;
   }
 
+  // node_modules/@noble/hashes/_u64.js
+  var fromNumH = (n) => n / 2 ** 32 | 0;
+  var fromNumL = (n) => n >>> 0;
+  function setU64FromNum(view, byteOffset, n, isLE) {
+    const h = fromNumH(n);
+    const l = fromNumL(n);
+    view.setUint32(byteOffset, isLE ? l : h, isLE);
+    view.setUint32(byteOffset + 4, isLE ? h : l, isLE);
+  }
+
+  // node_modules/@noble/hashes/utils.js
+  function isBytes(a) {
+    return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
+  }
+  var atitle = (title) => title ? `"${title}" ` : "";
+  function anumber(n, title = "") {
+    if (typeof n !== "number")
+      throw new TypeError(atitle(title) + "expected number, got " + typeof n);
+    if (!Number.isSafeInteger(n) || n < 0)
+      throw new RangeError(atitle(title) + "expected integer >= 0, got " + n);
+    return n;
+  }
+  function abytes(value, length, title = "") {
+    if (isBytes(value) && (length === void 0 || value.length === length))
+      return value;
+    if (length !== void 0)
+      anumber(length, "length");
+    const bytes = isBytes(value);
+    const ofLen = length !== void 0 ? ` of length ${length}` : "";
+    const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
+    const message = atitle(title) + "expected Uint8Array" + ofLen + ", got " + got;
+    if (!bytes)
+      throw new TypeError(message);
+    throw new RangeError(message);
+  }
+  var aobject = (value, label) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+      throw new TypeError((label === "object" ? "" : `"${label}" `) + "expected object, got type=" + typeof value);
+  };
+  var aopts = (value, label) => {
+    aobject(value, label);
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null)
+      throw new TypeError(`"${label}" expected plain object`);
+    if (Object.hasOwn(value, "__proto__"))
+      throw new TypeError(`"${label}.__proto__" is not allowed`);
+  };
+  function aexists(instance, checkFinished = true) {
+    if (instance.destroyed)
+      throw new Error("hash was destroyed");
+    if (checkFinished && instance.finished)
+      throw new Error("digest() was already called");
+  }
+  function aoutput(out, instance) {
+    abytes(out, void 0, "output");
+    const min = instance.outputLen;
+    if (!(out.length >= min)) {
+      throw new RangeError('"output" expected length >= ' + min);
+    }
+  }
+  function clean(...arrays) {
+    for (let i = 0; i < arrays.length; i++) {
+      arrays[i].fill(0);
+    }
+  }
+  function createView(arr2) {
+    return new DataView(arr2.buffer, arr2.byteOffset, arr2.byteLength);
+  }
+  function rotr(word, shift) {
+    return word << 32 - shift | word >>> shift;
+  }
+  function checkOpts(defaults, opts, title = "opts") {
+    aopts(defaults, "defaults");
+    if (opts !== void 0)
+      aopts(opts, title);
+    const merged = Object.assign(/* @__PURE__ */ Object.create(null), defaults, opts);
+    return merged;
+  }
+  function createHasher(hashCons, info = {}) {
+    if (typeof hashCons !== "function")
+      throw new TypeError('"hashCons" expected function, got type=' + typeof hashCons);
+    info = checkOpts({}, info, "info");
+    const hashC = (msg, opts) => hashCons(opts).update(msg).digest();
+    const tmp = hashCons(void 0);
+    hashC.outputLen = tmp.outputLen;
+    hashC.blockLen = tmp.blockLen;
+    hashC.canXOF = tmp.canXOF;
+    hashC.create = (opts) => hashCons(opts);
+    Object.assign(hashC, info);
+    return Object.freeze(hashC);
+  }
+  var oidNist = (suffix) => ({
+    // Current NIST hashAlgs suffixes used here fit in one DER subidentifier octet.
+    // Larger suffix values would need base-128 OID encoding and a different length byte.
+    oid: Uint8Array.from([6, 9, 96, 134, 72, 1, 101, 3, 4, 2, suffix])
+  });
+
+  // node_modules/@noble/hashes/_md.js
+  function Chi(a, b, c) {
+    return a & b ^ ~a & c;
+  }
+  function Maj(a, b, c) {
+    return a & b ^ a & c ^ b & c;
+  }
+  var HashMD = class {
+    blockLen;
+    outputLen;
+    canXOF = false;
+    padOffset;
+    isLE;
+    // For partial updates less than block size
+    buffer;
+    view;
+    finished = false;
+    length = 0;
+    pos = 0;
+    destroyed = false;
+    constructor(blockLen, outputLen, padOffset, isLE) {
+      this.blockLen = blockLen;
+      this.outputLen = outputLen;
+      this.padOffset = padOffset;
+      this.isLE = isLE;
+      this.buffer = new Uint8Array(blockLen);
+      this.view = createView(this.buffer);
+    }
+    update(data) {
+      aexists(this);
+      abytes(data);
+      const { view, buffer, blockLen } = this;
+      const len = data.length;
+      let processed = false;
+      for (let pos = 0; pos < len; ) {
+        const take = Math.min(blockLen - this.pos, len - pos);
+        if (take === blockLen) {
+          const dataView = createView(data);
+          for (; blockLen <= len - pos; pos += blockLen)
+            this.process(dataView, pos);
+          processed = true;
+          continue;
+        }
+        buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
+        this.pos += take;
+        pos += take;
+        if (this.pos === blockLen) {
+          this.process(view, 0);
+          this.pos = 0;
+          processed = true;
+        }
+      }
+      this.length += data.length;
+      if (processed)
+        this.roundClean();
+      return this;
+    }
+    digestInto(out) {
+      aexists(this);
+      aoutput(out, this);
+      this.finished = true;
+      const { buffer, view, blockLen, isLE } = this;
+      let { pos } = this;
+      buffer[pos++] = 128;
+      buffer.fill(0, pos);
+      if (this.padOffset > blockLen - pos) {
+        this.process(view, 0);
+        buffer.fill(0);
+      }
+      setU64FromNum(view, blockLen - 8, this.length * 8, isLE);
+      this.process(view, 0);
+      this.roundClean();
+      const oview = out === buffer ? view : createView(out);
+      const len = this.outputLen;
+      const outLen = len / 4;
+      const state = this.get();
+      if (len % 4 || outLen > state.length)
+        throw new Error("invalid outputLen");
+      for (let i = 0; i < outLen; i++)
+        oview.setUint32(4 * i, state[i], isLE);
+    }
+    digest() {
+      const { buffer, outputLen } = this;
+      this.digestInto(buffer);
+      const res = buffer.slice(0, outputLen);
+      this.destroy();
+      return res;
+    }
+    _cloneIntoMeta(to) {
+      const { buffer, length, finished, destroyed, pos } = this;
+      to.destroyed = destroyed;
+      to.finished = finished;
+      to.length = length;
+      to.pos = pos;
+      if (pos)
+        to.buffer.set(buffer);
+      return to;
+    }
+    clone() {
+      return this._cloneInto();
+    }
+  };
+  var SHA256_IV = /* @__PURE__ */ Uint32Array.from([
+    1779033703,
+    3144134277,
+    1013904242,
+    2773480762,
+    1359893119,
+    2600822924,
+    528734635,
+    1541459225
+  ]);
+
+  // node_modules/@noble/hashes/sha2.js
+  var SHA256_K = /* @__PURE__ */ Uint32Array.from([
+    1116352408,
+    1899447441,
+    3049323471,
+    3921009573,
+    961987163,
+    1508970993,
+    2453635748,
+    2870763221,
+    3624381080,
+    310598401,
+    607225278,
+    1426881987,
+    1925078388,
+    2162078206,
+    2614888103,
+    3248222580,
+    3835390401,
+    4022224774,
+    264347078,
+    604807628,
+    770255983,
+    1249150122,
+    1555081692,
+    1996064986,
+    2554220882,
+    2821834349,
+    2952996808,
+    3210313671,
+    3336571891,
+    3584528711,
+    113926993,
+    338241895,
+    666307205,
+    773529912,
+    1294757372,
+    1396182291,
+    1695183700,
+    1986661051,
+    2177026350,
+    2456956037,
+    2730485921,
+    2820302411,
+    3259730800,
+    3345764771,
+    3516065817,
+    3600352804,
+    4094571909,
+    275423344,
+    430227734,
+    506948616,
+    659060556,
+    883997877,
+    958139571,
+    1322822218,
+    1537002063,
+    1747873779,
+    1955562222,
+    2024104815,
+    2227730452,
+    2361852424,
+    2428436474,
+    2756734187,
+    3204031479,
+    3329325298
+  ]);
+  var SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+  var SHA2_32B = class extends HashMD {
+    // We cannot use array here since array allows indexing by variable
+    // which means optimizer/compiler cannot use registers.
+    // Numeric initializers matter: starting the fields as `undefined` changes
+    // V8's field representation and makes sha256 3x slower (measured).
+    A = 0;
+    B = 0;
+    C = 0;
+    D = 0;
+    E = 0;
+    F = 0;
+    G = 0;
+    H = 0;
+    constructor(outputLen, IV) {
+      super(64, outputLen, 8, false);
+      this.A = IV[0] | 0;
+      this.B = IV[1] | 0;
+      this.C = IV[2] | 0;
+      this.D = IV[3] | 0;
+      this.E = IV[4] | 0;
+      this.F = IV[5] | 0;
+      this.G = IV[6] | 0;
+      this.H = IV[7] | 0;
+    }
+    get() {
+      const { A, B, C, D, E, F, G, H } = this;
+      return [A, B, C, D, E, F, G, H];
+    }
+    // prettier-ignore
+    set(A, B, C, D, E, F, G, H) {
+      this.A = A | 0;
+      this.B = B | 0;
+      this.C = C | 0;
+      this.D = D | 0;
+      this.E = E | 0;
+      this.F = F | 0;
+      this.G = G | 0;
+      this.H = H | 0;
+    }
+    _cloneInto(to) {
+      (to ||= new this.constructor()).set(...this.get());
+      return this._cloneIntoMeta(to);
+    }
+    process(view, offset) {
+      for (let i = 0; i < 16; i++, offset += 4)
+        SHA256_W[i] = view.getUint32(offset, false);
+      for (let i = 16; i < 64; i++) {
+        const W15 = SHA256_W[i - 15];
+        const W2 = SHA256_W[i - 2];
+        const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
+        const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
+        SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
+      }
+      let { A, B, C, D, E, F, G, H } = this;
+      for (let i = 0; i < 64; i++) {
+        const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
+        const T1 = H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i] | 0;
+        const sigma0 = rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22);
+        const T2 = sigma0 + Maj(A, B, C) | 0;
+        H = G;
+        G = F;
+        F = E;
+        E = D + T1 | 0;
+        D = C;
+        C = B;
+        B = A;
+        A = T1 + T2 | 0;
+      }
+      A = A + this.A | 0;
+      B = B + this.B | 0;
+      C = C + this.C | 0;
+      D = D + this.D | 0;
+      E = E + this.E | 0;
+      F = F + this.F | 0;
+      G = G + this.G | 0;
+      H = H + this.H | 0;
+      this.set(A, B, C, D, E, F, G, H);
+    }
+    roundClean() {
+      clean(SHA256_W);
+    }
+    destroy() {
+      this.destroyed = true;
+      this.set(0, 0, 0, 0, 0, 0, 0, 0);
+      clean(this.buffer);
+    }
+  };
+  var _SHA256 = class extends SHA2_32B {
+    constructor() {
+      super(32, SHA256_IV);
+    }
+  };
+  var sha256 = /* @__PURE__ */ createHasher(
+    () => new _SHA256(),
+    /* @__PURE__ */ oidNist(1)
+  );
+
   // src/plan.ts
   var seriesFields = ["title", "summary", "publisher", "language", "status", "ageRating", "tags", "genres", "links", "alternateTitles"];
   var bookFields = ["title", "summary", "releaseDate", "isbn", "tags", "links", "authors"];
@@ -1139,8 +1530,18 @@ SOFTWARE.
     for (const v of incoming) if (!values.some((w) => equal(v, w))) values.push(v);
     return values;
   }
+  function normalizeWriteFields(metadata2) {
+    const normalized = { ...metadata2 };
+    for (const field of ["tags", "genres"]) {
+      const values = normalized[field];
+      if (Array.isArray(values) && values.every((v) => typeof v === "string")) {
+        normalized[field] = [...new Set(values.map((v) => v.trim().toLowerCase()).filter(Boolean))];
+      }
+    }
+    return normalized;
+  }
   function mapped(r) {
-    return {
+    return normalizeWriteFields({
       title: nativeTitle(r),
       summary: r.summary === void 0 ? void 0 : plain(r.summary),
       publisher: r.publisher,
@@ -1154,7 +1555,7 @@ SOFTWARE.
       links: r.links.map((l) => ({ label: l.label, url: l.url })),
       alternateTitles: r.titles.map((t) => ({ title: t.text, label: t.language || t.type })),
       authors: r.authors.map((a) => ({ name: a.native || a.name, role: a.role }))
-    };
+    });
   }
   function buildPlan(state, record2, selection) {
     const plan = { seriesId: state.series.id, edits: [], skipped: [] };
@@ -1212,8 +1613,11 @@ SOFTWARE.
 
   // src/writer.ts
   async function hash(blob) {
-    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const digest = sha256.create();
+    for (let offset = 0; offset < blob.size; offset += 1024 * 1024) {
+      digest.update(new Uint8Array(await blob.slice(offset, offset + 1024 * 1024).arrayBuffer()));
+    }
+    return [...digest.digest()].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
   async function validateImage(blob) {
     if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(blob.type.toLowerCase()) || blob.size === 0 || blob.size > 25 * 1024 * 1024) throw new MetadataError("verification", "\u5C01\u9762\u5FC5\u987B\u662F 25 MiB \u5185\u7684\u6709\u6548\u56FE\u7247\uFF08\u4E0D\u80FD\u662F HTML \u6216 SVG\uFF09");
@@ -1230,16 +1634,16 @@ SOFTWARE.
         throw new MetadataError("verification", "\u5C01\u9762\u65E0\u6CD5\u89E3\u7801");
       }
     } else if (typeof Image !== "undefined" && typeof URL.createObjectURL === "function") {
-      const url = URL.createObjectURL(blob);
+      const url2 = URL.createObjectURL(blob);
       try {
         const img = new Image();
-        img.src = url;
+        img.src = url2;
         await img.decode();
         if (!img.naturalWidth || !img.naturalHeight) throw new Error("zero dimensions");
       } catch {
         throw new MetadataError("verification", "\u5C01\u9762\u65E0\u6CD5\u89E3\u7801");
       } finally {
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url2);
       }
     }
   }
@@ -1285,6 +1689,7 @@ SOFTWARE.
     async apply(plan, signal) {
       if (this.busy) throw new MetadataError("unavailable", "\u5199\u5165\u4EFB\u52A1\u8FDB\u884C\u4E2D");
       if (!plan.edits.length && !plan.cover) throw new MetadataError("verification", "\u6CA1\u6709\u9009\u4E2D\u53EF\u5199\u53D8\u66F4");
+      for (const edit of plan.edits) edit.after = normalizeWriteFields(edit.after);
       this.busy = true;
       this.seriesId = plan.seriesId;
       const result = { status: "error", outcomes: [], snapshots: [], covers: [] };
@@ -1473,7 +1878,7 @@ SOFTWARE.
       const header = element("header", "\u5143\u6570\u636E ");
       header.append(button("\u5173\u95ED", () => {
         if (this.busy) this.controller?.abort();
-        this.host.remove();
+        void this.close();
       }), button("\u53D6\u6D88", () => this.controller?.abort()));
       this.query.setAttribute("aria-label", "\u641C\u7D22\u8BCD");
       this.query.placeholder = "\u4F5C\u54C1\u540D";
@@ -1481,17 +1886,27 @@ SOFTWARE.
       this.direct.placeholder = "\u6765\u6E90\u94FE\u63A5\u6216 ID";
       this.provider.setAttribute("aria-label", "\u6765\u6E90");
       this.controls.append(this.query, button("\u641C\u7D22", () => void this.run(() => this.search())));
-      const toggles = element("div");
-      for (const p of registry.list()) {
-        option(this.provider, p.id, p.id);
-        const i = input(p.id, toggles, "checkbox");
-        i.checked = this.settings.sources.includes(p.id);
-        i.onchange = () => {
-          this.settings.sources = [...toggles.querySelectorAll("input:checked")].map((i2) => i2.getAttribute("aria-label"));
-          storage.set("settings-v1", this.settings);
-        };
-      }
-      this.controls.append(toggles, this.provider, this.direct, button("\u8BFB\u53D6", () => void this.run(() => this.readDirect())));
+      option(this.sourceMode, "online", "\u5728\u7EBF");
+      option(this.sourceMode, "offline", "\u79BB\u7EBF");
+      this.sourceMode.value = this.settings.sourceMode ?? "online";
+      this.sourceMode.setAttribute("aria-label", "\u6765\u6E90\u6A21\u5F0F");
+      this.sourceMode.onchange = () => {
+        this.saveSourceChecks();
+        this.settings.sourceMode = this.sourceMode.value;
+        this.selected = void 0;
+        this.invalidate();
+        this.renderSourceChecks();
+        storage.set("settings-v1", this.settings);
+      };
+      for (const p of registry.list()) option(this.provider, p.id, p.id);
+      this.renderSourceChecks();
+      this.controls.append(
+        this.sourceMode,
+        this.sourceToggles,
+        this.provider,
+        this.direct,
+        button("\u8BFB\u53D6", () => void this.run(() => this.readDirect()))
+      );
       const choices = element("div");
       this.book.setAttribute("aria-label", "\u76EE\u6807\u4E66\u7C4D");
       this.cover.setAttribute("aria-label", "\u5C01\u9762");
@@ -1552,6 +1967,10 @@ SOFTWARE.
     query = element("input");
     direct = element("input");
     provider = element("select");
+    sourceMode = element("select");
+    sourceToggles = element("div");
+    extension;
+    catalogCleanup;
     book = element("select");
     cover = element("select");
     coverTarget = element("select");
@@ -1563,7 +1982,9 @@ SOFTWARE.
     fade;
     mount(extension) {
       if (!this.host.isConnected) document.body.append(this.host);
-      if (extension) extension.mount(this.catalog);
+      this.extension = extension;
+      this.renderSourceChecks();
+      if (extension) this.catalogCleanup = extension.mount(this.catalog) || void 0;
       void this.run(async () => {
         this.seriesId = currentSeries(location, document);
         if (!this.seriesId) throw new MetadataError("invalid-id", "\u8BF7\u6253\u5F00\u7CFB\u5217\u6216 One-shot \u8BE6\u60C5\u9875\uFF0C\u518D\u4ECE\u83DC\u5355\u542F\u52A8");
@@ -1594,6 +2015,7 @@ SOFTWARE.
       this.busy = true;
       this.controller = new AbortController();
       clearTimeout(this.fade);
+      this.host.style.opacity = "1";
       this.status.style.opacity = "1";
       this.status.dataset.state = "busy";
       this.status.textContent = "\u25CC \u5904\u7406\u4E2D";
@@ -1624,15 +2046,25 @@ SOFTWARE.
     async search() {
       this.invalidate();
       this.results.replaceChildren();
-      if (!this.query.value.trim() || !this.settings.sources.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
-      const results = await this.registry.search(this.settings.sources, this.query.value.trim(), this.context());
+      this.saveSourceChecks();
+      const ids = this.sourceIds();
+      if (!this.query.value.trim() || !ids.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
+      const query = this.query.value.trim(), context = this.context();
+      const results = await Promise.all(ids.map(async (id) => {
+        try {
+          return { id, candidates: await this.activeProvider(id).search(query, context) };
+        } catch (error) {
+          return { id, error: error instanceof Error ? error : new Error(String(error)) };
+        }
+      }));
       for (const result of results) {
         const group = element("div");
         group.append(element("h3", result.id));
         if (result.error) group.append(element("p", result.error.message));
         else if (!result.candidates?.length) group.append(element("p", "\u65E0\u5339\u914D"));
         for (const c of result.candidates ?? []) group.append(button(c.title, () => void this.run(async () => {
-          this.choose(await this.registry.get(c.provider).get(c.id, this.context()));
+          const provider = this.activeProvider(c.provider);
+          this.choose(await provider.get(c.id, this.context()), provider);
         })));
         this.results.append(group);
       }
@@ -1643,21 +2075,24 @@ SOFTWARE.
     }
     async readDirect() {
       this.invalidate();
-      const p = this.registry.get(this.provider.value);
+      const p = this.activeProvider(this.provider.value);
       const id = await p.resolveLink(this.direct.value.trim(), this.context());
-      this.choose(await p.get(id, this.context()));
+      this.choose(await p.get(id, this.context()), p);
     }
-    choose(record2) {
+    choose(record2, provider = this.activeProvider(record2.provider)) {
       this.invalidate();
       this.selected = record2;
       this.results.replaceChildren();
       this.results.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), element("p", record2.url));
-      const capabilities = this.registry.get(record2.provider).capabilities;
+      const capabilities = provider.capabilities;
       const scope = capabilities.gallery ? "\u753B\u5ECA\uFF1B\u4E0D\u63A8\u65AD\u5377\u53F7" : capabilities.volumeMetadata ? "\u652F\u6301\u5355\u5377\u8BE6\u60C5\uFF1B\u987B\u660E\u786E\u6620\u5C04" : capabilities.volumeCovers ? "\u4EC5\u7CFB\u5217\u4E0E\u5377\u5C01\u9762\uFF1B\u65E0\u5355\u5377\u8BE6\u60C5" : "\u4EC5\u7CFB\u5217\u5143\u6570\u636E\uFF1B\u4E0D\u63A8\u65AD\u5355\u5377";
       this.results.append(element("p", `${scope} \xB7 ${record2.status ?? "\u7CFB\u5217\u72B6\u6001\u672A\u77E5"}`));
       if (record2.summary) this.results.append(element("pre", record2.summary));
       for (const warning of record2.warnings ?? []) this.results.append(element("p", warning));
-      for (const b of record2.books ?? []) this.results.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => this.choose(await this.registry.get(b.provider).get(b.id, this.context())))));
+      for (const b of record2.books ?? []) this.results.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => {
+        const bookProvider = this.activeProvider(b.provider);
+        this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
+      })));
       this.cover.replaceChildren();
       option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
       record2.covers.forEach((c, i) => option(this.cover, String(i), `\u5C01\u9762 ${c.volume === void 0 ? "\u7CFB\u5217/\u672A\u5B9A\u5377" : `\u5377 ${c.volume}`} ${c.language ?? ""}`));
@@ -1726,7 +2161,11 @@ SOFTWARE.
         this.status.dataset.state = "success";
         this.status.textContent = "\u2713 \u5DF2\u8BFB\u56DE\u786E\u8BA4";
         this.fade = setTimeout(() => {
-          this.status.style.opacity = "0";
+          this.host.style.transition = "opacity 240ms";
+          this.host.style.opacity = "0";
+          this.fade = setTimeout(() => {
+            void this.close();
+          }, 240);
         }, 1200);
       } else {
         this.status.dataset.state = "error";
@@ -1750,10 +2189,886 @@ SOFTWARE.
         storage.set("settings-v1", this.settings);
         this.status.textContent = "\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF1B\u672A\u9A8C\u8BC1\u767B\u5F55";
       }));
-      d.append(element("p", "\u79BB\u7EBF\u76EE\u5F55\u4E0E\u6570\u636E\u5E93\u9AD8\u7EA7\u9762\u677F\uFF1A\u7EC4\u4EF6 2 \u63A5\u5165\uFF0C\u5F53\u524D\u672A\u5B9E\u73B0\u3002"));
       return d;
     }
+    sourceIds() {
+      return [...this.sourceToggles.querySelectorAll("input:checked")].map((i) => i.getAttribute("aria-label"));
+    }
+    saveSourceChecks() {
+      const selected = this.sourceIds();
+      if (this.sourceMode.value === "offline") this.settings.offlineSources = selected;
+      else this.settings.sources = selected;
+    }
+    renderSourceChecks() {
+      this.sourceToggles.replaceChildren();
+      const offline = this.sourceMode.value === "offline";
+      const providers2 = offline ? this.extension?.providers ?? [] : this.registry.list();
+      const selected = offline ? this.settings.offlineSources ?? providers2.map((p) => p.id) : this.settings.sources;
+      this.provider.replaceChildren();
+      for (const p of providers2) option(this.provider, p.id, p.id);
+      for (const p of providers2) {
+        const i = input(p.id, this.sourceToggles, "checkbox");
+        i.checked = selected.includes(p.id);
+        i.onchange = () => {
+          this.saveSourceChecks();
+          storage.set("settings-v1", this.settings);
+        };
+      }
+    }
+    activeProvider(id) {
+      if (this.sourceMode.value === "offline") {
+        const provider = this.extension?.providers.find((p) => p.id === id);
+        if (!provider) throw new MetadataError("unknown-provider", "\u79BB\u7EBF\u76EE\u5F55\u672A\u63A5\u5165");
+        return provider;
+      }
+      return this.registry.get(id);
+    }
+    async close() {
+      clearTimeout(this.fade);
+      this.fade = void 0;
+      try {
+        if (this.catalogCleanup) {
+          const cleanup = this.catalogCleanup;
+          this.catalogCleanup = void 0;
+          await cleanup();
+        }
+      } finally {
+        this.host.remove();
+      }
+    }
   };
+
+  // catalog/src/client.mjs
+  var CatalogClient = class {
+    constructor(workerUrl, options = {}) {
+      if (!workerUrl && !options.workerFactory) throw new Error("Catalog worker URL or factory is required");
+      this.workerUrl = workerUrl;
+      this.workerFactory = options.workerFactory;
+      this.initOptions = options.initOptions;
+      this.pending = /* @__PURE__ */ new Map();
+      this.nextId = 0;
+      this.file = void 0;
+      this.worker = void 0;
+      this.starting = void 0;
+      this.cancelStarting = void 0;
+      this.isOpen = false;
+      this.reopening = void 0;
+      this.generation = 0;
+    }
+    async start() {
+      if (this.worker) return;
+      if (this.starting) return this.starting;
+      this.starting = (async () => {
+        const created = this.workerFactory ? await this.workerFactory() : new Worker(this.workerUrl, { type: "module" });
+        const worker2 = created?.worker ?? created;
+        const initOptions = created?.initOptions ?? this.initOptions;
+        if (!worker2 || typeof worker2.postMessage !== "function") throw new Error("Catalog worker factory returned no Worker");
+        this.worker = worker2;
+        let resolveReady;
+        let rejectReady;
+        const cancelStarting = () => rejectReady?.(new DOMException("Catalog operation cancelled", "AbortError"));
+        const ready = initOptions ? new Promise((resolve, reject) => {
+          resolveReady = resolve;
+          rejectReady = reject;
+        }) : Promise.resolve();
+        this.cancelStarting = cancelStarting;
+        worker2.onmessage = ({ data }) => {
+          if (data.type === "ready") {
+            this.cancelStarting = void 0;
+            resolveReady?.();
+            return;
+          }
+          if (data.type === "init-error") {
+            rejectReady?.(new Error(data.error));
+            return;
+          }
+          const pending = this.pending.get(data.id);
+          if (!pending) return;
+          this.pending.delete(data.id);
+          if (data.error) pending.reject(new Error(data.error));
+          else pending.resolve(data.result);
+        };
+        worker2.onerror = (event) => {
+          event.preventDefault();
+          const error = new Error(`Catalog worker failed: ${event.message || "startup error"} (Blob Worker may be blocked by browser CSP)`);
+          rejectReady?.(error);
+          this.failAll(error);
+          worker2.terminate();
+          if (this.worker === worker2) {
+            this.worker = void 0;
+            this.isOpen = false;
+          }
+        };
+        if (initOptions) {
+          const payload = { ...initOptions };
+          const transfer = payload.wasmBinary instanceof ArrayBuffer ? [payload.wasmBinary] : [];
+          worker2.postMessage({ type: "init", payload }, transfer);
+        }
+        await ready;
+      })();
+      try {
+        await this.starting;
+      } catch (error) {
+        this.worker?.terminate();
+        this.worker = void 0;
+        throw error;
+      } finally {
+        this.starting = void 0;
+        this.cancelStarting = void 0;
+      }
+    }
+    failAll(error) {
+      for (const pending of this.pending.values()) pending.reject(error);
+      this.pending.clear();
+    }
+    async request(method, ...args) {
+      await this.start();
+      const id = ++this.nextId;
+      return new Promise((resolve, reject) => {
+        this.pending.set(id, { resolve, reject });
+        this.worker.postMessage({ id, method, args });
+      });
+    }
+    async open(file, verification) {
+      if (!(file instanceof File)) throw new Error("Select a catalog file");
+      const result = await this.request("open", file, verification);
+      this.verification = verification;
+      this.file = file;
+      this.isOpen = true;
+      return result;
+    }
+    async ensureOpen() {
+      if (this.isOpen) return;
+      if (!this.file) throw new Error("No catalog is open");
+      if (!this.reopening) {
+        const promise = this.request("open", this.file, this.verification).then(() => {
+          this.isOpen = true;
+        });
+        this.reopening = promise;
+        promise.finally(() => {
+          if (this.reopening === promise) this.reopening = void 0;
+        }).catch(() => {
+        });
+      }
+      await this.reopening;
+    }
+    async operation(method, ...args) {
+      const generation = this.generation;
+      await this.ensureOpen();
+      if (generation !== this.generation) throw new DOMException("Catalog operation cancelled", "AbortError");
+      return this.request(method, ...args);
+    }
+    search(query, provider, limit) {
+      return this.operation("search", query, provider, limit);
+    }
+    get(provider, id) {
+      return this.operation("get", provider, id);
+    }
+    manifest() {
+      return this.operation("manifest");
+    }
+    stats() {
+      return this.operation("stats");
+    }
+    get hasFile() {
+      return this.file instanceof File;
+    }
+    get selectedFile() {
+      return this.file;
+    }
+    async close() {
+      if (this.worker) await this.request("close");
+      this.file = void 0;
+      this.isOpen = false;
+    }
+    cancel() {
+      this.generation++;
+      this.cancelStarting?.();
+      this.cancelStarting = void 0;
+      if (this.worker) this.worker.terminate();
+      this.worker = void 0;
+      this.starting = void 0;
+      this.failAll(new DOMException("Catalog operation cancelled", "AbortError"));
+      this.isOpen = false;
+      this.reopening = void 0;
+    }
+    dispose() {
+      this.cancel();
+      this.file = void 0;
+    }
+  };
+
+  // catalog/src/browser-builder.mjs
+  function browserBuildCapability() {
+    if (!globalThis.isSecureContext) return { available: false, reason: "\u6D4F\u89C8\u5668\u6784\u5EFA\u9700\u8981\u5B89\u5168\u4E0A\u4E0B\u6587\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+    if (!navigator.storage?.getDirectory) return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 OPFS\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+    if (typeof Worker !== "function") return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 Worker\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+    return { available: true, reason: "\u652F\u6301\u56DB\u79CD\u672C\u5730\u6765\u6E90\u6863\u6848\uFF1B\u6D4F\u89C8\u5668\u8D44\u6E90\u4E0D\u8DB3\u65F6\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+  }
+  var BrowserCatalogBuilder = class {
+    constructor(workerUrl, options = {}) {
+      if (!workerUrl && !options.workerFactory) throw new Error("Build worker URL or factory is required");
+      this.workerUrl = workerUrl;
+      this.workerFactory = options.workerFactory;
+      this.initOptions = options.initOptions;
+      this.current = void 0;
+      this.completed = void 0;
+      this.generation = 0;
+      this.busy = false;
+    }
+    async build(file, provider, sourceVersion) {
+      if (this.busy) throw new Error("\u5DF2\u6709\u6784\u5EFA\u4EFB\u52A1");
+      const capability = browserBuildCapability();
+      if (!capability.available) throw new Error(capability.reason);
+      if (!(file instanceof File)) throw new Error("\u8BF7\u9009\u62E9\u672C\u5730\u6765\u6E90\u6587\u4EF6");
+      const generation = this.generation;
+      this.busy = true;
+      try {
+        const root = await navigator.storage.getDirectory();
+        const directory = await root.getDirectoryHandle("komga-catalog-build", { create: true });
+        if (generation !== this.generation) throw new DOMException("Build cancelled", "AbortError");
+        const nonce = crypto.randomUUID();
+        const outputName = `output-${nonce}.sqlite`, sourceName = `source-${nonce}.sqlite`;
+        const created = this.workerFactory ? await this.workerFactory() : new Worker(this.workerUrl, { type: "module" });
+        const worker2 = created?.worker ?? created;
+        const initOptions = created?.initOptions ?? this.initOptions;
+        if (!worker2 || typeof worker2.postMessage !== "function") throw new Error("Build worker factory returned no Worker");
+        const task = { worker: worker2, directory, sourceName, outputName, reject: void 0 };
+        this.current = task;
+        try {
+          const result = await new Promise((resolve, reject) => {
+            let settled = false;
+            const fail = (error) => {
+              if (!settled) {
+                settled = true;
+                reject(error);
+              }
+            };
+            task.reject = fail;
+            worker2.onmessage = ({ data }) => {
+              if (data.type === "ready") {
+                const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+                worker2.postMessage(initOptions ? { type: "build", payload } : payload);
+              } else if (data.type === "init-error") fail(new Error(data.error));
+              else if (data.error) fail(new Error(data.error));
+              else if (!settled) {
+                settled = true;
+                resolve(data.result);
+              }
+            };
+            worker2.onerror = (event) => {
+              event.preventDefault();
+              fail(new Error(`Build worker failed: ${event.message || "startup error"} (Blob Worker may be blocked by browser CSP)`));
+            };
+            if (initOptions) {
+              const payload = { ...initOptions };
+              const transfer = payload.wasmBinary instanceof ArrayBuffer ? [payload.wasmBinary] : [];
+              worker2.postMessage({ type: "init", payload }, transfer);
+            } else {
+              const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+              worker2.postMessage(payload);
+            }
+          });
+          if (generation !== this.generation) throw new DOMException("Build cancelled", "AbortError");
+          const handle = await directory.getFileHandle(outputName);
+          if (generation !== this.generation) throw new DOMException("Build cancelled", "AbortError");
+          const previous = this.completed;
+          if (previous) await previous.directory.removeEntry(previous.name);
+          this.completed = { directory, handle, name: outputName };
+          return result;
+        } finally {
+          worker2.terminate();
+          if (this.current === task) this.current = void 0;
+          await directory.removeEntry(sourceName).catch((error) => {
+            if (error.name !== "NotFoundError") throw error;
+          });
+          if (this.completed?.name !== outputName)
+            await directory.removeEntry(outputName).catch((error) => {
+              if (error.name !== "NotFoundError") throw error;
+            });
+        }
+      } finally {
+        this.busy = false;
+      }
+    }
+    async file() {
+      if (!this.completed) throw new Error("\u6CA1\u6709\u5DF2\u5B8C\u6210\u7684\u76EE\u5F55");
+      return this.completed.handle.getFile();
+    }
+    get ready() {
+      return Boolean(this.completed);
+    }
+    async exportTo(writable, chunkSize = 1024 * 1024) {
+      try {
+        if (!Number.isInteger(chunkSize) || chunkSize < 4096 || chunkSize > 8 * 1024 * 1024)
+          throw new Error("Invalid export chunk size");
+        const generation = this.generation;
+        const file = await this.file();
+        for (let offset = 0; offset < file.size; offset += chunkSize) {
+          if (generation !== this.generation) throw new DOMException("Export cancelled", "AbortError");
+          await writable.write(await file.slice(offset, offset + chunkSize).arrayBuffer());
+        }
+        if (generation !== this.generation) throw new DOMException("Export cancelled", "AbortError");
+        await writable.close();
+        return file.size;
+      } catch (error) {
+        try {
+          await writable.abort(error);
+        } catch (abortError) {
+          throw new AggregateError([error, abortError], "Export and abort both failed");
+        }
+        throw error;
+      }
+    }
+    cancel() {
+      this.generation++;
+      if (this.current) {
+        this.current.worker.terminate();
+        this.current.reject?.(new DOMException("Build cancelled", "AbortError"));
+      }
+    }
+    async dispose() {
+      this.cancel();
+      if (this.completed) {
+        await this.completed.directory.removeEntry(this.completed.name);
+        this.completed = void 0;
+      }
+    }
+  };
+
+  // catalog/src/analyzer.mjs
+  var SCHEMA_VERSION = 1;
+  var ANALYZER_VERSION = 1;
+
+  // catalog/src/panel.mjs
+  function url(value) {
+    const parsed = new URL(value);
+    if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password)
+      throw new Error("\u4EC5\u652F\u6301\u65E0\u51ED\u636E\u7684 HTTP(S) \u5730\u5740");
+    return parsed.href;
+  }
+  function validatePreparedManifest(manifest) {
+    if (!manifest || manifest.schema_version !== SCHEMA_VERSION || manifest.analyzer_version !== ANALYZER_VERSION || !Array.isArray(manifest.catalogs))
+      throw new Error("\u9884\u5236\u76EE\u5F55\u6E05\u5355\u7248\u672C\u6216\u683C\u5F0F\u9519\u8BEF");
+    return manifest.catalogs.map((item) => {
+      if (!item || !["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(item.provider) || typeof item.source_version !== "string" || typeof item.url !== "string") throw new Error("\u9884\u5236\u76EE\u5F55\u6E05\u5355\u6761\u76EE\u9519\u8BEF");
+      if (item.schema_version !== void 0 && item.schema_version !== SCHEMA_VERSION)
+        throw new Error("\u6E05\u5355\u76EE\u5F55 schema \u7248\u672C\u4E0D\u517C\u5BB9");
+      if (item.analyzer_version !== void 0 && item.analyzer_version !== ANALYZER_VERSION)
+        throw new Error("\u6E05\u5355\u76EE\u5F55 analyzer \u7248\u672C\u4E0D\u517C\u5BB9");
+      if (item.size_bytes !== void 0 && (!Number.isSafeInteger(item.size_bytes) || item.size_bytes < 1))
+        throw new Error("\u6E05\u5355\u6587\u4EF6\u5927\u5C0F\u683C\u5F0F\u9519\u8BEF");
+      if (item.sha256 !== void 0 && !/^[a-f0-9]{64}$/i.test(item.sha256))
+        throw new Error("\u6E05\u5355 SHA-256 \u683C\u5F0F\u9519\u8BEF");
+      return {
+        provider: item.provider,
+        source_version: item.source_version,
+        url: url(item.url),
+        size_bytes: item.size_bytes,
+        sha256: item.sha256?.toLowerCase(),
+        schema_version: item.schema_version,
+        analyzer_version: item.analyzer_version
+      };
+    });
+  }
+  function mountCatalogPanel(container, client, options = {}) {
+    const root = document.createElement("section");
+    root.dataset.kmCatalog = "1";
+    const spinnerStyle = document.createElement("style");
+    spinnerStyle.textContent = 'section[data-km-catalog] p[role=status]:empty::before{content:"";display:inline-block;width:12px;height:12px;border:2px solid #bbb;border-right-color:#444;border-radius:50%;animation:kmdb-spin .7s linear infinite}@keyframes kmdb-spin{to{transform:rotate(360deg)}}';
+    root.append(spinnerStyle);
+    const panelController = new AbortController();
+    const heading = document.createElement("h3");
+    heading.textContent = "\u672C\u5730\u76EE\u5F55";
+    const status2 = document.createElement("p");
+    status2.textContent = "\u9009\u62E9\u9884\u5236 SQLite";
+    status2.setAttribute("role", "status");
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = ".sqlite,.db";
+    let selectionGeneration = 0;
+    let expectedCatalog;
+    const checkManifestCompatibility = (manifest, selectedFile) => {
+      if (!expectedCatalog) return;
+      if (manifest.provider !== expectedCatalog.provider || manifest.source_version !== expectedCatalog.source_version || expectedCatalog.schema_version !== void 0 && manifest.schema_version !== expectedCatalog.schema_version || expectedCatalog.analyzer_version !== void 0 && manifest.analyzer_version !== expectedCatalog.analyzer_version || expectedCatalog.size_bytes !== void 0 && selectedFile.size !== expectedCatalog.size_bytes)
+        throw new Error("\u6240\u9009\u6587\u4EF6\u4E0E\u6E05\u5355\u7248\u672C\u6216\u5927\u5C0F\u4E0D\u7B26");
+    };
+    file.addEventListener("change", async () => {
+      if (!file.files?.[0]) return;
+      const generation = ++selectionGeneration;
+      const previousFile = client.selectedFile;
+      status2.textContent = "";
+      try {
+        const selectedFile = file.files[0];
+        const m = await client.open(selectedFile, { sha256: expectedCatalog?.sha256 });
+        checkManifestCompatibility(m, selectedFile);
+        if (generation === selectionGeneration) status2.textContent = `${m.provider} \xB7 ${m.source_version}`;
+      } catch (error) {
+        if (client.selectedFile !== previousFile) {
+          try {
+            if (previousFile) await client.open(previousFile);
+            else await client.close();
+          } catch (restoreError) {
+            if (generation === selectionGeneration)
+              status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}\uFF1B\u6062\u590D\u5931\u8D25\uFF1A${restoreError.message}`;
+            return;
+          }
+        }
+        if (generation === selectionGeneration) status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}`;
+      }
+    });
+    if (client.hasFile) {
+      const generation = ++selectionGeneration;
+      status2.textContent = "";
+      void client.manifest().then((m) => {
+        if (generation === selectionGeneration) status2.textContent = `${m.provider} \xB7 ${m.source_version}`;
+      }, (error) => {
+        if (generation === selectionGeneration) status2.textContent = `\u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
+      });
+    }
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "\u4E0B\u8F7D\u4E0E\u9AD8\u7EA7\u64CD\u4F5C";
+    const explanation = document.createElement("p");
+    explanation.textContent = "\u9884\u5236\u5E93\u53EF\u76F4\u63A5\u9009\u62E9\uFF1B\u539F\u59CB\u6863\u6848\u9700\u6784\u5EFA\u3002\u63D0\u4F9B\u6821\u9A8C\u503C\u65F6\uFF0C\u6309\u5757\u6838\u9A8C SHA-256\u3002";
+    const archiveLinks = document.createElement("div");
+    const archives = [
+      ["Bangumi \xB7 \u6700\u65B0\u539F\u59CB JSONL ZIP", "https://github.com/bangumi/Archive/releases/tag/archive"],
+      ["E-Hentai \xB7 RAW SQLite Zstandard", "https://github.com/URenko/e-hentai-db/releases/download/nightly/e-hentai.db.zstd"],
+      ["MangaBaka \xB7 RAW SQLite gzip-tar", "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz"],
+      ["BookWalker \xB7 RAW SQLite Zstandard", "https://static.bookwalker.com/data/bkwk-db.sqlite.zst"]
+    ];
+    for (const [label, href2] of archives) {
+      const link = document.createElement("a");
+      link.textContent = label;
+      link.href = href2;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      if (label.startsWith("Bangumi")) link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        status2.textContent = "";
+        try {
+          if (!options.fetchManifest) throw new Error("\u7F3A\u5C11\u8DE8\u57DF\u8BF7\u6C42\u6743\u9650");
+          const latest = await options.fetchManifest("https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json", panelController.signal);
+          const href3 = url(latest.browser_download_url);
+          if (!href3.startsWith("https://github.com/bangumi/Archive/releases/download/")) throw new Error("\u6765\u6E90\u5730\u5740\u4E0D\u7B26");
+          await startDownload(href3, "bangumi-source.zip");
+          status2.textContent = "\u539F\u59CB\u6863\u6848\u5DF2\u4E0B\u8F7D";
+        } catch (error) {
+          status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
+        }
+      });
+      archiveLinks.append(link, document.createTextNode(" \xB7 "));
+    }
+    const address = document.createElement("input");
+    address.type = "url";
+    address.placeholder = "\u9884\u5236\u6570\u636E\u5E93\u6216\u6E05\u5355 URL";
+    address.addEventListener("input", () => {
+      expectedCatalog = void 0;
+    });
+    const download2 = document.createElement("button");
+    download2.type = "button";
+    download2.textContent = "\u4E0B\u8F7D\u6570\u636E\u5E93";
+    const cancelDownload = document.createElement("button");
+    cancelDownload.type = "button";
+    cancelDownload.textContent = "\u53D6\u6D88\u4E0B\u8F7D";
+    cancelDownload.disabled = true;
+    let downloadController;
+    const startDownload = async (href2, filename) => {
+      if (!options.download) throw new Error("\u672A\u914D\u7F6E GM_download");
+      downloadController?.abort();
+      downloadController = new AbortController();
+      cancelDownload.disabled = false;
+      try {
+        await options.download(href2, filename, downloadController.signal);
+      } finally {
+        cancelDownload.disabled = true;
+        downloadController = void 0;
+      }
+    };
+    cancelDownload.addEventListener("click", () => downloadController?.abort());
+    download2.addEventListener("click", async () => {
+      try {
+        const href2 = url(address.value);
+        status2.textContent = "";
+        await startDownload(href2, "catalog.sqlite");
+        status2.textContent = "\u4E0B\u8F7D\u5B8C\u6210\uFF0C\u8BF7\u9009\u62E9\u6587\u4EF6";
+      } catch (error) {
+        status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
+      }
+    });
+    const loadManifest = document.createElement("button");
+    loadManifest.type = "button";
+    loadManifest.textContent = "\u8BFB\u53D6\u6E05\u5355";
+    const choices = document.createElement("select");
+    choices.setAttribute("aria-label", "\u9884\u5236\u76EE\u5F55");
+    const manifestDownload = document.createElement("button");
+    manifestDownload.type = "button";
+    manifestDownload.textContent = "\u4E0B\u8F7D\u6240\u9009\u76EE\u5F55";
+    loadManifest.addEventListener("click", async () => {
+      try {
+        choices.replaceChildren();
+        if (!options.fetchManifest) throw new Error("\u672A\u914D\u7F6E\u8DE8\u57DF\u6E05\u5355\u8BFB\u53D6");
+        const catalogs = validatePreparedManifest(await options.fetchManifest(url(address.value), panelController.signal));
+        for (const item of catalogs) {
+          const opt = document.createElement("option");
+          opt.value = item.url;
+          const info = [
+            item.provider,
+            item.source_version,
+            item.size_bytes ? `${(item.size_bytes / 1024 / 1024).toFixed(1)} MiB` : "",
+            item.sha256 ? `\u6E05\u5355 SHA-256 ${item.sha256.slice(0, 12)}\u2026` : "",
+            `schema ${item.schema_version ?? SCHEMA_VERSION}`,
+            `analyzer ${item.analyzer_version ?? ANALYZER_VERSION}`
+          ].filter(Boolean).join(" \xB7 ");
+          opt.textContent = info;
+          opt.dataset.filename = `${item.provider}.sqlite`;
+          choices.append(opt);
+          opt.dataset.provider = item.provider;
+          opt.dataset.sourceVersion = item.source_version;
+          if (item.sha256 !== void 0) opt.dataset.sha256 = item.sha256;
+          if (item.size_bytes !== void 0) opt.dataset.sizeBytes = String(item.size_bytes);
+          if (item.schema_version !== void 0) opt.dataset.schemaVersion = String(item.schema_version);
+          if (item.analyzer_version !== void 0) opt.dataset.analyzerVersion = String(item.analyzer_version);
+        }
+        status2.textContent = catalogs.length ? "\u9009\u62E9\u9884\u5236\u76EE\u5F55" : "\u6E05\u5355\u6CA1\u6709\u9884\u5236\u76EE\u5F55\uFF1B\u8BF7\u4F7F\u7528 CLI \u6784\u5EFA";
+      } catch (error) {
+        status2.textContent = `\u6E05\u5355\u8BFB\u53D6\u5931\u8D25\uFF1A${error.message}`;
+      }
+    });
+    manifestDownload.addEventListener("click", async () => {
+      try {
+        if (!choices.value) throw new Error("\u6CA1\u6709\u53EF\u4E0B\u8F7D\u7684\u76EE\u5F55");
+        status2.textContent = "";
+        const selected = choices.selectedOptions[0];
+        await startDownload(url(choices.value), selected?.dataset.filename || "catalog.sqlite");
+        expectedCatalog = selected ? {
+          provider: selected.dataset.provider,
+          source_version: selected.dataset.sourceVersion,
+          sha256: selected.dataset.sha256,
+          size_bytes: selected.dataset.sizeBytes === void 0 ? void 0 : Number(selected.dataset.sizeBytes),
+          schema_version: selected.dataset.schemaVersion === void 0 ? void 0 : Number(selected.dataset.schemaVersion),
+          analyzer_version: selected.dataset.analyzerVersion === void 0 ? void 0 : Number(selected.dataset.analyzerVersion)
+        } : void 0;
+        status2.textContent = "\u4E0B\u8F7D\u5B8C\u6210\uFF0C\u8BF7\u9009\u62E9\u6587\u4EF6";
+      } catch (error) {
+        status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
+      }
+    });
+    const advanced = document.createElement("div");
+    const capability = document.createElement("p");
+    const detected = browserBuildCapability();
+    const buildConfigured = Boolean(options.buildWorkerUrl || options.buildWorkerFactory || options.builder);
+    capability.textContent = buildConfigured ? detected.reason : "\u672A\u914D\u7F6E\u6784\u5EFA Worker\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI\u3002";
+    advanced.append(capability);
+    let builder = options.builder;
+    const ownsBuilder = !builder;
+    if ((options.buildWorkerUrl || options.buildWorkerFactory || builder) && detected.available) {
+      builder ??= new BrowserCatalogBuilder(options.buildWorkerUrl, {
+        workerFactory: options.buildWorkerFactory,
+        initOptions: options.buildInitOptions
+      });
+      const source = document.createElement("select");
+      for (const id of ["bangumi", "ehentai", "mangabaka", "bookwalker"]) {
+        const option2 = document.createElement("option");
+        option2.value = id;
+        option2.textContent = id;
+        source.append(option2);
+      }
+      const archive = document.createElement("input");
+      archive.type = "file";
+      const version = document.createElement("input");
+      version.placeholder = "\u6765\u6E90\u7248\u672C\uFF08\u53EF\u9009\uFF09";
+      const build = document.createElement("button");
+      build.type = "button";
+      build.textContent = "\u6784\u5EFA\u672C\u5730\u76EE\u5F55";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.textContent = "\u53D6\u6D88\u6784\u5EFA\u6216\u5BFC\u51FA";
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.textContent = "\u5206\u5757\u5BFC\u51FA";
+      const openButton = document.createElement("button");
+      openButton.type = "button";
+      openButton.textContent = "\u6253\u5F00\u6784\u5EFA\u7ED3\u679C";
+      build.addEventListener("click", async () => {
+        try {
+          if (!archive.files?.[0]) throw new Error("\u8BF7\u9009\u62E9\u6765\u6E90\u6863\u6848");
+          status2.textContent = "";
+          build.disabled = true;
+          const result = await builder.build(archive.files[0], source.value, version.value);
+          status2.textContent = `\u6784\u5EFA\u5B8C\u6210\uFF1A${result.provider} \xB7 ${result.count} \u6761\uFF1B\u53EF\u6253\u5F00\u6216\u5BFC\u51FA`;
+        } catch (error) {
+          status2.textContent = `\u6784\u5EFA\u5931\u8D25\uFF1A${error.message}`;
+        } finally {
+          build.disabled = false;
+        }
+      });
+      cancel.addEventListener("click", () => {
+        builder.cancel();
+        status2.textContent = "\u5DF2\u53D6\u6D88";
+      });
+      openButton.addEventListener("click", async () => {
+        try {
+          const manifest = await client.open(await builder.file());
+          status2.textContent = `${manifest.provider} \xB7 ${manifest.source_version}`;
+        } catch (error) {
+          status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}`;
+        }
+      });
+      exportButton.addEventListener("click", async () => {
+        try {
+          if (!builder.ready) throw new Error("\u6CA1\u6709\u5DF2\u5B8C\u6210\u7684\u76EE\u5F55");
+          if (typeof globalThis.showSaveFilePicker === "function") {
+            const handle = await globalThis.showSaveFilePicker({ suggestedName: "catalog.sqlite" });
+            status2.textContent = "";
+            await builder.exportTo(await handle.createWritable());
+            status2.textContent = "\u5BFC\u51FA\u5B8C\u6210";
+          } else {
+            const exportFile = await builder.file();
+            const objectUrl = URL.createObjectURL(exportFile);
+            exportUrls.add(objectUrl);
+            const anchor = document.createElement("a");
+            anchor.href = objectUrl;
+            anchor.download = "catalog.sqlite";
+            anchor.hidden = true;
+            root.append(anchor);
+            anchor.click();
+            anchor.remove();
+            exportedFiles.push(exportFile);
+            status2.textContent = "\u5DF2\u5F00\u59CB\u4E0B\u8F7D";
+          }
+        } catch (error) {
+          status2.textContent = `\u5BFC\u51FA\u5931\u8D25\uFF1A${error.message}`;
+        }
+      });
+      advanced.append(source, archive, version, build, cancel, openButton, exportButton);
+    }
+    details.append(summary, explanation, archiveLinks, address, download2, cancelDownload, loadManifest, choices, manifestDownload, advanced);
+    root.append(heading, file, status2, details);
+    container.append(root);
+    const exportUrls = /* @__PURE__ */ new Set();
+    const exportedFiles = [];
+    return async () => {
+      panelController.abort();
+      downloadController?.abort();
+      if (ownsBuilder && builder) await builder.dispose();
+      else builder?.cancel();
+      for (const objectUrl of exportUrls) URL.revokeObjectURL(objectUrl);
+      exportedFiles.length = 0;
+      root.remove();
+    };
+  }
+  function catalogProvider(client, provider) {
+    if (!["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(provider))
+      throw new Error(`\u4E0D\u652F\u6301\u7684\u672C\u5730\u76EE\u5F55\u6765\u6E90\uFF1A${provider}`);
+    return {
+      id: provider,
+      capabilities: { series: provider !== "ehentai", volumes: ["bangumi", "bookwalker"].includes(provider), volumeMetadata: ["bangumi", "bookwalker"].includes(provider), gallery: provider === "ehentai", offline: true },
+      async search(query, context) {
+        if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+        const abort = () => client.cancel();
+        context.signal.addEventListener("abort", abort, { once: true });
+        try {
+          return await client.search(query, provider);
+        } finally {
+          context.signal.removeEventListener("abort", abort);
+        }
+      },
+      async get(id, context) {
+        if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+        const abort = () => client.cancel();
+        context.signal.addEventListener("abort", abort, { once: true });
+        try {
+          return await client.get(provider, id);
+        } finally {
+          context.signal.removeEventListener("abort", abort);
+        }
+      },
+      async resolveLink(input2, context) {
+        if (context?.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+        if (provider === "bookwalker" && /^(?:CNT|PRD)_[\w-]+$/.test(input2)) return input2;
+        if (["bangumi", "mangabaka"].includes(provider) && /^\d+$/.test(input2)) return input2;
+        if (provider === "ehentai" && /^[1-9]\d*:[a-f0-9]{10}$/i.test(input2)) return input2.toLowerCase();
+        const u = new URL(input2);
+        const path = u.pathname.split("/").filter(Boolean);
+        if (provider === "bangumi" && ["bgm.tv", "bangumi.tv", "chii.in"].includes(u.hostname) && path[0] === "subject" && /^\d+$/.test(path[1] ?? "")) return path[1];
+        if (provider === "ehentai" && ["e-hentai.org", "exhentai.org"].includes(u.hostname) && path[0] === "g" && /^[1-9]\d*$/.test(path[1] ?? "") && /^[a-f0-9]{10}$/i.test(path[2] ?? "")) return `${path[1]}:${path[2].toLowerCase()}`;
+        if (provider === "mangabaka" && ["mangabaka.org", "www.mangabaka.org"].includes(u.hostname) && ["manga", "series"].includes(path[0]) && /^\d+$/.test(path[1] ?? "")) return path[1];
+        if (provider === "bookwalker" && ["bookwalker.com", "www.bookwalker.com"].includes(u.hostname) && path[0] === "series" && /^[\w-]+$/.test(path[1] ?? ""))
+          return path[1].startsWith("CNT_") ? path[1] : `CNT_${path[1]}`;
+        throw new Error("\u8BE5\u6765\u6E90\u7684\u94FE\u63A5\u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u4F7F\u7528\u76EE\u5F55 ID");
+      }
+    };
+  }
+
+  // src/catalog-extension.ts
+  var providers = ["bangumi", "ehentai", "mangabaka", "bookwalker"];
+  var base = workerAssetBase || "https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/catalog/";
+  var wasmRequest;
+  var sourceCache = /* @__PURE__ */ new Map();
+  function request(url2, responseType, signal) {
+    return new Promise((resolve, reject) => {
+      let handle;
+      let settled = false;
+      const finish2 = (action) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", abort);
+        action();
+      };
+      const abort = () => {
+        finish2(() => reject(new DOMException("Catalog asset request cancelled", "AbortError")));
+        handle?.abort();
+      };
+      if (signal?.aborted) {
+        abort();
+        return;
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        handle = GM_xmlhttpRequest({
+          url: url2,
+          method: "GET",
+          responseType,
+          timeout: 3e4,
+          onload: (response) => {
+            if (response.status < 200 || response.status >= 300) {
+              finish2(() => reject(new Error(`Catalog asset HTTP ${response.status}`)));
+              return;
+            }
+            const result = responseType === "arraybuffer" ? response.response : response.responseText ?? response.response;
+            if (responseType === "arraybuffer" && !(result instanceof ArrayBuffer)) {
+              finish2(() => reject(new Error("Catalog asset response was not binary")));
+              return;
+            }
+            if (responseType === "text" && typeof result !== "string") {
+              finish2(() => reject(new Error("Catalog worker response was not text")));
+              return;
+            }
+            finish2(() => resolve(result));
+          },
+          onerror: (error) => finish2(() => reject(new Error(`Catalog asset request failed: ${error?.error ?? error?.details ?? "network error"}`))),
+          ontimeout: () => finish2(() => reject(new Error("Catalog asset request timed out")))
+        });
+      } catch (error) {
+        finish2(() => reject(error instanceof Error ? error : new Error(String(error))));
+      }
+    });
+  }
+  function wasm(signal) {
+    if (!wasmRequest) {
+      wasmRequest = request(new URL("sqlite/sqlite3.wasm", base).href, "arraybuffer", signal).then((result) => result).catch((error) => {
+        wasmRequest = void 0;
+        throw error;
+      });
+    }
+    return wasmRequest;
+  }
+  async function worker(name, signal) {
+    let scriptPromise = sourceCache.get(name);
+    if (!scriptPromise) {
+      scriptPromise = request(new URL(name, base).href, "text", signal).then((result) => result);
+      sourceCache.set(name, scriptPromise);
+      scriptPromise.catch(() => {
+        if (sourceCache.get(name) === scriptPromise) sourceCache.delete(name);
+      });
+    }
+    const [script, binary] = await Promise.all([scriptPromise, wasm(signal)]);
+    const objectUrl = URL.createObjectURL(new Blob([script], { type: "text/javascript" }));
+    try {
+      const instance = new Worker(objectUrl, { type: "module" });
+      URL.revokeObjectURL(objectUrl);
+      return { worker: instance, initOptions: { wasmBinary: binary.slice(0) } };
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl);
+      throw new Error(`Blob Worker blocked by browser CSP: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  function download(url2, name, signal) {
+    return new Promise((resolve, reject) => {
+      let handle;
+      let finished = false;
+      const finish2 = (error) => {
+        if (finished) return;
+        finished = true;
+        signal.removeEventListener("abort", abort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const abort = () => {
+        finish2(new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError"));
+        handle?.abort();
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        handle = GM_download({
+          url: url2,
+          name,
+          onload: () => finish2(),
+          onerror: (error) => finish2(new Error(`\u4E0B\u8F7D\u5931\u8D25\uFF1A${error?.error ?? error?.details ?? `HTTP ${error?.status ?? "\u7F51\u7EDC\u9519\u8BEF"}`}`)),
+          ontimeout: () => finish2(new Error("\u4E0B\u8F7D\u8D85\u65F6"))
+        });
+        if (signal.aborted) abort();
+      } catch (error) {
+        finish2(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+  function fetchManifest(url2, signal) {
+    return request(url2, "text", signal).then((text2) => {
+      try {
+        return JSON.parse(text2);
+      } catch (error) {
+        throw new Error(`\u6E05\u5355 JSON \u9519\u8BEF\uFF1A${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+  }
+  function createCatalogExtension() {
+    let assetController;
+    const loadWorker = (name) => {
+      if (!assetController) throw new Error("\u79BB\u7EBF\u8D44\u6E90\u8BF7\u6C42\u5DF2\u5173\u95ED");
+      return worker(name, assetController.signal);
+    };
+    const client = new CatalogClient(void 0, { workerFactory: () => loadWorker("catalog-worker.js") });
+    const builder = new BrowserCatalogBuilder(void 0, {
+      workerFactory: () => loadWorker("catalog-build-worker.js")
+    });
+    let mounted = false;
+    return {
+      providers: providers.map((provider) => catalogProvider(client, provider)),
+      mount(container) {
+        if (mounted) throw new Error("\u79BB\u7EBF\u76EE\u5F55\u9762\u677F\u5DF2\u6302\u8F7D");
+        mounted = true;
+        assetController = new AbortController();
+        const unmount = mountCatalogPanel(container, client, {
+          download,
+          fetchManifest,
+          builder
+        });
+        return async () => {
+          assetController?.abort();
+          try {
+            await unmount();
+          } finally {
+            assetController = void 0;
+            mounted = false;
+            client.cancel();
+          }
+        };
+      },
+      async dispose() {
+        assetController?.abort();
+        client.dispose();
+        await builder.dispose();
+        mounted = false;
+      }
+    };
+  }
 
   // src/entry.ts
   function activate() {
@@ -1761,11 +3076,15 @@ SOFTWARE.
     if (!deployment) return false;
     const transport = new GMTransport(), registry = createRegistry(transport), client = new KomgaClient(deployment);
     const writer = new Writer(client, transport);
+    const catalog = createCatalogExtension();
     const launch = () => {
       if (!detectKomga(document, location)) return;
       if (document.getElementById("komga-metadata-panel")) return;
-      new Panel(registry, client, writer).mount();
+      new Panel(registry, client, writer).mount(catalog);
     };
+    window.addEventListener("pagehide", () => {
+      void Promise.resolve(catalog.dispose()).catch((error) => console.error("Catalog cleanup failed", error));
+    }, { once: true });
     GM_registerMenuCommand("\u5143\u6570\u636E\uFF1A\u5F53\u524D\u7CFB\u5217", launch);
     const host = document.createElement("div");
     host.id = "komga-metadata-launcher";

@@ -4,17 +4,22 @@ import { GMTransport } from './transport';
 import { createRegistry } from './providers';
 import { Writer } from './writer';
 import { Panel } from './ui';
+import { createCatalogExtension } from './catalog-extension';
 declare function GM_registerMenuCommand(name: string, action: () => void): unknown;
 function activate(): boolean {
   const deployment = detectKomga(document, location);
   if (!deployment) return false;
   const transport = new GMTransport(), registry = createRegistry(transport), client = new KomgaClient(deployment);
   const writer = new Writer(client, transport);
+  const catalog = createCatalogExtension();
   const launch = () => {
     if (!detectKomga(document, location)) return;
     if (document.getElementById('komga-metadata-panel')) return;
-    new Panel(registry, client, writer).mount();
+    new Panel(registry, client, writer).mount(catalog);
   };
+  window.addEventListener('pagehide', () => {
+    void Promise.resolve(catalog.dispose()).catch(error => console.error('Catalog cleanup failed', error));
+  }, { once: true });
   GM_registerMenuCommand('元数据：当前系列', launch);
   const host = document.createElement('div');
   host.id = 'komga-metadata-launcher';

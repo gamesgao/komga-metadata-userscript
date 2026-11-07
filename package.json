@@ -12,10 +12,13 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
+    "@types/node": "^22.19.0",
     "esbuild": "^0.25.12",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4",
-    "@types/node": "^22.19.0"
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0"
   }
 }

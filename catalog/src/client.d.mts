@@ -8,9 +8,15 @@ export interface CatalogManifest {
   created_at: string;
 }
 export interface ReadStats { reads: number; bytesRead: number; largestRead: number; fileSize: number }
+export interface CatalogWorkerOptions {
+  workerFactory?: () => Worker | Promise<Worker | { worker: Worker; initOptions?: { wasmBinary?: ArrayBuffer } }>;
+  initOptions?: { wasmBinary?: ArrayBuffer };
+}
 export class CatalogClient {
-  constructor(workerUrl: string | URL);
-  open(file: File): Promise<CatalogManifest>;
+  constructor(workerUrl?: string | URL, options?: CatalogWorkerOptions);
+  readonly hasFile: boolean;
+  readonly selectedFile?: File;
+  open(file: File, verification?: { sha256?: string }): Promise<CatalogManifest>;
   search(query: string, provider?: ProviderId, limit?: number): Promise<Candidate[]>;
   get(provider: ProviderId, id: string): Promise<MetadataRecord>;
   manifest(): Promise<CatalogManifest>;

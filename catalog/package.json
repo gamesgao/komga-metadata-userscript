@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=26" },
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "@sqlite.org/sqlite-wasm": "3.54.1-build1",
     "@zip.js/zip.js": "^2.8.11",
     "fzstd": "^0.1.1",

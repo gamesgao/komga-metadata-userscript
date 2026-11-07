@@ -1,14 +1,19 @@
 import { cancelled, MetadataError } from './model';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { type KomgaClient, type Metadata, type Target } from './komga';
-import { equal, type Plan, type Edit, type CoverEdit } from './plan';
+import { equal, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
 import type { Transport } from './transport';
 export interface Snapshot { target: Target; before: Metadata; after: Metadata }
 export interface CoverSnapshot { target: Target; previous?: string; previousHash?: string; uploaded: string; uploadedHash: string }
 export interface Outcome { target: Target; action: 'metadata' | 'cover'; status: 'success' | 'error'; message?: string }
 export interface Result { status: 'success' | 'partial' | 'error'; outcomes: Outcome[]; snapshots: Snapshot[]; covers: CoverSnapshot[] }
 export async function hash(blob: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  // Pure incremental SHA-256 also works on ordinary HTTP Komga deployments.
+  const digest = sha256.create();
+  for (let offset = 0; offset < blob.size; offset += 1024 * 1024) {
+    digest.update(new Uint8Array(await blob.slice(offset, offset + 1024 * 1024).arrayBuffer()));
+  }
+  return [...digest.digest()].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 export async function validateImage(blob: Blob): Promise<void> {
   if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(blob.type.toLowerCase()) || blob.size === 0 || blob.size > 25 * 1024 * 1024) throw new MetadataError('verification', '封面必须是 25 MiB 内的有效图片（不能是 HTML 或 SVG）');
@@ -71,6 +76,7 @@ export class Writer {
   async apply(plan: Plan, signal: AbortSignal): Promise<Result> {
     if (this.busy) throw new MetadataError('unavailable', '写入任务进行中');
     if (!plan.edits.length && !plan.cover) throw new MetadataError('verification', '没有选中可写变更');
+    for (const edit of plan.edits) edit.after = normalizeWriteFields(edit.after);
     this.busy = true; this.seriesId = plan.seriesId;
     const result: Result = { status: 'error', outcomes: [], snapshots: [], covers: [] };
     try {

@@ -1,0 +1,1 @@
+Runtime components: @sqlite.org/sqlite-wasm 3.54.1 (Apache-2.0; SQLite engine is public domain), @zip.js/zip.js (BSD-3-Clause), fzstd (MIT), @noble/hashes (MIT), and xxhash-wasm (MIT). The SQLite and bundled source licensing notices are retained in the worker bundles.

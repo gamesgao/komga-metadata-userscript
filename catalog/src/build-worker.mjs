@@ -5,6 +5,8 @@ import { Decompress } from 'fzstd';
 import { ZipReader, BlobReader } from '@zip.js/zip.js';
 import xxhash from 'xxhash-wasm';
 
+let wasmBinary;
+let sqlitePromise;
 class StreamReader {
   constructor(stream) {
     this.reader = stream.getReader();
@@ -319,7 +321,8 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
     throw new Error('浏览器构建需要安全上下文和 OPFS；请使用原生 CLI');
   if (!['bangumi', 'ehentai', 'mangabaka', 'bookwalker'].includes(provider)) throw new Error('不支持的来源');
   if (!(file instanceof File)) throw new Error('请选择本地来源文件');
-  const sqlite = await init();
+  const sqlite = await (sqlitePromise ??= init(wasmBinary
+    ? { wasmBinary, locateFile: () => '' } : {}));
   const outHandle = await directory.getFileHandle(outputName, { create: true });
   const sourceHandle = await directory.getFileHandle(sourceName, { create: true });
   let sourceFile = file;
@@ -402,7 +405,7 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
           }
           return bangumi(subject, persons, relations, books);
         };
-        each(output, 'SELECT json FROM stage_subjects', row => add(make(JSON.parse(row.json), true)));
+        each(output, "SELECT json FROM stage_subjects WHERE json_extract(json, '$.type') = 1 OR json_type(json, '$.type') IS NULL", row => add(make(JSON.parse(row.json), true)));
       } else if (provider === 'ehentai') {
         each(source, 'SELECT * FROM gallery', row => {
           const tags = stageRows(output, 'gid_tid', row.gid).flatMap(rel => stageRows(output, 'tag', rel.tid));
@@ -445,6 +448,17 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
   }
 }
 self.onmessage = async ({ data }) => {
-  try { self.postMessage({ result: await run(data) }); }
+  if (data?.type === 'init') {
+    try {
+      wasmBinary = data.payload?.wasmBinary;
+      sqlitePromise = init(wasmBinary ? { wasmBinary, locateFile: () => '' } : {});
+      await sqlitePromise;
+      self.postMessage({ type: 'ready' });
+    } catch (error) {
+      self.postMessage({ type: 'init-error', error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+  try { self.postMessage({ result: await run(data.payload ?? data) }); }
   catch (error) { self.postMessage({ error: error instanceof Error ? error.message : String(error) }); }
 };

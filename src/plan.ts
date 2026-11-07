@@ -34,8 +34,18 @@ function merge(old: Value | undefined, incoming: Value[]): Value[] {
   for (const v of incoming) if (!values.some(w => equal(v, w))) values.push(v);
   return values;
 }
+export function normalizeWriteFields(metadata: Metadata): Metadata {
+  const normalized = { ...metadata };
+  for (const field of ['tags', 'genres']) {
+    const values = normalized[field];
+    if (Array.isArray(values) && values.every((v): v is string => typeof v === 'string')) {
+      normalized[field] = [...new Set(values.map(v => v.trim().toLowerCase()).filter(Boolean))];
+    }
+  }
+  return normalized;
+}
 function mapped(r: MetadataRecord): Metadata {
-  return {
+  return normalizeWriteFields({
     title: nativeTitle(r), summary: r.summary === undefined ? undefined : plain(r.summary),
     publisher: r.publisher, language: r.language, status: r.status, ageRating: r.ageRating,
     releaseDate: r.releaseDate, isbn: r.isbn?.replace(/[- ]/g, ''),
@@ -43,7 +53,7 @@ function mapped(r: MetadataRecord): Metadata {
     links: r.links.map(l => ({ label: l.label, url: l.url })),
     alternateTitles: r.titles.map(t => ({ title: t.text, label: t.language || t.type })),
     authors: r.authors.map(a => ({ name: a.native || a.name, role: a.role }))
-  };
+  });
 }
 export function buildPlan(state: State, record: MetadataRecord, selection: Selection): Plan {
   const plan: Plan = { seriesId: state.series.id, edits: [], skipped: [] };

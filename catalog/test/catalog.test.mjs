@@ -19,7 +19,8 @@ async function fixtures(dir) {
   const rows = {
     'subject.jsonlines': [
       { id: 1, type: 1, name: '葬送のフリーレン', name_cn: '葬送的芙莉莲', summary: null, infobox: '{{Infobox\n|别名={ [芙莉莲] }\n|作者= 山田鐘人\n}}', tags: [{ name: '漫画' }], series: true },
-      { id: 2, type: 1, name: '葬送のフリーレン 第1巻', series: false, infobox: '{{Infobox\n|ISBN= 9780000000000\n}}' }
+      { id: 2, type: 1, name: '葬送のフリーレン 第1巻', series: false, infobox: '{{Infobox\n|ISBN= 9780000000000\n}}' },
+      { id: 3, type: 2, name: '葬送のフリーレン アニメ', series: true }
     ],
     'person.jsonlines': [{ id: 9, name: '山田鐘人', infobox: '{{Infobox Crt\n|简体中文名=山田钟人\n}}' }],
     'subject-persons.jsonlines': [{ subject_id: 1, person_id: 9, position: 1 }],
@@ -56,9 +57,9 @@ async function fixtures(dir) {
   await pipeline(createReadStream(join(dir, 'bw.sqlite')), createZstdCompress({ params: { [zlibConstants.ZSTD_c_checksumFlag]: 1 } }), createWriteStream(join(dir, 'bw.sqlite.zst')));
   return { bangumi: join(dir, 'bg.zip'), ehentai: join(dir, 'eh.db.zstd'), mangabaka: join(dir, 'manga.sqlite.tar.gz'), bookwalker: join(dir, 'bw.sqlite.zst') };
 }
-async function server() {
-  const base = resolve('dist');
+async function server(base = resolve('dist'), firstPort = 18820, lastPort = 18829) {
   const http = createServer(async (req, res) => {
+    res.setHeader('access-control-allow-origin', '*');
     if (req.url === '/') { res.setHeader('content-type', 'text/html'); res.end('<input type="file" id="file">'); return; }
     const path = resolve(base, '.' + decodeURIComponent(req.url.split('?')[0]));
     if (!path.startsWith(base + '/')) { res.writeHead(403).end(); return; }
@@ -67,7 +68,7 @@ async function server() {
       res.end(await readFile(path));
     } catch { res.writeHead(404).end(); }
   });
-  for (let port = 18820; port <= 18829; port++) {
+  for (let port = firstPort; port <= lastPort; port++) {
     try {
       await new Promise((ok, fail) => { http.once('error', fail); http.listen(port, '127.0.0.1', ok); });
       return { http, origin: `http://127.0.0.1:${port}` };
@@ -87,7 +88,7 @@ async function chromiumPath() {
 test('fixture archives, atomic failure, and browser file-backed FTS', async () => {
   await mkdir('.runtime', { recursive: true });
   const dir = await mkdtemp(resolve('.runtime/catalog-test-'));
-  let browser, http;
+  let browser, http, assetsHttp;
   try {
     const inputs = await fixtures(dir);
     const catalogs = {};
@@ -140,6 +141,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     assert.throws(() => catalogProvider({}, 'mangadex'));
 
     ({ http, origin: globalThis.testOrigin } = await server());
+    ({ http: assetsHttp, origin: globalThis.catalogAssetsOrigin } = await server(resolve('dist'), 18840, 18849));
     browser = await chromium.launch({
       headless: true, executablePath: await chromiumPath(),
       args: ['--host-resolver-rules=MAP catalog.test 127.0.0.1', '--no-proxy-server']
@@ -395,6 +397,91 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     assert.equal(afterCancel.cancelled, true);
     assert.equal(afterCancel.manifest.provider, 'bookwalker');
     await page.evaluate(() => window.client.dispose());
+    const blobPage = await browser.newPage();
+    await blobPage.goto(globalThis.testOrigin);
+    await blobPage.locator('#file').setInputFiles(catalogs.mangabaka);
+    await blobPage.evaluate(async ({ assetOrigin }) => {
+      const { CatalogClient } = await import('/client.mjs');
+      const makeWorker = async name => {
+        const [script, wasmBinary] = await Promise.all([
+          fetch(`${assetOrigin}/${name}`).then(response => {
+            if (!response.ok) throw new Error(`worker asset HTTP ${response.status}`);
+            return response.text();
+          }),
+          fetch(`${assetOrigin}/sqlite/sqlite3.wasm`).then(response => {
+            if (!response.ok) throw new Error(`WASM HTTP ${response.status}`);
+            return response.arrayBuffer();
+          })
+        ]);
+        const objectUrl = URL.createObjectURL(new Blob([script], { type: 'text/javascript' }));
+        const worker = new Worker(objectUrl, { type: 'module' });
+        URL.revokeObjectURL(objectUrl);
+        return { worker, initOptions: { wasmBinary } };
+      };
+      window.blobClient = new CatalogClient(undefined, { workerFactory: () => makeWorker('catalog-worker.js') });
+      window.blobBuilderFactory = () => makeWorker('catalog-build-worker.js');
+    }, { assetOrigin: globalThis.catalogAssetsOrigin });
+    const blobOpened = await blobPage.evaluate(async () => {
+      const result = await window.blobClient.open(document.querySelector('#file').files[0]);
+      return { result, hits: await window.blobClient.search('日本語漫画', 'mangabaka') };
+    });
+    assert.equal(blobOpened.result.provider, 'mangabaka');
+    assert.equal(blobOpened.hits[0].id, '77');
+    await blobPage.locator('#file').setInputFiles(inputs.mangabaka);
+    const blobPanelReady = await blobPage.evaluate(async () => {
+      const { BrowserCatalogBuilder } = await import('/browser-builder.mjs');
+      const { mountCatalogPanel } = await import('/panel.mjs');
+      window.blobBuilder = new BrowserCatalogBuilder(undefined, { workerFactory: window.blobBuilderFactory });
+      await window.blobBuilder.build(document.querySelector('#file').files[0], 'mangabaka', 'blob-fixture');
+      const container = document.createElement('div');
+      container.id = 'blob-panel'; document.body.append(container);
+      window.blobUnmount = mountCatalogPanel(container, window.blobClient, {
+        builder: window.blobBuilder,
+        fetchManifest: async (_url, signal) => {
+          if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+          return {
+            schema_version: 1, analyzer_version: 1,
+            catalogs: [{ provider: 'mangabaka', source_version: 'wrong-version', url: 'https://downloads.example/catalog.sqlite' }]
+          };
+        },
+        download: async (_url, _name, signal) => {
+          if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+        }
+      });
+      return window.blobBuilder.ready;
+    });
+    assert.equal(blobPanelReady, true);
+    await blobPage.locator('#blob-panel details').evaluate(element => { element.open = true; });
+    await blobPage.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
+    await blobPage.getByRole('button', { name: '读取清单' }).click();
+    await blobPage.getByRole('status').filter({ hasText: '选择预制目录' }).waitFor();
+    await blobPage.getByRole('button', { name: '下载所选目录' }).click();
+    await blobPage.getByRole('status').filter({ hasText: '下载完成，请选择文件' }).waitFor();
+    await blobPage.locator('#blob-panel input[type=file]').first().setInputFiles(catalogs.mangabaka);
+    await blobPage.getByRole('status').filter({ hasText: '打开失败：所选文件与清单版本或大小不符' }).waitFor({ timeout: 5000 });
+    assert.equal((await blobPage.evaluate(() => window.blobClient.manifest())).source_version, 'fixture-1');
+    await blobPage.evaluate(() => Object.defineProperty(window, 'showSaveFilePicker', {
+      value: undefined, configurable: true
+    }));
+    const browserDownload = blobPage.waitForEvent('download', { timeout: 5000 }).catch(() => undefined);
+    await blobPage.getByRole('button', { name: '分块导出' }).click();
+    const exported = await browserDownload;
+    assert.ok(exported, await blobPage.getByRole('status').textContent());
+    const exportedPath = join(dir, 'blob-export.sqlite');
+    await exported.saveAs(exportedPath);
+    await blobPage.locator('#file').setInputFiles(exportedPath);
+    const reopenedExport = await blobPage.evaluate(async () => {
+      const manifest = await window.blobClient.open(document.querySelector('#file').files[0]);
+      const hits = await window.blobClient.search('日本語漫画', 'mangabaka');
+      await window.blobUnmount();
+      const reopened = await window.blobClient.manifest();
+      return { manifest, hits, reopened };
+    });
+    assert.equal(reopenedExport.manifest.provider, 'mangabaka');
+    assert.equal(reopenedExport.hits[0].id, '77');
+    assert.equal(reopenedExport.reopened.provider, 'mangabaka');
+    await blobPage.evaluate(() => window.blobClient.dispose());
+    await blobPage.close();
     const insecure = await browser.newPage();
     await insecure.route('http://catalog.test:**/*', async route => {
       const target = route.request().url().replace('catalog.test', '127.0.0.1');
@@ -419,6 +506,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
   } finally {
     if (browser) await browser.close();
     if (http) await new Promise(ok => http.close(ok));
+    if (assetsHttp) await new Promise(ok => assetsHttp.close(ok));
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -85,6 +85,16 @@ async function install(page: Page, path = '/reader/oneshot/s-real') {
       GM_getValue: (k: string, fallback: unknown) => { calls.push('storage-get'); return values[k] ?? fallback; },
       GM_setValue: (k: string, value: unknown) => { calls.push('storage-set'); values[k] = value; },
       GM_registerMenuCommand: (_name: string, action: () => void) => { calls.push('menu'); Object.assign(window, { fixtureMenu: action }); },
+      fixtureDownloadMode: 'success',
+      GM_download: (o: { url: string; name: string; onload(): void; onerror(error: { error: string }): void; ontimeout(): void }) => {
+        calls.push(`download:${o.name}`);
+        const mode = (window as unknown as { fixtureDownloadMode: string }).fixtureDownloadMode;
+        const timer = window.setTimeout(() => {
+          if (mode === 'success') o.onload();
+          else if (mode === 'error') o.onerror({ error: 'fixture failure' });
+        }, 100);
+        return { abort: () => { window.clearTimeout(timer); o.onerror({ error: 'cancelled' }); } };
+      },
       GM_xmlhttpRequest: (o: { url: string; method: string; headers: Record<string, string>; data?: string; responseType: string; onload(r: unknown): void; onerror(): void; onabort(): void }) => {
         calls.push('network');
         const c = new AbortController();
@@ -128,7 +138,13 @@ test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover 
   expect(book.metadata.authors).toEqual([{ name: '山田鐘人', role: 'writer' }]);
   expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);
   expect(patches.filter(p => p.path.includes('/series/')).every(p => !('authors' in p.body))).toBe(true);
-  await expect(page.getByText('✓ 已读回确认', { exact: true })).toHaveCSS('opacity', '0', { timeout: 4000 });
+  await page.waitForFunction(() => {
+    const host = document.querySelector('#komga-metadata-panel');
+    return !host || Number(getComputedStyle(host).opacity) < 1;
+  });
+  await expect(page.locator('#komga-metadata-panel')).toHaveCount(0);
+  await page.getByRole('button', { name: '元数据', exact: true }).click();
+  await expect(page.getByRole('button', { name: '撤销最近写入' })).toBeEnabled();
   await page.getByRole('button', { name: '撤销最近写入' }).click();
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toHaveCSS('opacity', '1');
   expect(series.metadata.tags).toEqual(['old']); expect(book.metadata.authors).toEqual([]);
@@ -159,6 +175,36 @@ test('fixture browser: no UI/menu/storage/network outside detected Komga; menu s
   await page.locator('#komga-metadata-launcher').evaluate(e => e.remove());
   await page.evaluate(() => { const w = window as unknown as { fixtureMenu: () => void }; w.fixtureMenu(); });
   await expect(page.locator('#komga-metadata-panel')).toBeVisible();
+});
+test('fixture browser: bundled offline panel uses GM_download completion, error, and cancellation callbacks', async ({ page }) => {
+  await install(page);
+  await page.route('https://downloads.example/manifest.json', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({
+      schema_version: 1, analyzer_version: 1,
+      catalogs: [{ provider: 'bangumi', source_version: 'fixture', url: 'https://downloads.example/prepared.sqlite' }]
+    })
+  }));
+  await page.getByRole('button', { name: '元数据', exact: true }).click();
+  await page.getByLabel('来源模式').selectOption('offline');
+  for (const id of ['bangumi', 'ehentai', 'mangabaka', 'bookwalker'])
+    await expect(page.getByRole('checkbox', { name: id, exact: true })).toBeVisible();
+  await page.getByLabel('来源模式').selectOption('online');
+  await page.getByText('下载与高级操作', { exact: true }).click();
+  await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
+  await page.getByRole('button', { name: '读取清单' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '选择预制目录' })).toBeVisible();
+  await page.getByLabel('预制目录').selectOption('https://downloads.example/prepared.sqlite');
+  await page.getByRole('button', { name: '下载所选目录' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '下载完成，请选择文件' })).toBeVisible();
+  await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/catalog.sqlite');
+  await page.evaluate(() => { (window as unknown as { fixtureDownloadMode: string }).fixtureDownloadMode = 'error'; });
+  await page.getByRole('button', { name: '下载数据库' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '下载失败：fixture failure' })).toBeVisible();
+  await page.evaluate(() => { (window as unknown as { fixtureDownloadMode: string }).fixtureDownloadMode = 'hold'; });
+  await page.getByRole('button', { name: '下载数据库' }).click();
+  await page.getByRole('button', { name: '取消下载' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '下载失败：已取消下载' })).toBeVisible();
 });
 test('fixture browser: one failed source keeps candidate visible; editable/unselected preview fields obey selection', async ({ page }) => {
   await install(page);

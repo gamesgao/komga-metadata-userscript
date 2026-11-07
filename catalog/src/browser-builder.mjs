@@ -5,9 +5,11 @@ export function browserBuildCapability() {
   return { available: true, reason: '支持四种本地来源档案；浏览器资源不足时请使用原生 CLI' };
 }
 export class BrowserCatalogBuilder {
-  constructor(workerUrl) {
-    if (!workerUrl) throw new Error('Build worker URL is required');
+  constructor(workerUrl, options = {}) {
+    if (!workerUrl && !options.workerFactory) throw new Error('Build worker URL or factory is required');
     this.workerUrl = workerUrl;
+    this.workerFactory = options.workerFactory;
+    this.initOptions = options.initOptions;
     this.current = undefined;
     this.completed = undefined;
     this.generation = 0;
@@ -26,15 +28,39 @@ export class BrowserCatalogBuilder {
       if (generation !== this.generation) throw new DOMException('Build cancelled', 'AbortError');
       const nonce = crypto.randomUUID();
       const outputName = `output-${nonce}.sqlite`, sourceName = `source-${nonce}.sqlite`;
-      const worker = new Worker(this.workerUrl, { type: 'module' });
+      const created = this.workerFactory
+        ? await this.workerFactory()
+        : new Worker(this.workerUrl, { type: 'module' });
+      const worker = created?.worker ?? created;
+      const initOptions = created?.initOptions ?? this.initOptions;
+      if (!worker || typeof worker.postMessage !== 'function') throw new Error('Build worker factory returned no Worker');
       const task = { worker, directory, sourceName, outputName, reject: undefined };
       this.current = task;
       try {
         const result = await new Promise((resolve, reject) => {
-          task.reject = reject;
-          worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.result);
-          worker.onerror = event => { event.preventDefault(); reject(new Error(`Build worker failed: ${event.message}`)); };
-          worker.postMessage({ file, directory, sourceName, outputName, provider, sourceVersion });
+          let settled = false;
+          const fail = error => { if (!settled) { settled = true; reject(error); } };
+          task.reject = fail;
+          worker.onmessage = ({ data }) => {
+            if (data.type === 'ready') {
+              const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+              worker.postMessage(initOptions ? { type: 'build', payload } : payload);
+            } else if (data.type === 'init-error') fail(new Error(data.error));
+            else if (data.error) fail(new Error(data.error));
+            else if (!settled) { settled = true; resolve(data.result); }
+          };
+          worker.onerror = event => {
+            event.preventDefault();
+            fail(new Error(`Build worker failed: ${event.message || 'startup error'} (Blob Worker may be blocked by browser CSP)`));
+          };
+          if (initOptions) {
+            const payload = { ...initOptions };
+            const transfer = payload.wasmBinary instanceof ArrayBuffer ? [payload.wasmBinary] : [];
+            worker.postMessage({ type: 'init', payload }, transfer);
+          } else {
+            const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+            worker.postMessage(payload);
+          }
         });
         if (generation !== this.generation) throw new DOMException('Build cancelled', 'AbortError');
         const handle = await directory.getFileHandle(outputName);

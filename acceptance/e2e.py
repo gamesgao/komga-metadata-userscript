@@ -74,8 +74,11 @@ def fixture_ids(state: dict) -> tuple[str, str, list[str]]:
 def import_userscript(context: BrowserContext, extension_id: str) -> None:
     options = context.new_page()
     options.goto(f"chrome-extension://{extension_id}/options.html#nav=utilities", wait_until="domcontentloaded")
-    options.wait_for_timeout(1_500)
     file_input = options.locator('input[type="file"]')
+    try:
+        file_input.first.wait_for(state="attached", timeout=20_000)
+    except PlaywrightTimeout:
+        pass
     if file_input.count() == 0:
         controls = options.locator("input,button,[role=button]").evaluate_all(
             "(items) => items.map(e => ({tag:e.tagName,type:e.type||'',id:e.id||'',text:(e.innerText||e.getAttribute('aria-label')||'').slice(0,80)}))"

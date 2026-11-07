@@ -16,6 +16,18 @@ function title(record, text, type = 'native', language) {
 function optional(record, field, value) {
   if (value !== null && value !== undefined && value !== '') record[field] = value;
 }
+function sourceDate(value) {
+  if (typeof value !== 'string') return undefined;
+  const match = value.match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日|T.*)?$/);
+  if (!match) return undefined;
+  const iso = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== iso ? undefined : iso;
+}
+function addAuthor(record, name, role) {
+  if (typeof name !== 'string' || !name.trim()) return;
+  if (!record.authors.some(a => a.name === name && a.role === role)) record.authors.push({ name, role });
+}
 function cover(record, url, volume) {
   if (typeof url === 'string' && /^https?:\/\//i.test(url))
     record.covers.push({ url, ...(Number.isFinite(volume) ? { volume } : {}) });
@@ -38,7 +50,9 @@ function infobox(value) {
 
 export function bangumi(subject, persons = [], relations = [], books = []) {
   const id = String(subject.id);
-  const r = base('bangumi', id, `https://bgm.tv/subject/${encodeURIComponent(id)}`, { subject, persons, relations });
+  // Keep person identity/roles/infobox, not a publisher biography repeated in every volume.
+  const rawPersons = persons.map(p => ({ ...p, person: p.person ? { ...p.person, summary: undefined } : p.person }));
+  const r = base('bangumi', id, `https://bgm.tv/subject/${encodeURIComponent(id)}`, { subject, persons: rawPersons, relations });
   title(r, subject.name);
   title(r, subject.name_cn ?? subject.nameCN, 'localized', 'zh');
   for (const item of infobox(subject.infobox)) {
@@ -47,16 +61,23 @@ export function bangumi(subject, persons = [], relations = [], books = []) {
     if (/^(出版社|publisher)$/i.test(item.key ?? '')) optional(r, 'publisher', values[0]);
     if (/^(发售日|発売日)$/i.test(item.key ?? '')) optional(r, 'releaseDate', values[0]);
     if (/^ISBN(?:-1[03])?$/i.test(item.key ?? '')) optional(r, 'isbn', values[0]);
-    if (/^(作者|作画|原作)$/i.test(item.key ?? '')) for (const v of values) {
-      if (typeof v === 'string' && v) r.authors.push({ name: v, role: item.key });
-    }
+    const role = { 作者: 'writer', 作画: 'penciller', 原作: 'writer', 插画: 'penciller', 插圖: 'penciller', 翻译: 'translator', 譯者: 'translator' }[item.key];
+    if (role) for (const v of values) addAuthor(r, v, role);
   }
-  for (const p of persons) if (p.person?.name && !r.authors.some(a => a.name === p.person.name))
-    r.authors.push({ name: p.person.name, role: String(p.relation.position ?? 'contributor') });
+  const roles = { 2001: 'writer', 2002: 'penciller', 2003: 'cover', 2006: 'translator', 2007: 'writer', 2009: 'character', 2010: 'writer' };
+  for (const p of persons) {
+    const role = roles[p.relation?.position];
+    if (role) addAuthor(r, p.person?.name, role);
+    // Publisher, serialization magazine and agents aren't authors.
+    if (p.relation?.position === 2004 && !r.publisher) optional(r, 'publisher', p.person?.name);
+  }
   r.tags = (subject.tags ?? []).map(t => typeof t === 'string' ? t : t.name).filter(Boolean);
-  optional(r, 'summary', subject.summary); optional(r, 'releaseDate', subject.date ?? r.releaseDate);
+  optional(r, 'summary', subject.summary);
+  const releaseDate = sourceDate(subject.date) || sourceDate(r.releaseDate);
+  delete r.releaseDate;
+  optional(r, 'releaseDate', releaseDate);
   if (subject.series === false) {
-    const match = String(subject.name ?? '').match(/第\s*(\d+(?:\.\d+)?)\s*巻|(?:vol(?:ume)?\.?)\s*(\d+(?:\.\d+)?)/i);
+    const match = String(subject.name ?? '').match(/第\s*(\d+(?:\.\d+)?)\s*巻|(?:vol(?:ume)?\.?\s*|[（(])(\d+(?:\.\d+)?)(?:[）)]|\b)/i);
     if (match) r.volume = Number(match[1] ?? match[2]);
   }
   if (books.length) r.books = books;
@@ -97,7 +118,7 @@ export function mangabaka(row, relatedTags = []) {
   const publishers = list(row.publishers);
   optional(r, 'publisher', publishers[0]?.name);
   optional(r, 'summary', row.description); optional(r, 'language', row.original_language);
-  optional(r, 'releaseDate', row.published_start_date);
+  optional(r, 'releaseDate', sourceDate(row.published_start_date));
   const status = { RELEASING: 'ONGOING', COMPLETED: 'ENDED', HIATUS: 'HIATUS', CANCELLED: 'ABANDONED' }[String(row.status ?? '').toUpperCase()];
   optional(r, 'status', status);
   cover(r, row.cover_raw_url || row.cover_x350_x1);
@@ -114,9 +135,9 @@ export function bookwalkerBook(row, contributors, externalIds, image) {
   const kind = row.level === 3 ? 'chapter' : 'volume';
   const url = `https://bookwalker.com/${kind}/${String(row.content_id ?? id).replace(/^CNT_/, '')}`;
   const r = base('bookwalker', id, url, { product: row, contributors, externalIds, image });
-  title(r, row.title); title(r, row.display_title, 'alias');
+  title(r, row.display_title || row.title); title(r, row.title, 'alias');
   for (const t of list(row.alt_titles)) title(r, t, 'alias');
-  optional(r, 'summary', row.description); optional(r, 'releaseDate', row.on_sale_at);
+  optional(r, 'summary', row.description); optional(r, 'releaseDate', sourceDate(row.on_sale_at));
   if (row.level === 2) {
     const text = `${row.title ?? ''} ${row.display_title ?? ''}`;
     const match = text.match(/第\s*(\d+(?:\.\d+)?)\s*巻|(?:vol(?:ume)?\.?)\s*(\d+(?:\.\d+)?)/i);
@@ -136,7 +157,9 @@ export function bookwalker(row, tags, image, books) {
   title(r, row.title); title(r, row.display_title, 'alias');
   for (const t of list(row.alt_titles)) title(r, t, 'alias');
   r.tags = tags.map(t => t.name).filter(Boolean);
-  optional(r, 'summary', row.description); optional(r, 'releaseDate', row.listed_at);
+  optional(r, 'summary', row.description);
+  // listed_at is catalogue ingestion, not the work's release date.
+  for (const book of books) for (const author of book.authors ?? []) addAuthor(r, author.name, author.role);
   cover(r, imageUrl(image?.id));
   if (books.length) r.books = books;
   return r;

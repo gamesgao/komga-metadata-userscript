@@ -1,7 +1,9 @@
 import init from './sqlite/index.mjs';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { matchesTitlePhrases } from './phrase.mjs';
 import { SCHEMA_VERSION, ANALYZER_VERSION, matchQuery } from './analyzer.mjs';
 
-const sqlitePromise = init();
+let sqlitePromise;
 let active;
 let sequence = 0;
 
@@ -80,12 +82,37 @@ function openFile(sqlite, file) {
 }
 
 self.onmessage = async ({ data }) => {
+  if (data?.type === 'init') {
+    try {
+      sqlitePromise = init({ ...(data.payload ?? {}), locateFile: () => '' });
+      await sqlitePromise;
+      self.postMessage({ type: 'ready' });
+    } catch (error) {
+      self.postMessage({ type: 'init-error', error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
   const { id, method, args = [] } = data;
   try {
-    const sqlite = await sqlitePromise;
+    const sqlite = await (sqlitePromise ??= init());
     let result;
     if (method === 'open') {
       const next = openFile(sqlite, args[0]);
+      try {
+        const expected = args[1]?.sha256;
+        if (expected !== undefined) {
+          if (typeof expected !== 'string' || !/^[a-f0-9]{64}$/i.test(expected)) throw new Error('Invalid expected SHA-256');
+          const reader = new FileReaderSync(), digest = sha256.create(), file = args[0];
+          for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
+            digest.update(new Uint8Array(reader.readAsArrayBuffer(file.slice(offset, offset + 1024 * 1024))));
+          }
+          const actual = [...digest.digest()].map(b => b.toString(16).padStart(2, '0')).join('');
+          if (actual !== expected.toLowerCase()) throw new Error('SHA-256 mismatch; previous catalog retained');
+          next.manifest = { ...next.manifest, verified_sha256: actual };
+          next.stats.verificationBytesRead = file.size;
+          next.stats.verificationChunkSize = 1024 * 1024;
+        }
+      } catch (error) { next.close(); throw error; }
       if (active) active.close();
       active = next;
       result = active.manifest;
@@ -100,11 +127,22 @@ self.onmessage = async ({ data }) => {
         const [query, provider, limit = 50] = args;
         if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('Invalid result limit');
         const expression = matchQuery(query);
-        result = expression ? active.db.selectObjects(
-          `SELECT e.provider,e.source_id AS id,e.title,e.url FROM title_fts f
-           JOIN entries e ON e.id=f.rowid WHERE title_fts MATCH ?
-           AND (? IS NULL OR e.provider=?) ORDER BY rank LIMIT ?`,
-          [expression, provider ?? null, provider ?? null, limit]) : [];
+        result = [];
+        if (expression) {
+          const batchSize = 64;
+          for (let offset = 0; result.length < limit; offset += batchSize) {
+            const rows = active.db.selectObjects(
+              `SELECT e.provider,e.source_id AS id,e.title,e.url,e.record FROM title_fts f
+               JOIN entries e ON e.id=f.rowid WHERE title_fts MATCH ?
+               AND (? IS NULL OR e.provider=?) ORDER BY rank LIMIT ? OFFSET ?`,
+              [expression, provider ?? null, provider ?? null, batchSize, offset]);
+            for (const {record, ...candidate} of rows) {
+              if (matchesTitlePhrases(JSON.parse(record), query)) result.push(candidate);
+              if (result.length === limit) break;
+            }
+            if (rows.length < batchSize) break;
+          }
+        }
       } else if (method === 'get') {
         const row = active.db.selectObject('SELECT record FROM entries WHERE provider=? AND source_id=?', args) ??
           active.db.selectObject('SELECT record FROM book_entries WHERE provider=? AND source_id=?', args);

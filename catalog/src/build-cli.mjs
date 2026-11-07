@@ -102,7 +102,7 @@ function bangumiRecords(stage) {
     }
     return bangumi(s, persons, rels, books);
   }
-  return (function* () { for (const row of stage.prepare('SELECT json FROM subjects').iterate()) yield record(JSON.parse(row.json), true); })();
+  return (function* () { for (const row of stage.prepare("SELECT json FROM subjects WHERE json_extract(json, '$.type') = 1 OR json_type(json, '$.type') IS NULL").iterate()) yield record(JSON.parse(row.json), true); })();
 }
 function prepareRelations(stage, source, table, column) {
   const exists = source.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table);

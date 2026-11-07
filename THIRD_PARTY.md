@@ -10,8 +10,8 @@ Upstream MIT notices:
 
 Copyright (c) 2022 Snd-R
 
-Copyright (c) 2023 eeezae  
-Copyright (c) 2025 ramu  
+Copyright (c) 2023 eeezae
+Copyright (c) 2025 ramu
 Copyright (c) 2025 dyphire
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

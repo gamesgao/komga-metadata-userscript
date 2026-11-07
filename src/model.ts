@@ -60,6 +60,10 @@ export class Registry {
 }
 export interface SearchResult { id: string; candidates?: Candidate[]; error?: Error }
 // Component 2 registers a Provider and mounts its independent advanced panel here.
-export interface CatalogExtension { provider: Provider; mount(container: HTMLElement): void; dispose(): void }
+export interface CatalogExtension {
+  providers: Provider[];
+  mount(container: HTMLElement): void | (() => void | Promise<void>);
+  dispose(): void | Promise<void>;
+}
 declare const __ASSET_BASE__: string;
 export const workerAssetBase = typeof __ASSET_BASE__ === 'undefined' ? '' : __ASSET_BASE__;
