@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createZstdCompress, zstdCompressSync, constants as zlibConstants } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { resolve, join, extname } from 'node:path';
-import { homedir } from 'node:os';
+
 import { chromium } from 'playwright';
 import { build } from '../src/build-cli.mjs';
 import { tokens, matchQuery } from '../src/analyzer.mjs';
@@ -76,14 +76,6 @@ async function server(base = resolve('dist'), firstPort = 18820, lastPort = 1882
   }
   throw new Error('No free catalog test port');
 }
-async function chromiumPath() {
-  const cache = join(homedir(), 'Library/Caches/ms-playwright');
-  for (const dir of (await readdir(cache)).filter(n => n.startsWith('chromium_headless_shell-')).sort().reverse()) {
-    const candidate = join(cache, dir, 'chrome-headless-shell-mac-arm64/chrome-headless-shell');
-    try { await access(candidate); return candidate; } catch { /* try another installed revision */ }
-  }
-  return undefined;
-}
 
 test('fixture archives, atomic failure, and browser file-backed FTS', async () => {
   await mkdir('.runtime', { recursive: true });
@@ -143,7 +135,8 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     ({ http, origin: globalThis.testOrigin } = await server());
     ({ http: assetsHttp, origin: globalThis.catalogAssetsOrigin } = await server(resolve('dist'), 18840, 18849));
     browser = await chromium.launch({
-      headless: true, executablePath: await chromiumPath(),
+      // Playwright resolves the OS, locked browser revision, and PLAYWRIGHT_BROWSERS_PATH.
+      headless: true,
       args: ['--host-resolver-rules=MAP catalog.test 127.0.0.1', '--no-proxy-server']
     });
     const page = await browser.newPage();
