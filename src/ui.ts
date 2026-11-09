@@ -1,9 +1,10 @@
-import { type CatalogExtension, type Credentials, type MetadataRecord, type Registry, nativeTitle, MetadataError } from './model';
+import { type CatalogExtension, type Credentials, type MetadataRecord, type Registry, nativeTitle, MetadataError, cancelled } from './model';
 import { currentSeries, type KomgaClient, type State, type Value } from './komga';
 import { buildPlan, type Field, type Plan, seriesFields, bookFields } from './plan';
 import { type Writer, type Result } from './writer';
 import { storage } from './transport';
 import { panelStyle, icon } from './ui-style';
+import { Thumbnails } from './thumbnails';
 interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials }
 interface SavedUndo { seriesId: string; result: Result }
 const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
@@ -71,6 +72,10 @@ export class Panel {
   private undoData?: SavedUndo = storage.get<SavedUndo | undefined>('undo-v1', undefined);
   private controls = element('div');
   private results = element('div');
+  private detail = element('div');
+  private thumbnails?: Thumbnails;
+  private collapsedSources = new Set<string>();
+  private previewUrls = new Set<string>();
   private preview = element('div');
   private query = element('input');
   private direct = element('input');
@@ -135,7 +140,7 @@ export class Panel {
     this.sourceMode.onchange = () => {
       this.saveSourceChecks();
       this.settings.sourceMode = this.sourceMode.value as 'online' | 'offline';
-      this.selected = undefined; this.invalidate();
+      this.clearSearch();
       this.renderSourceChecks();
       storage.set('settings-v1', this.settings);
     };
@@ -145,7 +150,8 @@ export class Panel {
     const directRow = element('div'); directRow.className = 'direct-row';
     directRow.append(this.provider, this.direct, button('读取', () => void this.run(() => this.readDirect())));
     directDetails.append(directRow); searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.results);
-    const choices = element('div'); choices.className = 'card'; choices.append(element('h3', '写入选项'));
+    const choices = element('div'); choices.className = 'card';
+    this.detail.className = 'selected-record'; choices.append(this.detail, element('h3', '写入选项'));
     this.book.setAttribute('aria-label', '目标书籍'); this.cover.setAttribute('aria-label', '封面'); this.coverTarget.setAttribute('aria-label', '封面目标');
     option(this.cover, '', '不修改封面');
     for (const [label, select] of [['目标书籍', this.book], ['封面', this.cover], ['封面目标', this.coverTarget]] as const) {
@@ -247,6 +253,8 @@ export class Panel {
     return this.controller.signal;
   }
   private invalidate(): void {
+    for (const url of this.previewUrls) URL.revokeObjectURL(url);
+    this.previewUrls.clear();
     this.plan = undefined; this.applyButton.disabled = true; this.preview.replaceChildren();
     this.controls.hidden = false; this.previewButton.hidden = false;
     this.previewButton.disabled = !this.selected;
@@ -277,8 +285,13 @@ export class Panel {
     }
   }
   private context() { return { signal: this.signal, credentials: structuredClone(this.settings.credentials) }; }
+  private clearSearch(): void {
+    this.thumbnails?.dispose(); this.thumbnails = undefined;
+    this.selected = undefined; this.detail.replaceChildren(); this.results.replaceChildren(); this.invalidate();
+    this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
+  }
   private async search() {
-    this.invalidate(); this.results.replaceChildren();
+    this.clearSearch();
     this.saveSourceChecks();
     const ids = this.sourceIds();
     if (!this.query.value.trim() || !ids.length) throw new MetadataError('verification', '输入搜索词并选择来源');
@@ -287,17 +300,32 @@ export class Panel {
       try { return { id, candidates: await this.activeProvider(id).search(query, context) }; }
       catch (error) { return { id, error: error instanceof Error ? error : new Error(String(error)) }; }
     }));
+    cancelled(context.signal);
+    const thumbnails = this.thumbnails = new Thumbnails(this.viewport, (url, signal) => this.writer.image(url, signal));
+    const imageContext = { ...context, signal: thumbnails.signal };
     for (const result of results) {
-      const group = element('div'); group.className = 'result-group'; group.append(element('h3', result.id));
+      const group = element('details'); group.className = 'result-group'; group.dataset.provider = result.id;
+      group.open = !this.collapsedSources.has(`${this.sourceMode.value}:${result.id}`);
+      const groupKey = `${this.sourceMode.value}:${result.id}`;
+      group.addEventListener('toggle', () => { if (group.open) this.collapsedSources.delete(groupKey); else this.collapsedSources.add(groupKey); });
+      const heading = element('summary'); heading.append(element('span', result.id));
+      const count = element('span', result.error ? '来源失败' : `${result.candidates?.length ?? 0} 项`); count.className = 'result-count'; heading.append(count);
+      group.append(heading);
       if (result.error) group.append(element('p', result.error.message));
       else if (!result.candidates?.length) group.append(element('p', '无匹配'));
+      const grid = element('div'); grid.className = 'candidate-grid';
       for (const c of result.candidates ?? []) {
-        const candidate = button(c.title, () => void this.run(async () => {
-          const provider = this.activeProvider(c.provider);
+        const provider = this.activeProvider(c.provider);
+        const candidate = button('', () => void this.run(async () => {
           this.choose(await provider.get(c.id, this.context()), provider);
         }));
-        candidate.className = 'candidate'; candidate.setAttribute('aria-label', c.title); group.append(candidate);
+        candidate.className = 'candidate'; candidate.setAttribute('aria-label', c.title); candidate.setAttribute('aria-pressed', 'false');
+        candidate.dataset.key = `${c.provider}:${c.id}`; candidate.title = c.title;
+        const title = element('span', c.title); title.className = 'candidate-title';
+        candidate.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title);
+        grid.append(candidate);
       }
+      group.append(grid);
       this.results.append(group);
     }
     if (results.some(r => r.error)) { this.status.dataset.state = 'error'; this.status.textContent = '部分来源失败；其他结果仍可选择'; }
@@ -309,21 +337,22 @@ export class Panel {
     this.choose(await p.get(id, this.context()), p);
   }
   private choose(record: MetadataRecord, provider = this.activeProvider(record.provider)) {
-    this.invalidate(); this.selected = record; this.results.replaceChildren();
+    this.invalidate(); this.selected = record; this.detail.replaceChildren();
+    this.results.querySelectorAll<HTMLButtonElement>('.candidate').forEach(e => e.setAttribute('aria-pressed', String(e.dataset.key === `${record.provider}:${record.id}`)));
     const sourceUrl = element('p', record.url); sourceUrl.className = 'record-url'; sourceUrl.title = record.url;
-    this.results.append(element('h3', `${record.provider} · ${nativeTitle(record)}`), sourceUrl);
+    this.detail.append(element('h3', `${record.provider} · ${nativeTitle(record)}`), sourceUrl);
     const capabilities = provider.capabilities;
     const scope = capabilities.gallery ? '画廊；不推断卷号' : capabilities.volumeMetadata ? '支持单卷详情；须明确映射' : capabilities.volumeCovers ? '仅系列与卷封面；无单卷详情' : '仅系列元数据；不推断单卷';
-    const meta = element('p', `${scope} · ${record.status ?? '系列状态未知'}`); meta.className = 'record-meta'; this.results.append(meta);
-    if (record.summary) { const summary = element('pre', record.summary); summary.className = 'record-summary'; this.results.append(summary); }
-    for (const warning of record.warnings ?? []) this.results.append(element('p', warning));
+    const meta = element('p', `${scope} · ${record.status ?? '系列状态未知'}`); meta.className = 'record-meta'; this.detail.append(meta);
+    if (record.summary) { const summary = element('pre', record.summary); summary.className = 'record-summary'; this.detail.append(summary); }
+    for (const warning of record.warnings ?? []) this.detail.append(element('p', warning));
     if (record.books?.length) {
       const volumes = element('details'); volumes.className = 'volumes'; volumes.append(element('summary', `关联单卷 · ${record.books.length}`));
       for (const b of record.books) volumes.append(button(`单卷：${nativeTitle(b)}`, () => void this.run(async () => {
         const bookProvider = this.activeProvider(b.provider);
         this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
       })));
-      this.results.append(volumes);
+      this.detail.append(volumes);
     }
     this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
     record.covers.forEach((c, i) => option(this.cover, String(i), `封面 ${c.volume === undefined ? '系列/未定卷' : `卷 ${c.volume}`} ${c.language ?? ''}`));
@@ -341,11 +370,14 @@ export class Panel {
       coverTarget: id && (kind === 'series' || kind === 'books') ? { kind, id } : undefined
     });
     await this.writer.prepare(plan, this.signal);
-    this.plan = plan;
     const previewHead = element('div'); previewHead.className = 'preview-head';
     const back = button('返回选项', () => { if (!this.busy && !this.finishing) { this.invalidate(); this.viewport.scrollTop = 0; } });
     back.className = 'ghost'; back.prepend(icon('back'));
     previewHead.append(element('h3', '确认更改'), back); this.preview.append(previewHead);
+    if (plan.cover) {
+      try { await this.coverPreview(plan.cover); }
+      catch (error) { this.invalidate(); throw error; }
+    }
     plan.edits.forEach((edit, index) => {
       const target = edit.target.kind === 'series' ? this.state!.series : this.state!.books.find(b => b.id === edit.target.id);
       const targetHeading = element('h3', `${edit.target.kind === 'series' ? '系列' : '书籍'} · ${target?.metadata.title ?? edit.target.id}`);
@@ -365,10 +397,29 @@ export class Panel {
         updated.append(afterLabel, next); diff.append(old, updated); row.append(diff); this.preview.append(row);
       }
     });
-    if (plan.cover) this.preview.append(element('p', `封面：${plan.cover.target.kind}/${plan.cover.target.id} ← ${plan.cover.source.url}（包含下载失败风险）`));
     for (const skipped of plan.skipped) this.preview.append(element('p', skipped));
     const note = element('p', '仅应用勾选字段。写入前会重新检查，完成后读回核对。'); note.className = 'hint'; this.preview.append(note);
+    cancelled(this.signal); this.plan = plan;
     this.controls.hidden = true; this.previewButton.hidden = true; this.viewport.scrollTop = 0;
+  }
+  private async coverPreview(cover: NonNullable<Plan['cover']>): Promise<void> {
+    const target = cover.target.kind === 'series' ? this.state!.series : this.state!.books.find(b => b.id === cover.target.id);
+    const section = element('section'); section.className = 'cover-preview';
+    section.append(element('h3', `封面 · ${cover.target.kind === 'series' ? '系列' : '书籍'} · ${target?.metadata.title ?? cover.target.id}`));
+    const comparison = element('div'); comparison.className = 'cover-compare';
+    for (const [label, blob] of [['当前封面', cover.beforeBlob], ['替换为', cover.prepared!.blob]] as const) {
+      const figure = element('figure'), frame = element('div'); frame.className = 'cover-frame';
+      figure.append(element('figcaption', label), frame);
+      if (blob) {
+        const image = element('img'); image.alt = label;
+        const url = URL.createObjectURL(blob); this.previewUrls.add(url); image.src = url;
+        try { await image.decode(); }
+        catch { throw new MetadataError('verification', `${label}无法显示，请检查图片或页面权限`); }
+        cancelled(this.signal); frame.append(image);
+      } else frame.append(element('span', '暂无封面'));
+      comparison.append(figure);
+    }
+    section.append(comparison); this.preview.append(section);
   }
   private readPreview() {
     if (!this.plan) return;
@@ -445,6 +496,9 @@ export class Panel {
     return this.registry.get(id);
   }
   private async close(): Promise<void> {
+    this.controller?.abort(); this.thumbnails?.dispose();
+    for (const url of this.previewUrls) URL.revokeObjectURL(url);
+    this.previewUrls.clear(); this.plan = undefined;
     clearTimeout(this.fade);
     this.fade = undefined;
     try {

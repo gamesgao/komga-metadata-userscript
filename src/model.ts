@@ -13,7 +13,7 @@ export interface MetadataRecord {
   links: Link[]; books?: MetadataRecord[]; raw: unknown;
   warnings?: string[];
 }
-export interface Candidate { provider: ProviderId; id: string; title: string; url: string }
+export interface Candidate { provider: ProviderId; id: string; title: string; url: string; cover?: string }
 export interface Capabilities {
   series: boolean; volumes: boolean; volumeMetadata?: boolean; volumeCovers?: boolean; gallery?: boolean;
   authentication?: boolean; offline?: boolean;

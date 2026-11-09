@@ -2,6 +2,15 @@
 
 Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. **The component-1 table below is historical, not the current project-wide status.** See the v0.2.1 section here and [UI regression evidence](docs/UI.md) for the executed scope. The project is still not fully accepted as a stable release.
 
+## v0.3.0 source galleries and cover preview acceptance
+
+- PASS (component): 66 core tests, 13 bundled-browser tests, 6 release tests, 5 catalog tests; both typechecks. Tests cover seven search thumbnail mappings, keyboard source folding, preserved search cards after selection, decoded before/after pixels, Blob cleanup and narrow layout.
+- PASS (component): missing/non-image cover responses block preview and all writes; retry works. Apply uploads the already-previewed bytes even if the source disappears. Server upload failures remain partial, rather than a false green success.
+- PASS (live): actual Tampermonkey + Chromium 156.0.8078.4 + isolated Komga 1.30.0; public Bangumi/MangaBaka gallery images, 20/10 candidates, source collapse and selection retention. Current book image (200×300) and downloaded replacement (637×1000) decode before application. Light/dark screenshots are actual product views, not a mock site.
+- PASS (live): real metadata PATCH/GET, locks, native authors, series/book/One-Shot cover upload/readback/undo, stale-preview conflict and injected 503 regression. Fixture restore errors: none.
+- Local v0.3.0 developer artifact SHA-256: `de473346ba99be1aec90bd98791229819bde6643d3c8dd3f670caf3e2fbfd9b5`. Release-mode assets have separately pinned URLs and are independently built/tested by the publication workflow.
+- Evidence: `acceptance/cover_ui.py`, `acceptance/real_flows.py`; ignored reports/screenshots under `.runtime/acceptance/`. One screenshot-run login automation timeout passed on an independent retry; no product bypass was introduced. Authenticated providers and untested environments remain outside this acceptance.
+
 ## v0.2.1 automatic Release acceptance (2026-11-09)
 
 - [Source CI](https://github.com/gamesgao/komga-metadata-userscript/actions/runs/42544823020): PASS; 62 core tests, 9 browser tests, 5 catalog tests, 6 release tests, typechecks and committed-dist reproducibility.

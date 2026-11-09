@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.2.1
+// @version      0.3.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -115,6 +115,133 @@ SOFTWARE.
   };
   var workerAssetBase = false ? "" : "https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/catalog/";
 
+  // src/transport.ts
+  var storage = {
+    get(key, fallback) {
+      return GM_getValue(key, fallback);
+    },
+    set(key, value) {
+      GM_setValue(key, value);
+    }
+  };
+  function safeUrl(input2) {
+    let url2;
+    try {
+      url2 = new URL(input2);
+    } catch {
+      throw new MetadataError("invalid-id", "\u94FE\u63A5\u683C\u5F0F\u65E0\u6548");
+    }
+    if (!["http:", "https:"].includes(url2.protocol) || url2.username || url2.password) throw new MetadataError("invalid-id", "\u4EC5\u652F\u6301\u65E0\u5185\u5D4C\u51ED\u636E\u7684 HTTP(S) \u94FE\u63A5");
+    return url2.href;
+  }
+  var GMTransport = class {
+    request(input2, signal) {
+      cancelled(signal);
+      const url2 = safeUrl(input2.url);
+      return new Promise((resolve, reject) => {
+        let handle;
+        const finish2 = (fn) => {
+          signal.removeEventListener("abort", abort);
+          fn();
+        };
+        const abort = () => {
+          handle?.abort();
+          finish2(() => reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88")));
+        };
+        handle = GM_xmlhttpRequest({
+          url: url2,
+          method: input2.method ?? "GET",
+          headers: input2.headers,
+          data: input2.body,
+          responseType: input2.responseType ?? "text",
+          timeout: 3e4,
+          anonymous: true,
+          cookie: input2.cookie,
+          onload: (r) => finish2(() => {
+            const headers = {};
+            for (const line of r.responseHeaders.split(/\r?\n/)) {
+              const i = line.indexOf(":");
+              if (i > 0) headers[line.slice(0, i).toLowerCase()] = line.slice(i + 1).trim();
+            }
+            resolve({ status: r.status, headers, text: r.responseText ?? "", blob: r.response instanceof Blob ? r.response : void 0, finalUrl: r.finalUrl || url2 });
+          }),
+          onerror: () => finish2(() => reject(new MetadataError("http", "\u8DE8\u57DF\u8BF7\u6C42\u5931\u8D25\uFF08\u7F51\u7EDC\u6216\u7BA1\u7406\u5668\u6743\u9650\uFF09"))),
+          ontimeout: () => finish2(() => reject(new MetadataError("http", "\u6765\u6E90\u8BF7\u6C42\u8D85\u65F6"))),
+          onabort: () => finish2(() => reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88")))
+        });
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+      });
+    }
+  };
+  function delay(ms, signal) {
+    cancelled(signal);
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88"));
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, ms);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
+  var SourceTransport = class {
+    constructor(inner, interval = 500, maxQueue = 50, retries = 2) {
+      this.inner = inner;
+      this.interval = interval;
+      this.maxQueue = maxQueue;
+      this.retries = retries;
+    }
+    tail = Promise.resolve();
+    queued = 0;
+    next = 0;
+    request(input2, signal) {
+      if (this.queued >= this.maxQueue) return Promise.reject(new MetadataError("unavailable", "\u6765\u6E90\u961F\u5217\u5DF2\u6EE1"));
+      this.queued++;
+      const job = this.tail.then(async () => {
+        for (let attempt = 0; ; attempt++) {
+          cancelled(signal);
+          await delay(Math.max(0, this.next - Date.now()), signal);
+          this.next = Date.now() + this.interval;
+          const response = await this.inner.request(input2, signal);
+          if (![429, 503].includes(response.status) || attempt >= this.retries) {
+            if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? "authentication-required" : "http", `\u6765\u6E90 HTTP ${response.status}`, response.status);
+            return response;
+          }
+          const retry = response.headers["retry-after"];
+          const wait = retry ? /^\d+$/.test(retry) ? Number(retry) * 1e3 : Date.parse(retry) - Date.now() : 1e3 * 2 ** attempt;
+          if (!Number.isFinite(wait) || wait > 6e4) throw new MetadataError("http", "\u6765\u6E90\u8981\u6C42\u7B49\u5F85\u8FC7\u4E45\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", response.status);
+          this.next = Math.max(this.next, Date.now() + Math.max(0, wait));
+          await delay(Math.max(0, wait), signal);
+        }
+      });
+      this.tail = job.then(() => {
+        this.queued--;
+      }, () => {
+        this.queued--;
+      });
+      return new Promise((resolve, reject) => {
+        const abort = () => {
+          signal.removeEventListener("abort", abort);
+          reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88\u6392\u961F\u8BF7\u6C42"));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        job.then((r) => {
+          signal.removeEventListener("abort", abort);
+          resolve(r);
+        }, (e) => {
+          signal.removeEventListener("abort", abort);
+          reject(e);
+        });
+        if (signal.aborted) abort();
+      });
+    }
+  };
+
   // src/providers/data.ts
   function obj(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new MetadataError("invalid-response", "\u6765\u6E90\u54CD\u5E94\u7ED3\u6784\u4E0D\u7B26");
@@ -154,8 +281,15 @@ SOFTWARE.
   function record(provider, id, url2, raw) {
     return { provider, id, url: url2, raw, titles: [], tags: [], genres: [], authors: [], covers: [], links: [{ label: provider, url: url2 }] };
   }
-  function candidate(provider, id, title, url2) {
-    return { provider, id, title: required(title), url: url2 };
+  function candidate(provider, id, title, url2, image2) {
+    const result = { provider, id, title: required(title), url: url2 };
+    if (typeof image2 === "string" && image2) {
+      try {
+        result.cover = safeUrl(image2);
+      } catch {
+      }
+    }
+    return result;
   }
   async function json(t, url2, signal, body, headers) {
     const r = await t.request({ url: url2, method: body === void 0 ? "GET" : "POST", headers: { Accept: "application/json", ...body === void 0 ? {} : { "Content-Type": "application/json" }, ...headers }, body: body === void 0 ? void 0 : JSON.stringify(body) }, signal);
@@ -302,133 +436,6 @@ SOFTWARE.
     }
   };
 
-  // src/transport.ts
-  var storage = {
-    get(key, fallback) {
-      return GM_getValue(key, fallback);
-    },
-    set(key, value) {
-      GM_setValue(key, value);
-    }
-  };
-  function safeUrl(input2) {
-    let url2;
-    try {
-      url2 = new URL(input2);
-    } catch {
-      throw new MetadataError("invalid-id", "\u94FE\u63A5\u683C\u5F0F\u65E0\u6548");
-    }
-    if (!["http:", "https:"].includes(url2.protocol) || url2.username || url2.password) throw new MetadataError("invalid-id", "\u4EC5\u652F\u6301\u65E0\u5185\u5D4C\u51ED\u636E\u7684 HTTP(S) \u94FE\u63A5");
-    return url2.href;
-  }
-  var GMTransport = class {
-    request(input2, signal) {
-      cancelled(signal);
-      const url2 = safeUrl(input2.url);
-      return new Promise((resolve, reject) => {
-        let handle;
-        const finish2 = (fn) => {
-          signal.removeEventListener("abort", abort);
-          fn();
-        };
-        const abort = () => {
-          handle?.abort();
-          finish2(() => reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88")));
-        };
-        handle = GM_xmlhttpRequest({
-          url: url2,
-          method: input2.method ?? "GET",
-          headers: input2.headers,
-          data: input2.body,
-          responseType: input2.responseType ?? "text",
-          timeout: 3e4,
-          anonymous: true,
-          cookie: input2.cookie,
-          onload: (r) => finish2(() => {
-            const headers = {};
-            for (const line of r.responseHeaders.split(/\r?\n/)) {
-              const i = line.indexOf(":");
-              if (i > 0) headers[line.slice(0, i).toLowerCase()] = line.slice(i + 1).trim();
-            }
-            resolve({ status: r.status, headers, text: r.responseText ?? "", blob: r.response instanceof Blob ? r.response : void 0, finalUrl: r.finalUrl || url2 });
-          }),
-          onerror: () => finish2(() => reject(new MetadataError("http", "\u8DE8\u57DF\u8BF7\u6C42\u5931\u8D25\uFF08\u7F51\u7EDC\u6216\u7BA1\u7406\u5668\u6743\u9650\uFF09"))),
-          ontimeout: () => finish2(() => reject(new MetadataError("http", "\u6765\u6E90\u8BF7\u6C42\u8D85\u65F6"))),
-          onabort: () => finish2(() => reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88")))
-        });
-        signal.addEventListener("abort", abort, { once: true });
-        if (signal.aborted) abort();
-      });
-    }
-  };
-  function delay(ms, signal) {
-    cancelled(signal);
-    if (ms <= 0) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const abort = () => {
-        clearTimeout(timer);
-        reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88"));
-      };
-      const timer = setTimeout(() => {
-        signal.removeEventListener("abort", abort);
-        resolve();
-      }, ms);
-      signal.addEventListener("abort", abort, { once: true });
-    });
-  }
-  var SourceTransport = class {
-    constructor(inner, interval = 500, maxQueue = 50, retries = 2) {
-      this.inner = inner;
-      this.interval = interval;
-      this.maxQueue = maxQueue;
-      this.retries = retries;
-    }
-    tail = Promise.resolve();
-    queued = 0;
-    next = 0;
-    request(input2, signal) {
-      if (this.queued >= this.maxQueue) return Promise.reject(new MetadataError("unavailable", "\u6765\u6E90\u961F\u5217\u5DF2\u6EE1"));
-      this.queued++;
-      const job = this.tail.then(async () => {
-        for (let attempt = 0; ; attempt++) {
-          cancelled(signal);
-          await delay(Math.max(0, this.next - Date.now()), signal);
-          this.next = Date.now() + this.interval;
-          const response = await this.inner.request(input2, signal);
-          if (![429, 503].includes(response.status) || attempt >= this.retries) {
-            if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? "authentication-required" : "http", `\u6765\u6E90 HTTP ${response.status}`, response.status);
-            return response;
-          }
-          const retry = response.headers["retry-after"];
-          const wait = retry ? /^\d+$/.test(retry) ? Number(retry) * 1e3 : Date.parse(retry) - Date.now() : 1e3 * 2 ** attempt;
-          if (!Number.isFinite(wait) || wait > 6e4) throw new MetadataError("http", "\u6765\u6E90\u8981\u6C42\u7B49\u5F85\u8FC7\u4E45\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5", response.status);
-          this.next = Math.max(this.next, Date.now() + Math.max(0, wait));
-          await delay(Math.max(0, wait), signal);
-        }
-      });
-      this.tail = job.then(() => {
-        this.queued--;
-      }, () => {
-        this.queued--;
-      });
-      return new Promise((resolve, reject) => {
-        const abort = () => {
-          signal.removeEventListener("abort", abort);
-          reject(new MetadataError("cancelled", "\u5DF2\u53D6\u6D88\u6392\u961F\u8BF7\u6C42"));
-        };
-        signal.addEventListener("abort", abort, { once: true });
-        job.then((r) => {
-          signal.removeEventListener("abort", abort);
-          resolve(r);
-        }, (e) => {
-          signal.removeEventListener("abort", abort);
-          reject(e);
-        });
-        if (signal.aborted) abort();
-      });
-    }
-  };
-
   // src/providers/api.ts
   /*! Endpoint/model adaptations informed by komf-rs and komf (MIT); see THIRD_PARTY.md. */
   function linkId(input2, hosts, expression) {
@@ -470,7 +477,8 @@ SOFTWARE.
       return arr(data.data).map((v) => {
         const x = obj(v);
         const id = numeric(idText(x.id));
-        return candidate(this.id, id, required(x.name), `https://bgm.tv/subject/${id}`);
+        const images = obj(x.images ?? {});
+        return candidate(this.id, id, required(x.name), `https://bgm.tv/subject/${id}`, images.common || images.medium || images.large);
       });
     }
     async get(id, c) {
@@ -542,7 +550,8 @@ SOFTWARE.
       const x = await json(this.t, "https://api.mangaupdates.com/v1/series/search", c.signal, { search: q.slice(0, 400), perpage: 20, page: 1 });
       return arr(x.results).map((v) => {
         const row = obj(obj(v).record);
-        return candidate(this.id, numeric(idText(row.series_id)), required(row.title), required(row.url));
+        const images = obj(obj(row.image ?? {}).url ?? {});
+        return candidate(this.id, numeric(idText(row.series_id)), required(row.title), required(row.url), images.thumb || images.original);
       });
     }
     async get(id, c) {
@@ -595,7 +604,7 @@ SOFTWARE.
       return arr(x.data).map((v) => {
         const row = obj(v);
         const id = numeric(idText(row.id));
-        return candidate(this.id, id, str(row.native_title) || str(row.title) || required(list(row.titles).map((v2) => obj(v2).title)[0]), str(row.canonical_url) || `https://mangabaka.org/manga/${id}`);
+        return candidate(this.id, id, str(row.native_title) || str(row.title) || required(list(row.titles).map((v2) => obj(v2).title)[0]), str(row.canonical_url) || `https://mangabaka.org/manga/${id}`, bakaCover(row.cover));
       });
     }
     async get(id, c) {
@@ -660,12 +669,18 @@ SOFTWARE.
       return this.validate(input2.includes("://") ? linkId(input2, ["mangadex.org", "www.mangadex.org"], /^\/title\/([^/]+)/) : input2);
     }
     async search(q, c) {
-      const x = await json(this.t, `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=20`, c.signal);
+      const x = await json(this.t, `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`, c.signal);
       return arr(x.data).map((v) => {
-        const row = obj(v);
-        const id = this.validate(idText(row.id));
-        const title = obj(obj(row.attributes).title);
-        return candidate(this.id, id, required(title.ja || Object.values(title)[0]), `https://mangadex.org/title/${id}`);
+        const row = obj(v), id = this.validate(idText(row.id)), title = obj(obj(row.attributes).title);
+        const cover = list(row.relationships).map(obj).find((r) => r.type === "cover_art");
+        const filename = str(obj(cover?.attributes ?? {}).fileName);
+        return candidate(
+          this.id,
+          id,
+          required(title.ja || Object.values(title)[0]),
+          `https://mangadex.org/title/${id}`,
+          /^[\w.-]+$/.test(filename) ? `https://uploads.mangadex.org/covers/${id}/${filename}.256.jpg` : void 0
+        );
       });
     }
     async get(id, c) {
@@ -719,10 +734,10 @@ SOFTWARE.
       return obj(x.data);
     }
     async search(q, c) {
-      const data = await this.query("query($q:String){Page(perPage:20){media(search:$q,type:MANGA){id siteUrl title{native romaji english}}}}", { q }, c);
+      const data = await this.query("query($q:String){Page(perPage:20){media(search:$q,type:MANGA){id siteUrl title{native romaji english} coverImage{large}}}}", { q }, c);
       return arr(obj(data.Page).media).map((v) => {
         const row = obj(v), t = obj(row.title);
-        return candidate(this.id, numeric(idText(row.id)), required(t.native || t.english || t.romaji), required(row.siteUrl));
+        return candidate(this.id, numeric(idText(row.id)), required(t.native || t.english || t.romaji), required(row.siteUrl), obj(row.coverImage ?? {}).large);
       });
     }
     async get(id, c) {
@@ -763,8 +778,8 @@ SOFTWARE.
     async search(q, c) {
       const x = await json(this.t, `https://api.myanimelist.net/v2/manga?q=${encodeURIComponent(q)}&limit=20`, c.signal, void 0, this.headers(c));
       return arr(x.data).map((v) => {
-        const row = obj(obj(v).node), id = numeric(idText(row.id));
-        return candidate(this.id, id, required(row.title), `https://myanimelist.net/manga/${id}`);
+        const row = obj(obj(v).node), id = numeric(idText(row.id)), image2 = obj(row.main_picture ?? {});
+        return candidate(this.id, id, required(row.title), `https://myanimelist.net/manga/${id}`, image2.medium || image2.large);
       });
     }
     async get(id, c) {
@@ -811,8 +826,8 @@ SOFTWARE.
     async search(q, c) {
       const x = await this.api(`search/?resources=volume&limit=20&query=${encodeURIComponent(q)}`, c);
       return arr(x.results).map((v) => {
-        const row = obj(v);
-        return candidate(this.id, `4050-${numeric(idText(row.id))}`, required(row.name), required(row.site_detail_url));
+        const row = obj(v), image2 = obj(row.image ?? {});
+        return candidate(this.id, `4050-${numeric(idText(row.id))}`, required(row.name), required(row.site_detail_url), image2.small_url || image2.super_url || image2.original_url);
       });
     }
     async get(id, c) {
@@ -1666,11 +1681,24 @@ SOFTWARE.
       this.transport = transport;
     }
     busy = false;
+    async image(url2, signal) {
+      const response = await this.transport.request({ url: url2, responseType: "blob" }, signal);
+      cancelled(signal);
+      if (response.status < 200 || response.status >= 300 || !response.blob) throw new MetadataError("http", `\u5C01\u9762\u4E0B\u8F7D\u5931\u8D25 HTTP ${response.status}`);
+      await validateImage(response.blob);
+      cancelled(signal);
+      return response.blob;
+    }
     async prepare(plan, signal) {
       if (plan.cover) {
+        plan.cover.prepared = void 0;
+        const blob = await this.image(plan.cover.source.url, signal);
         const selected = (await this.client.thumbnails(plan.cover.target, signal)).find((t) => t.selected);
         plan.cover.beforeSelected = selected?.id;
-        plan.cover.beforeHash = selected ? await hash(await this.client.thumbnail(plan.cover.target, selected.id, signal)) : void 0;
+        plan.cover.beforeBlob = selected ? await this.client.thumbnail(plan.cover.target, selected.id, signal) : void 0;
+        plan.cover.beforeHash = plan.cover.beforeBlob ? await hash(plan.cover.beforeBlob) : void 0;
+        cancelled(signal);
+        plan.cover.prepared = { url: plan.cover.source.url, blob, hash: await hash(blob) };
       }
       return plan;
     }
@@ -1701,6 +1729,7 @@ SOFTWARE.
         }
         if (plan.cover) {
           if (plan.cover.target.kind === "books" && !fresh.books.some((b) => b.id === plan.cover.target.id)) throw new MetadataError("conflict", "\u5C01\u9762\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
+          if (!plan.cover.prepared || plan.cover.prepared.url !== plan.cover.source.url) throw new MetadataError("verification", "\u8BF7\u5148\u751F\u6210\u5C01\u9762\u9884\u89C8");
           await this.coverGuard(plan.cover, signal);
         }
         for (const e of plan.edits) {
@@ -1724,13 +1753,11 @@ SOFTWARE.
             cancelled(signal);
             const old = await this.client.read(edit.target, signal), series2 = await this.client.read({ kind: "series", id: plan.seriesId }, signal);
             if (old.thumbnailLock || series2.thumbnailLock) throw new MetadataError("conflict", "\u5C01\u9762\u5DF2\u9501\u5B9A");
-            const response = await this.transport.request({ url: edit.source.url, responseType: "blob" }, signal);
-            if (response.status < 200 || response.status >= 300 || !response.blob) throw new MetadataError("http", `\u5C01\u9762\u4E0B\u8F7D\u5931\u8D25 HTTP ${response.status}`);
-            await validateImage(response.blob);
             await this.coverGuard(edit, signal);
-            const expected = await hash(response.blob);
+            const prepared = edit.prepared;
+            const expected = prepared.hash;
             const existingIds = new Set((await this.client.thumbnails(edit.target, signal)).map((t) => t.id));
-            const receipt = await this.client.upload(edit.target, response.blob, signal);
+            const receipt = await this.client.upload(edit.target, prepared.blob, signal);
             if (existingIds.has(receipt)) throw new MetadataError("verification", "\u4E0A\u4F20\u8FD4\u56DE\u4E86\u5DF2\u6709\u5C01\u9762 ID\uFF1B\u4E0D\u6E05\u7406\u5DF2\u6709\u5C01\u9762");
             own = receipt;
             if (await hash(await this.client.thumbnail(edit.target, own, signal)) !== expected) throw new MetadataError("verification", "\u4E0A\u4F20\u5C01\u9762\u5185\u5BB9\u8BFB\u56DE\u4E0D\u7B26");
@@ -1827,12 +1854,13 @@ svg{width:18px;height:18px;flex-shrink:0;vertical-align:middle}button,input,sele
 .tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);padding:0 24px;flex-shrink:0}.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:10px 0 12px;font-size:13px}.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
 .viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--surface);scrollbar-width:thin;scrollbar-color:var(--line) transparent}.tab-panel{padding:22px 24px;min-height:100%}.workspace{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:20px;align-items:start}.card{min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:18px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h3{margin:0;font-size:14px;font-weight:650}.section-title select{font-size:12px;height:32px;padding:4px 8px}
 h3{font-size:14px;font-weight:600;margin:0 0 10px}p{margin:8px 0;overflow-wrap:anywhere}pre{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:1.75;color:var(--muted)}.search-row{display:flex;gap:8px}.search-row input{width:100%;flex:1}.source-toggles{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}.source-toggles label{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:11px;transition:background .12s}.source-toggles label:has(:checked){background:var(--tint);border-color:var(--tint);color:var(--accent)}.source-toggles input{width:12px;height:12px}.direct-row{display:grid;grid-template-columns:115px minmax(0,1fr) auto;gap:8px}.direct-row input{width:100%}
-details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0;user-select:none}details[open]>summary{margin-bottom:8px}.results{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-height:230px}.results:empty::before{content:'\u641C\u7D22\u4F5C\u54C1\uFF0C\u9009\u62E9\u5339\u914D\u7684\u6761\u76EE';display:block;text-align:center;padding:64px 8px;color:var(--muted);font-size:13px}.result-group{margin-bottom:16px}.result-group>h3{font-size:11px;color:var(--muted);letter-spacing:.4px;margin-bottom:6px}.candidate{width:100%;text-align:left;justify-content:space-between;white-space:normal;line-height:1.5;margin:3px 0;font-weight:500;padding:11px 12px}.candidate::after{content:'\u203A';font-size:20px;color:var(--muted);margin-left:10px}.results>h3{font-size:17px;line-height:1.6}.record-url{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-meta{font-size:12px;color:var(--muted)}.record-summary{max-height:210px;overflow:auto;scrollbar-width:thin}.volumes button{display:flex;width:100%;white-space:normal;text-align:left;justify-content:flex-start;margin:5px 0;font-size:12px}
+details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0;user-select:none}details[open]>summary{margin-bottom:8px}.results{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-height:230px}.results:empty::before{content:'\u641C\u7D22\u4F5C\u54C1\uFF0C\u9009\u62E9\u5339\u914D\u7684\u6761\u76EE';display:block;text-align:center;padding:64px 8px;color:var(--muted);font-size:13px}.result-group{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.result-group>summary{display:flex;align-items:center;gap:8px;list-style:none;padding:11px 12px;margin:0!important;color:var(--text);font-size:13px;font-weight:600;background:var(--surface)}.result-group>summary::-webkit-details-marker{display:none}.result-group>summary::before{content:'\u203A';font-size:20px;line-height:1;transition:transform .12s}.result-group[open]>summary::before{transform:rotate(90deg)}.result-count{margin-left:auto;color:var(--muted);font-size:11px;font-weight:400}.result-group>p{padding:0 12px;color:var(--muted);font-size:12px}.candidate-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(115px,1fr));gap:10px;padding:12px;max-height:460px;overflow:auto;scrollbar-width:thin}.candidate-grid:empty{display:none}.candidate{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;height:100%;min-width:0;padding:7px;margin:0;text-align:left;white-space:normal;line-height:1.45;font-weight:500;gap:8px}.candidate[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:var(--tint)}.candidate-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:12px;min-height:2.9em}.cover-thumb{display:flex;align-items:center;justify-content:center;aspect-ratio:2/3;width:100%;min-width:0;background:var(--surface);border-radius:5px;overflow:hidden;color:var(--muted);font-size:11px;font-weight:400}.cover-thumb img{display:block;width:100%;height:100%;object-fit:contain}.cover-thumb[data-state=pending]::before{content:'';width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite}.selected-record:empty{display:none}.selected-record:not(:empty){border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.selected-record>h3{font-size:16px;line-height:1.6}.record-url{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-meta{font-size:12px;color:var(--muted)}.record-summary{max-height:210px;overflow:auto;scrollbar-width:thin}.volumes button{display:flex;width:100%;white-space:normal;text-align:left;justify-content:flex-start;margin:5px 0;font-size:12px}
 .field-label{display:grid;gap:6px;color:var(--muted);font-size:12px;margin-bottom:12px}.field-label select{width:100%;color:var(--text);font-size:13px}.field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 6px;padding:12px 0 16px}.field-grid label,.check-label{display:flex;align-items:center;gap:7px;font-size:12px;line-height:1.5;min-height:28px}.field-grid label:first-child{grid-column:span 2}.field-caption{font-size:12px;font-weight:600;border-top:1px solid var(--line);padding-top:16px;margin-top:16px}.hint{font-size:11px;color:var(--muted);margin:8px 0 0}
 .footer{display:flex;align-items:center;gap:10px;padding:14px 24px;border-top:1px solid var(--line);background:var(--bg);flex-shrink:0}.status{flex:1;min-width:0;font-size:12px;color:var(--muted);margin:0;max-height:90px;overflow:auto}.status[data-state=error]{color:var(--danger)}.status[data-state=busy]::before{content:'';display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite;vertical-align:middle}.status[data-state=success]{color:var(--positive);font-size:0}.status[data-state=success]::before{content:'\u2713';font-size:22px}.footer-actions{display:flex;gap:8px;align-items:center}.cancel-action[hidden]{display:none}
 .preview:empty{display:none}.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}.preview-head h3{font-size:18px;margin:0}.target-heading{font-size:12px;color:var(--muted);margin:20px 0 10px}.row{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:14px;margin:10px 0}.row>label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}.diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}.diff-caption{font-size:10px;color:var(--muted);margin-bottom:5px}.diff pre{margin:0;padding:10px;background:var(--surface);border-radius:7px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:180px;overflow:auto}.diff textarea{display:block;width:100%;min-height:92px;resize:vertical;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.row:has(input[data-field]:not(:checked)){opacity:.55}
 .settings-card{max-width:660px;margin:0 auto}.settings-card>summary{font-size:15px;color:var(--text);font-weight:600}.settings-card>label:has(input[type=password]){display:grid;gap:5px;font-size:12px;margin:14px 0;color:var(--muted)}.settings-card input[type=password]{width:100%;color:var(--text)}.settings-card>label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px;margin:18px 0}
 section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
+.cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
 @keyframes km-spin{to{transform:rotate(360deg)}}
 @media(max-width:820px){.dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);border-radius:12px}.workspace{grid-template-columns:1fr}.tab-panel{padding:16px}.header{padding:16px}.tabs{padding:0 16px}.footer{padding:12px 16px;flex-wrap:wrap}.status{flex-basis:100%}.footer-actions{margin-left:auto}.direct-row{grid-template-columns:95px minmax(0,1fr) auto}.diff{grid-template-columns:1fr}.context{max-width:55vw}}
 @media(prefers-reduced-motion:reduce){*,*::before{transition:none!important;animation-duration:1.5s!important}.dialog{transition:none!important}}
@@ -1856,6 +1884,101 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     return svg;
   }
+
+  // src/thumbnails.ts
+  var Thumbnails = class {
+    constructor(root, download2) {
+      this.download = download2;
+      this.observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const job = this.jobs.get(entry.target);
+          if (entry.isIntersecting && job && !job.started && !job.queued) {
+            job.queued = true;
+            this.queue.push(job);
+          }
+        }
+        this.pump();
+      }, { root, rootMargin: "100px 0px" });
+    }
+    controller = new AbortController();
+    signal = this.controller.signal;
+    observer;
+    jobs = /* @__PURE__ */ new Map();
+    queue = [];
+    active = 0;
+    urls = /* @__PURE__ */ new Set();
+    cache = /* @__PURE__ */ new Map();
+    add(title, resolve) {
+      const frame = document.createElement("span");
+      frame.className = "cover-thumb";
+      frame.dataset.state = "pending";
+      frame.setAttribute("aria-label", "\u52A0\u8F7D\u5C01\u9762");
+      this.jobs.set(frame, { frame, title, resolve, queued: false, started: false });
+      this.observer.observe(frame);
+      return frame;
+    }
+    pump() {
+      while (!this.signal.aborted && this.active < 3 && this.queue.length) {
+        const job = this.queue.shift();
+        job.queued = false;
+        if (!job.frame.isConnected || !job.frame.getClientRects().length) continue;
+        job.started = true;
+        this.active++;
+        this.observer.unobserve(job.frame);
+        void this.load(job).finally(() => {
+          this.active--;
+          this.pump();
+        });
+      }
+    }
+    async load(job) {
+      try {
+        const source = await job.resolve();
+        cancelled(this.signal);
+        if (!source) {
+          job.frame.dataset.state = "empty";
+          job.frame.textContent = "\u6682\u65E0\u5C01\u9762";
+          job.frame.setAttribute("aria-label", "\u6682\u65E0\u5C01\u9762");
+          return;
+        }
+        let pending = this.cache.get(source);
+        if (!pending) {
+          pending = this.download(source, this.signal).then((blob) => {
+            cancelled(this.signal);
+            const url3 = URL.createObjectURL(blob);
+            this.urls.add(url3);
+            return url3;
+          });
+          this.cache.set(source, pending);
+        }
+        const url2 = await pending;
+        cancelled(this.signal);
+        const image2 = new Image();
+        image2.alt = `${job.title} \xB7 \u5C01\u9762`;
+        image2.src = url2;
+        await image2.decode();
+        cancelled(this.signal);
+        job.frame.replaceChildren(image2);
+        job.frame.dataset.state = "ready";
+        job.frame.removeAttribute("aria-label");
+      } catch (error) {
+        if (this.signal.aborted) return;
+        job.frame.dataset.state = "error";
+        job.frame.textContent = "\u5C01\u9762\u52A0\u8F7D\u5931\u8D25";
+        job.frame.setAttribute("aria-label", "\u5C01\u9762\u52A0\u8F7D\u5931\u8D25");
+        job.frame.title = error instanceof Error ? error.message : String(error);
+      }
+    }
+    dispose() {
+      this.controller.abort();
+      this.observer.disconnect();
+      this.queue.length = 0;
+      this.jobs.clear();
+      this.cache.clear();
+      for (const url2 of this.urls) URL.revokeObjectURL(url2);
+      this.urls.clear();
+    }
+  };
 
   // src/ui.ts
   var labels = { title: "\u6807\u9898\uFF08\u9ED8\u8BA4\u4E0D\u6539\uFF09", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
@@ -2000,8 +2123,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.sourceMode.onchange = () => {
         this.saveSourceChecks();
         this.settings.sourceMode = this.sourceMode.value;
-        this.selected = void 0;
-        this.invalidate();
+        this.clearSearch();
         this.renderSourceChecks();
         storage.set("settings-v1", this.settings);
       };
@@ -2016,7 +2138,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.results);
       const choices = element("div");
       choices.className = "card";
-      choices.append(element("h3", "\u5199\u5165\u9009\u9879"));
+      this.detail.className = "selected-record";
+      choices.append(this.detail, element("h3", "\u5199\u5165\u9009\u9879"));
       this.book.setAttribute("aria-label", "\u76EE\u6807\u4E66\u7C4D");
       this.cover.setAttribute("aria-label", "\u5C01\u9762");
       this.coverTarget.setAttribute("aria-label", "\u5C01\u9762\u76EE\u6807");
@@ -2155,6 +2278,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     undoData = storage.get("undo-v1", void 0);
     controls = element("div");
     results = element("div");
+    detail = element("div");
+    thumbnails;
+    collapsedSources = /* @__PURE__ */ new Set();
+    previewUrls = /* @__PURE__ */ new Set();
     preview = element("div");
     query = element("input");
     direct = element("input");
@@ -2201,6 +2328,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       return this.controller.signal;
     }
     invalidate() {
+      for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
+      this.previewUrls.clear();
       this.plan = void 0;
       this.applyButton.disabled = true;
       this.preview.replaceChildren();
@@ -2248,9 +2377,18 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     context() {
       return { signal: this.signal, credentials: structuredClone(this.settings.credentials) };
     }
-    async search() {
-      this.invalidate();
+    clearSearch() {
+      this.thumbnails?.dispose();
+      this.thumbnails = void 0;
+      this.selected = void 0;
+      this.detail.replaceChildren();
       this.results.replaceChildren();
+      this.invalidate();
+      this.cover.replaceChildren();
+      option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
+    }
+    async search() {
+      this.clearSearch();
       this.saveSourceChecks();
       const ids = this.sourceIds();
       if (!this.query.value.trim() || !ids.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
@@ -2262,21 +2400,45 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           return { id, error: error instanceof Error ? error : new Error(String(error)) };
         }
       }));
+      cancelled(context.signal);
+      const thumbnails = this.thumbnails = new Thumbnails(this.viewport, (url2, signal) => this.writer.image(url2, signal));
+      const imageContext = { ...context, signal: thumbnails.signal };
       for (const result of results) {
-        const group = element("div");
+        const group = element("details");
         group.className = "result-group";
-        group.append(element("h3", result.id));
+        group.dataset.provider = result.id;
+        group.open = !this.collapsedSources.has(`${this.sourceMode.value}:${result.id}`);
+        const groupKey = `${this.sourceMode.value}:${result.id}`;
+        group.addEventListener("toggle", () => {
+          if (group.open) this.collapsedSources.delete(groupKey);
+          else this.collapsedSources.add(groupKey);
+        });
+        const heading = element("summary");
+        heading.append(element("span", result.id));
+        const count = element("span", result.error ? "\u6765\u6E90\u5931\u8D25" : `${result.candidates?.length ?? 0} \u9879`);
+        count.className = "result-count";
+        heading.append(count);
+        group.append(heading);
         if (result.error) group.append(element("p", result.error.message));
         else if (!result.candidates?.length) group.append(element("p", "\u65E0\u5339\u914D"));
+        const grid = element("div");
+        grid.className = "candidate-grid";
         for (const c of result.candidates ?? []) {
-          const candidate2 = button(c.title, () => void this.run(async () => {
-            const provider = this.activeProvider(c.provider);
+          const provider = this.activeProvider(c.provider);
+          const candidate2 = button("", () => void this.run(async () => {
             this.choose(await provider.get(c.id, this.context()), provider);
           }));
           candidate2.className = "candidate";
           candidate2.setAttribute("aria-label", c.title);
-          group.append(candidate2);
+          candidate2.setAttribute("aria-pressed", "false");
+          candidate2.dataset.key = `${c.provider}:${c.id}`;
+          candidate2.title = c.title;
+          const title = element("span", c.title);
+          title.className = "candidate-title";
+          candidate2.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title);
+          grid.append(candidate2);
         }
+        group.append(grid);
         this.results.append(group);
       }
       if (results.some((r) => r.error)) {
@@ -2293,22 +2455,23 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     choose(record2, provider = this.activeProvider(record2.provider)) {
       this.invalidate();
       this.selected = record2;
-      this.results.replaceChildren();
+      this.detail.replaceChildren();
+      this.results.querySelectorAll(".candidate").forEach((e) => e.setAttribute("aria-pressed", String(e.dataset.key === `${record2.provider}:${record2.id}`)));
       const sourceUrl = element("p", record2.url);
       sourceUrl.className = "record-url";
       sourceUrl.title = record2.url;
-      this.results.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), sourceUrl);
+      this.detail.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), sourceUrl);
       const capabilities = provider.capabilities;
       const scope = capabilities.gallery ? "\u753B\u5ECA\uFF1B\u4E0D\u63A8\u65AD\u5377\u53F7" : capabilities.volumeMetadata ? "\u652F\u6301\u5355\u5377\u8BE6\u60C5\uFF1B\u987B\u660E\u786E\u6620\u5C04" : capabilities.volumeCovers ? "\u4EC5\u7CFB\u5217\u4E0E\u5377\u5C01\u9762\uFF1B\u65E0\u5355\u5377\u8BE6\u60C5" : "\u4EC5\u7CFB\u5217\u5143\u6570\u636E\uFF1B\u4E0D\u63A8\u65AD\u5355\u5377";
       const meta2 = element("p", `${scope} \xB7 ${record2.status ?? "\u7CFB\u5217\u72B6\u6001\u672A\u77E5"}`);
       meta2.className = "record-meta";
-      this.results.append(meta2);
+      this.detail.append(meta2);
       if (record2.summary) {
         const summary = element("pre", record2.summary);
         summary.className = "record-summary";
-        this.results.append(summary);
+        this.detail.append(summary);
       }
-      for (const warning of record2.warnings ?? []) this.results.append(element("p", warning));
+      for (const warning of record2.warnings ?? []) this.detail.append(element("p", warning));
       if (record2.books?.length) {
         const volumes = element("details");
         volumes.className = "volumes";
@@ -2317,7 +2480,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           const bookProvider = this.activeProvider(b.provider);
           this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
         })));
-        this.results.append(volumes);
+        this.detail.append(volumes);
       }
       this.cover.replaceChildren();
       option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
@@ -2337,7 +2500,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         coverTarget: id && (kind === "series" || kind === "books") ? { kind, id } : void 0
       });
       await this.writer.prepare(plan, this.signal);
-      this.plan = plan;
       const previewHead = element("div");
       previewHead.className = "preview-head";
       const back = button("\u8FD4\u56DE\u9009\u9879", () => {
@@ -2350,6 +2512,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       back.prepend(icon("back"));
       previewHead.append(element("h3", "\u786E\u8BA4\u66F4\u6539"), back);
       this.preview.append(previewHead);
+      if (plan.cover) {
+        try {
+          await this.coverPreview(plan.cover);
+        } catch (error) {
+          this.invalidate();
+          throw error;
+        }
+      }
       plan.edits.forEach((edit, index) => {
         const target = edit.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === edit.target.id);
         const targetHeading = element("h3", `${edit.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? edit.target.id}`);
@@ -2383,14 +2553,45 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           this.preview.append(row);
         }
       });
-      if (plan.cover) this.preview.append(element("p", `\u5C01\u9762\uFF1A${plan.cover.target.kind}/${plan.cover.target.id} \u2190 ${plan.cover.source.url}\uFF08\u5305\u542B\u4E0B\u8F7D\u5931\u8D25\u98CE\u9669\uFF09`));
       for (const skipped of plan.skipped) this.preview.append(element("p", skipped));
       const note = element("p", "\u4EC5\u5E94\u7528\u52FE\u9009\u5B57\u6BB5\u3002\u5199\u5165\u524D\u4F1A\u91CD\u65B0\u68C0\u67E5\uFF0C\u5B8C\u6210\u540E\u8BFB\u56DE\u6838\u5BF9\u3002");
       note.className = "hint";
       this.preview.append(note);
+      cancelled(this.signal);
+      this.plan = plan;
       this.controls.hidden = true;
       this.previewButton.hidden = true;
       this.viewport.scrollTop = 0;
+    }
+    async coverPreview(cover) {
+      const target = cover.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === cover.target.id);
+      const section = element("section");
+      section.className = "cover-preview";
+      section.append(element("h3", `\u5C01\u9762 \xB7 ${cover.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? cover.target.id}`));
+      const comparison = element("div");
+      comparison.className = "cover-compare";
+      for (const [label, blob] of [["\u5F53\u524D\u5C01\u9762", cover.beforeBlob], ["\u66FF\u6362\u4E3A", cover.prepared.blob]]) {
+        const figure = element("figure"), frame = element("div");
+        frame.className = "cover-frame";
+        figure.append(element("figcaption", label), frame);
+        if (blob) {
+          const image2 = element("img");
+          image2.alt = label;
+          const url2 = URL.createObjectURL(blob);
+          this.previewUrls.add(url2);
+          image2.src = url2;
+          try {
+            await image2.decode();
+          } catch {
+            throw new MetadataError("verification", `${label}\u65E0\u6CD5\u663E\u793A\uFF0C\u8BF7\u68C0\u67E5\u56FE\u7247\u6216\u9875\u9762\u6743\u9650`);
+          }
+          cancelled(this.signal);
+          frame.append(image2);
+        } else frame.append(element("span", "\u6682\u65E0\u5C01\u9762"));
+        comparison.append(figure);
+      }
+      section.append(comparison);
+      this.preview.append(section);
     }
     readPreview() {
       if (!this.plan) return;
@@ -2489,6 +2690,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       return this.registry.get(id);
     }
     async close() {
+      this.controller?.abort();
+      this.thumbnails?.dispose();
+      for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
+      this.previewUrls.clear();
+      this.plan = void 0;
       clearTimeout(this.fade);
       this.fade = void 0;
       try {

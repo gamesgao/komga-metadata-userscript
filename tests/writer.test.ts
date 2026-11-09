@@ -113,12 +113,32 @@ describe('real client/writer against in-memory HTTP fixture, not real Komga', ()
     expect((await w.undo(r, 's', signal())).status).toBe('success');
     expect(s.thumbnails.map(t => t.id)).toEqual(['existing-user-cover']); expect(s.thumbnails[0]?.selected).toBe(true);
   });
-  it('missing or failed cover is PARTIAL when metadata succeeds, not green success', async () => {
+  it('failed cover preparation blocks ALL writes, even when metadata could succeed', async () => {
     const s = new Server(), source = record();
     const w = new Writer(s.client, { request: async r => ({ status: 404, headers: {}, text: '', finalUrl: r.url }) });
     const p = buildPlan(s.state, source, { fields: ['tags'], cover: source.covers[0], coverTarget: { kind: 'series', id: 's' } });
-    await w.prepare(p, signal()); const r = await w.apply(p, signal());
-    expect(r.status).toBe('partial'); expect(r.outcomes[1]?.message).toContain('404');
+    await expect(w.prepare(p, signal())).rejects.toThrow('404');
+    await expect(w.apply(p, signal())).rejects.toThrow('先生成封面预览');
+    expect(s.requests.every(r => r.method === 'GET')).toBe(true);
+    expect(s.thumbnails.map(t => t.id)).toEqual(['existing-user-cover']);
+  });
+  it('uploads the exact preview bytes without re-downloading a changed or failed source', async () => {
+    const s = new Server(), source = record(), t = transport();
+    const request = vi.spyOn(t, 'request'), w = new Writer(s.client, t);
+    const p = buildPlan(s.state, source, { fields: ['tags'], cover: source.covers[0], coverTarget: { kind: 'series', id: 's' } });
+    await w.prepare(p, signal());
+    expect(p.cover?.beforeBlob).toBeInstanceOf(Blob);
+    request.mockRejectedValue(new Error('Source changed after preview'));
+    const r = await w.apply(p, signal());
+    expect(r.status).toBe('success'); expect(request).toHaveBeenCalledTimes(1);
+    expect(await hash(s.thumbnails.find(t => t.id === 'own-cover')!.blob)).toBe(p.cover!.prepared!.hash);
+  });
+  it('an upload failure after successful preview stays partial and preserves the old cover', async () => {
+    const s = new Server(), source = record(), w = new Writer(s.client, transport());
+    const p = buildPlan(s.state, source, { fields: ['tags'], cover: source.covers[0], coverTarget: { kind: 'series', id: 's' } });
+    await w.prepare(p, signal()); s.failCover = true;
+    const r = await w.apply(p, signal());
+    expect(r.status).toBe('partial'); expect(r.outcomes[1]?.message).toContain('500');
     expect(s.thumbnails.map(t => t.id)).toEqual(['existing-user-cover']);
   });
   it('same filesize but different cover bytes fail verification and cleanup never deletes another user cover', async () => {

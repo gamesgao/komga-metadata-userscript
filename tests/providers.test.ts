@@ -18,13 +18,13 @@ const mdid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 describe('online providers: fixture behavior, not live acceptance', () => {
   it('Bangumi next API searches books, preserves native staff, maps actual relations', async () => {
     const t = mock([
-      { data: [{ id: 1, name: '葬送のフリーレン', nameCN: '葬送的芙莉莲' }] },
+      { data: [{ id: 1, name: '葬送のフリーレン', nameCN: '葬送的芙莉莲', images: { common: 'https://lain.bgm.tv/search.jpg' } }] },
       { id: 1, name: '葬送のフリーレン', nameCN: '芙莉莲', summary: '原文', series: true, tags: [{ name: '魔法' }], airtime: { date: '2020-04-28' }, images: { large: 'https://lain.bgm.tv/a.jpg' }, infobox: [] },
       { data: [{ staff: { name: '山田鐘人', nameCN: '山田钟人' }, positions: [{ type: { id: 2001 } }] }, { staff: { name: '小学館' }, positions: [{ type: { id: 2004 } }] }], total: 2 },
       { data: [{ subject: { id: 99, name: '葬送のフリーレン (2)' }, relation: { id: 1003 }, order: 8 }], total: 1 }
     ]);
     const p = new Bangumi(t);
-    expect((await p.search('葬送', context()))[0]?.id).toBe('1');
+    expect((await p.search('葬送', context()))[0]).toMatchObject({ id: '1', cover: 'https://lain.bgm.tv/search.jpg' });
     expect(JSON.parse(t.calls[0]!.body!).filter.type).toEqual([1]);
     const r = await p.get('1', context());
     expect(nativeTitle(r)).toBe('葬送のフリーレン');
@@ -51,14 +51,14 @@ describe('online providers: fixture behavior, not live acceptance', () => {
   it('MangaUpdates searches/details with categories/authors/links, not guessed release date', async () => {
     const x = { series_id: 1, title: '日本語', url: 'https://www.mangaupdates.com/series/0000001/name', associated: [{ title: 'Alias' }], description: '<b>Text</b>', year: '2020', genres: [{ genre: 'Fantasy' }], categories: [{ category: 'Magic' }], authors: [{ name: '山田', type: 'Author' }], publishers: [{ publisher_name: '小学館' }], image: { url: { original: 'https://cdn.mangaupdates.com/a.jpg' } } };
     const p = new MangaUpdates(mock([{ results: [{ record: x }] }, x]));
-    expect((await p.search('日本語', context()))[0]?.title).toBe('日本語');
+    expect((await p.search('日本語', context()))[0]).toMatchObject({ title: '日本語', cover: 'https://cdn.mangaupdates.com/a.jpg' });
     const r = await p.get('1', context());
     expect(r.tags).toEqual(['Magic']); expect(r.authors[0]?.name).toBe('山田'); expect(r.releaseDate).toBeUndefined();
   });
   it('MangaBaka upgrades multilingual titles, tags, raw covers and explicit volume images', async () => {
     const x = { id: 1995, native_title: '葬送のフリーレン', title: 'Frieren', original_language: 'ja', status: 'hiatus', authors: ['山田鐘人'], artists: ['アベツカサ'], tags_v2: [{ name: 'Magic', name_path: 'Theme/Magic', is_genre: false }, { name: 'Fantasy', is_genre: true }], titles: [{ title: '葬送のフリーレン', language: 'ja', type: 'native' }], published: { start_date: '2020-04-28' }, cover: { raw: { url: 'https://images.mangabaka.dev/raw' } }, links_v2: [{ name_display: 'Publisher', url: 'https://publisher.test/' }], publishers: [{ name: '小学館' }] };
     const p = new MangaBaka(mock([{ data: [x] }, { data: x }, { data: [{ index_numeric: 4, language: 'ja', image: { x350: { x3: 'https://cdn.mangabaka.dev/v4' } } }], pagination: { next: null } }]));
-    expect((await p.search('Frieren', context()))[0]?.title).toBe('葬送のフリーレン');
+    expect((await p.search('Frieren', context()))[0]).toMatchObject({ title: '葬送のフリーレン', cover: 'https://images.mangabaka.dev/raw' });
     const r = await p.get('1995', context());
     expect(r.covers).toContainEqual({ url: 'https://cdn.mangabaka.dev/v4', volume: 4, language: 'ja' });
     expect(r.covers[0]?.url).toBe('https://images.mangabaka.dev/raw');
@@ -68,6 +68,19 @@ describe('online providers: fixture behavior, not live acceptance', () => {
     const x = { data: { id: 1, title: 'x' } };
     await expect(new MangaBaka(mock([x, { data: [], pagination: { next: 'https://evil.test/' } }])).get('1', context())).rejects.toMatchObject({ code: 'invalid-response' });
     await expect(new MangaBaka(mock([{ data: { id: 1, merged_with: 2 } }])).get('1', context())).rejects.toMatchObject({ code: 'invalid-id' });
+  });
+  it('search thumbnails use MangaDex cover includes and ComicVine image fields', async () => {
+    const t = mock([{ data: [{ id: mdid, attributes: { title: { ja: '原名' } }, relationships: [{ type: 'cover_art', attributes: { fileName: 'search.jpg' } }] }] }]);
+    const md = await new MangaDex(t).search('原名', context());
+    expect(md[0]?.cover).toBe(`https://uploads.mangadex.org/covers/${mdid}/search.jpg.256.jpg`);
+    expect(new URL(t.calls[0]!.url).searchParams.getAll('includes[]')).toContain('cover_art');
+    const c = context(); c.credentials.comicVineKey = 'fixture-key';
+    const cv = await new ComicVine(mock([{ status_code: 1, results: [{ id: 1, name: 'Title', site_detail_url: 'https://comicvine.gamespot.com/4050-1/', image: { small_url: 'https://comicvine.gamespot.com/thumb.jpg' } }] }])).search('Title', c);
+    expect(cv[0]?.cover).toBe('https://comicvine.gamespot.com/thumb.jpg');
+  });
+  it('an invalid image URL does not discard an otherwise valid search candidate', async () => {
+    const p = new Bangumi(mock([{ data: [{ id: 1, name: '原名', images: { common: 'javascript:alert(1)' } }] }]));
+    expect(await p.search('原名', context())).toEqual([{ provider: 'bangumi', id: '1', title: '原名', url: 'https://bgm.tv/subject/1' }]);
   });
   it('MangaDex maps author includes, native titles and named volume covers', async () => {
     const x = { id: mdid, attributes: { title: { en: 'Alias' }, altTitles: [{ ja: '原名' }], originalLanguage: 'ja', description: { en: 'Text' }, status: 'ongoing', tags: [{ attributes: { name: { en: 'Fantasy' } } }] }, relationships: [{ type: 'author', attributes: { name: '日本人' } }] };
@@ -84,7 +97,7 @@ describe('online providers: fixture behavior, not live acceptance', () => {
   it('AniList requests native names and preserves native title over romaji', async () => {
     const x = { id: 1, siteUrl: 'https://anilist.co/manga/1', title: { native: '日本語', romaji: 'Nihongo', english: 'English' }, description: 'text', status: 'FINISHED', genres: ['Fantasy'], startDate: { year: 2020, month: 1, day: 2 }, coverImage: { large: 'https://anilist.co/a.jpg' }, staff: { edges: [{ role: 'Story', node: { name: { native: '山田鐘人', full: 'Kanehito Yamada' } } }], pageInfo: { hasNextPage: false } } };
     const t = mock([{ data: { Page: { media: [x] } } }, { data: { Media: x } }]), p = new AniList(t);
-    expect((await p.search('日本', context()))[0]?.title).toBe('日本語');
+    expect((await p.search('日本', context()))[0]).toMatchObject({ title: '日本語', cover: 'https://anilist.co/a.jpg' });
     const r = await p.get('1', context());
     expect(nativeTitle(r)).toBe('日本語'); expect(r.authors[0]?.name).toBe('山田鐘人');
     expect(t.calls[1]!.body).toContain('native full');
@@ -122,7 +135,7 @@ describe('online providers: fixture behavior, not live acceptance', () => {
     const c = context(); c.credentials.malClientId = 'fixture-client-not-real';
     const x = { id: 1, title: 'Romaji', alternative_titles: { ja: '日本語', synonyms: ['Alias'] }, synopsis: 'text', status: 'finished', genres: [{ name: 'Fantasy' }], authors: [{ node: { last_name: '山田', first_name: '鐘人' }, role: 'Story' }], main_picture: { large: 'https://cdn.myanimelist.net/a.jpg' }, start_date: '2020' };
     const t = mock([{ data: [{ node: x }] }, x]), p = new MAL(t);
-    expect((await p.search('x', c))[0]?.id).toBe('1');
+    expect((await p.search('x', c))[0]).toMatchObject({ id: '1', cover: 'https://cdn.myanimelist.net/a.jpg' });
     expect(nativeTitle(await p.get('1', c))).toBe('日本語');
     expect(t.calls[0]?.headers?.['X-MAL-CLIENT-ID']).toBe('fixture-client-not-real');
     expect(await p.resolveLink('https://myanimelist.net/manga/1/name')).toBe('1');

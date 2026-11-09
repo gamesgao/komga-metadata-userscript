@@ -9,7 +9,10 @@ export interface Selection {
   cover?: Cover; coverTarget?: Target;
 }
 export interface Edit { target: Target; before: Metadata; after: Metadata; guards: Metadata }
-export interface CoverEdit { target: Target; source: Cover; beforeSelected?: string; beforeHash?: string }
+export interface CoverEdit {
+  target: Target; source: Cover; beforeSelected?: string; beforeHash?: string; beforeBlob?: Blob;
+  prepared?: { url: string; blob: Blob; hash: string };
+}
 export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; skipped: string[] }
 export function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;

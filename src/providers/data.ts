@@ -1,5 +1,5 @@
 import { MetadataError, type Candidate, type MetadataRecord, type ProviderId } from '../model';
-import type { Transport } from '../transport';
+import { type Transport, safeUrl } from '../transport';
 export type Obj = Record<string, unknown>;
 export function obj(value: unknown): Obj {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new MetadataError('invalid-response', '来源响应结构不符');
@@ -35,8 +35,11 @@ export function volume(text: string): number | undefined {
 export function record(provider: ProviderId, id: string, url: string, raw: unknown): MetadataRecord {
   return { provider, id, url, raw, titles: [], tags: [], genres: [], authors: [], covers: [], links: [{ label: provider, url }] };
 }
-export function candidate(provider: ProviderId, id: string, title: string, url: string): Candidate {
-  return { provider, id, title: required(title), url };
+export function candidate(provider: ProviderId, id: string, title: string, url: string, image?: unknown): Candidate {
+  const result: Candidate = { provider, id, title: required(title), url };
+  // A bad thumbnail must not discard an otherwise usable search result.
+  if (typeof image === 'string' && image) { try { result.cover = safeUrl(image); } catch { /* detail fallback */ } }
+  return result;
 }
 export async function json(t: Transport, url: string, signal: AbortSignal, body?: unknown, headers?: Record<string, string>): Promise<Obj> {
   const r = await t.request({ url, method: body === undefined ? 'GET' : 'POST', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }, signal);

@@ -16,6 +16,7 @@ function chunk(name: string, bytes: Buffer): Buffer {
 }
 const header = Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
 const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 255, 0, 0, 255]))), chunk('IEND', Buffer.alloc(0))]);
+const oldPng = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 0, 0, 255, 255]))), chunk('IEND', Buffer.alloc(0))]);
 let server: Server, base: string, artifact: string;
 let patches: { path: string; body: Record<string, unknown> }[];
 let uploaded: string[];
@@ -23,6 +24,7 @@ let series: { id: string; oneshot: boolean; metadata: Record<string, unknown> };
 let book: { id: string; seriesId: string; metadata: Record<string, unknown> };
 let covers: { id: string; selected: boolean; type: string }[];
 let coverFails: boolean;
+let uploadFails: boolean, coverCorrupt: boolean, coverDownloads: number;
 test.beforeAll(async () => {
   artifact = await readFile('dist/komga-metadata.user.js', 'utf8');
   server = createServer(async (req, res) => {
@@ -42,6 +44,7 @@ test.beforeAll(async () => {
       if (url.pathname.endsWith('/thumbnails')) {
         if (req.method === 'GET') return json(covers);
         if (req.method === 'POST') {
+          if (uploadFails) { res.statusCode = 503; return json({}); }
           const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
           const body = Buffer.concat(buffers);
           if (!req.headers['content-type']?.includes('multipart/form-data') || !body.includes(png)) { res.statusCode = 400; return json({}); }
@@ -53,12 +56,14 @@ test.beforeAll(async () => {
       if (match) {
         if (req.method === 'PUT') { covers.forEach(c => c.selected = c.id === match[1]); return json({}); }
         if (req.method === 'DELETE') { covers = covers.filter(c => c.id !== match[1]); return json({}); }
-        res.setHeader('Content-Type', 'image/png'); return res.end(png);
+        res.setHeader('Content-Type', 'image/png'); return res.end(match[1] === 'original-user' ? oldPng : png);
       }
       res.statusCode = 404; return json({});
     }
     if (url.pathname === '/fixture-cover.png') {
+      coverDownloads++;
       if (coverFails) { res.statusCode = 404; return res.end('missing'); }
+      if (coverCorrupt) { res.setHeader('Content-Type', 'text/html'); return res.end('<html>Not an image</html>'); }
       res.setHeader('Content-Type', 'image/png'); return res.end(png);
     }
     if (url.pathname === '/reader/assets/app.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(''); }
@@ -71,7 +76,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); });
 test.beforeEach(() => {
-  patches = []; uploaded = []; coverFails = false;
+  patches = []; uploaded = []; coverFails = false; uploadFails = false; coverCorrupt = false; coverDownloads = 0;
   series = { id: 's-real', oneshot: true, metadata: { title: '原始标题', titleLock: false, tags: ['old'], tagsLock: false, summary: 'old summary', summaryLock: true, links: [], alternateTitles: [] } };
   book = { id: 'book-actual', seriesId: 's-real', metadata: { title: 'Original Book', number: '1', authors: [], authorsLock: false, tags: [], links: [], summary: 'locked original', summaryLock: true } };
   covers = [{ id: 'original-user', selected: true, type: 'USER_UPLOADED' }];
@@ -115,7 +120,7 @@ async function install(page: Page, path = '/reader/oneshot/s-real') {
   await page.goto(base + path);
   await page.addScriptTag({ content: artifact });
 }
-async function readAndPreview(page: Page, cover = false) {
+async function readAndPreview(page: Page, cover = false, ready = true) {
   await page.getByRole('button', { name: '元数据', exact: true }).click();
   await expect(page.locator('#komga-metadata-panel p[data-state]')).toHaveText('当前：原始标题');
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
@@ -125,7 +130,7 @@ async function readAndPreview(page: Page, cover = false) {
   await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
   if (cover) await page.getByLabel('封面', { exact: true }).selectOption('0');
   await page.getByRole('button', { name: '生成预览' }).click();
-  await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
+  if (ready) await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
 }
 test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover write/readback/undo', async ({ page }) => {
   await install(page); await readAndPreview(page, true);
@@ -153,10 +158,10 @@ test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover 
   expect(series.metadata.tags).toEqual(['old']); expect(book.metadata.authors).toEqual([]);
   expect(covers).toEqual([{ id: 'original-user', selected: true, type: 'USER_UPLOADED' }]);
 });
-test('fixture browser: missing cover remains actionable partial and undo conflict does not overwrite', async ({ page }) => {
-  await install(page); await readAndPreview(page, true); coverFails = true;
+test('fixture browser: upload failure remains actionable partial and undo conflict does not overwrite', async ({ page }) => {
+  await install(page); await readAndPreview(page, true); uploadFails = true;
   await page.getByRole('button', { name: '应用', exact: true }).click();
-  await expect(page.getByText(/部分完成：.*封面下载失败 HTTP 404/)).toBeVisible();
+  await expect(page.getByText(/部分完成：.*Komga HTTP 503/)).toBeVisible();
   await expect(page.getByText(/部分完成：/)).toHaveCSS('opacity', '1');
   expect(uploaded).toEqual([]);
   series.metadata.tags = ['concurrent'];
@@ -318,4 +323,78 @@ test('modern UI: plain-text preview edits, narrow diffs and reduced motion', asy
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
   expect(series.metadata.summary).toBe('第一行\n第二行，不需要 JSON 转义');
   expect(book.metadata.summary).toBe('locked original');
+});
+
+test('cover UI: source groups fold, image cards persist after selection and blob URLs are released', async ({ page }) => {
+  await page.addInitScript(() => {
+    const created: string[] = [], revoked: string[] = [];
+    const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = blob => { const url = create(blob); created.push(url); return url; };
+    URL.revokeObjectURL = url => { revoked.push(url); revoke(url); };
+    Object.assign(window, { imageUrls: { created, revoked } });
+  });
+  await install(page);
+  await page.route('https://next.bgm.tv/p1/search/**', route => route.fulfill({ json: { data: [
+    { id: 1, name: '日本語候选', images: { common: `${base}/fixture-cover.png` } },
+    { id: 2, name: '第二候选', images: { common: `${base}/fixture-cover.png` } }
+  ] }, headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.route('https://graphql.anilist.co', route => route.fulfill({ json: { data: { Page: { media: [
+    { id: 3, title: { native: '別来源作品' }, siteUrl: 'https://anilist.co/manga/3', coverImage: { large: `${base}/fixture-cover.png` } }
+  ] } } }, headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.getByRole('button', { name: '元数据', exact: true }).click();
+  for (const id of ['mangabaka', 'mangadex', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  const bg = page.locator('.result-group[data-provider=bangumi]'), ani = page.locator('.result-group[data-provider=anilist]');
+  await expect(bg.locator('.cover-thumb[data-state=ready]')).toHaveCount(2);
+  expect(await bg.locator('img').evaluateAll(imgs => imgs.every(i => (i as HTMLImageElement).naturalWidth > 0 && (i as HTMLImageElement).src.startsWith('blob:')))).toBe(true);
+  await bg.locator('summary').click(); await expect(bg).toHaveJSProperty('open', false);
+  await expect(bg.locator('.candidate').first()).toBeHidden(); await expect(ani.locator('summary')).toBeInViewport();
+  await expect(ani.locator('.cover-thumb[data-state=ready]')).toHaveCount(1);
+  await bg.locator('summary').focus(); await page.keyboard.press('Enter');
+  await expect(bg).toHaveJSProperty('open', true);
+  await bg.getByRole('button', { name: '日本語候选', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
+  await expect(bg.locator('.candidate')).toHaveCount(2); await expect(ani).toBeVisible();
+  await expect(bg.getByRole('button', { name: '日本語候选', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(coverDownloads).toBe(1); // shared candidate thumbnail, not duplicate downloads
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#komga-metadata-panel')).toHaveCount(0);
+  expect(await page.evaluate(() => {
+    const { created, revoked } = (window as unknown as { imageUrls: { created: string[]; revoked: string[] } }).imageUrls;
+    return created.length > 0 && created.every(url => revoked.includes(url));
+  })).toBe(true);
+});
+
+test('cover UI: decoded current/new comparison and apply reuse the previewed download', async ({ page }) => {
+  await install(page); await readAndPreview(page, true);
+  const before = page.getByRole('img', { name: '当前封面', exact: true }), after = page.getByRole('img', { name: '替换为', exact: true });
+  for (const image of [before, after]) {
+    await expect(image).toBeVisible(); expect(await image.evaluate(e => (e as HTMLImageElement).naturalWidth)).toBe(1);
+  }
+  const pixel = (image: typeof before) => image.evaluate(e => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const c = canvas.getContext('2d')!; c.drawImage(e as HTMLImageElement, 0, 0);
+    return [...c.getImageData(0, 0, 1, 1).data];
+  });
+  expect(await pixel(before)).toEqual([0, 0, 255, 255]); expect(await pixel(after)).toEqual([255, 0, 0, 255]);
+  await expect(page.getByText('包含下载失败风险', { exact: false })).toHaveCount(0);
+  expect(patches).toEqual([]); expect(uploaded).toEqual([]); expect(coverDownloads).toBe(1);
+  await page.setViewportSize({ width: 390, height: 800 });
+  expect(await page.locator('.viewport').evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+  coverFails = true; // source disappears AFTER preview: upload must use viewed bytes
+  await page.getByRole('button', { name: '应用', exact: true }).click();
+  await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
+  expect(coverDownloads).toBe(1); expect(uploaded).toHaveLength(1);
+});
+
+for (const failure of ['missing', 'html']) test(`cover UI: ${failure} source blocks preview/apply before all writes and allows retry`, async ({ page }) => {
+  coverFails = failure === 'missing'; coverCorrupt = failure === 'html';
+  await install(page); await readAndPreview(page, true, false);
+  await expect(page.locator('.status[data-state=error]')).toContainText(failure === 'missing' ? '404' : '有效图片');
+  await expect(page.getByRole('button', { name: '应用', exact: true })).toBeDisabled();
+  expect(patches).toEqual([]); expect(uploaded).toEqual([]);
+  coverFails = coverCorrupt = false;
+  await page.getByRole('button', { name: '生成预览' }).click();
+  await expect(page.getByRole('img', { name: '替换为', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '应用', exact: true })).toBeEnabled();
 });

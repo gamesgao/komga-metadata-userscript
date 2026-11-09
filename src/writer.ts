@@ -54,11 +54,25 @@ function finish(result: Result): Result {
 export class Writer {
   private busy = false;
   constructor(private client: KomgaClient, private transport: Transport) {}
+  async image(url: string, signal: AbortSignal): Promise<Blob> {
+    const response = await this.transport.request({ url, responseType: 'blob' }, signal);
+    cancelled(signal);
+    if (response.status < 200 || response.status >= 300 || !response.blob) throw new MetadataError('http', `封面下载失败 HTTP ${response.status}`);
+    await validateImage(response.blob);
+    cancelled(signal);
+    return response.blob;
+  }
   async prepare(plan: Plan, signal: AbortSignal): Promise<Plan> {
     if (plan.cover) {
+      // Preview and upload the same immutable bytes; never re-download at apply.
+      plan.cover.prepared = undefined;
+      const blob = await this.image(plan.cover.source.url, signal);
       const selected = (await this.client.thumbnails(plan.cover.target, signal)).find(t => t.selected);
       plan.cover.beforeSelected = selected?.id;
-      plan.cover.beforeHash = selected ? await hash(await this.client.thumbnail(plan.cover.target, selected.id, signal)) : undefined;
+      plan.cover.beforeBlob = selected ? await this.client.thumbnail(plan.cover.target, selected.id, signal) : undefined;
+      plan.cover.beforeHash = plan.cover.beforeBlob ? await hash(plan.cover.beforeBlob) : undefined;
+      cancelled(signal);
+      plan.cover.prepared = { url: plan.cover.source.url, blob, hash: await hash(blob) };
     }
     return plan;
   }
@@ -88,6 +102,7 @@ export class Writer {
       }
       if (plan.cover) {
         if (plan.cover.target.kind === 'books' && !fresh.books.some(b => b.id === plan.cover!.target.id)) throw new MetadataError('conflict', '封面书籍归属已变化');
+        if (!plan.cover.prepared || plan.cover.prepared.url !== plan.cover.source.url) throw new MetadataError('verification', '请先生成封面预览');
         await this.coverGuard(plan.cover, signal);
       }
       for (const e of plan.edits) {
@@ -108,13 +123,11 @@ export class Writer {
           cancelled(signal);
           const old = await this.client.read(edit.target, signal), series = await this.client.read({ kind: 'series', id: plan.seriesId }, signal);
           if (old.thumbnailLock || series.thumbnailLock) throw new MetadataError('conflict', '封面已锁定');
-          const response = await this.transport.request({ url: edit.source.url, responseType: 'blob' }, signal);
-          if (response.status < 200 || response.status >= 300 || !response.blob) throw new MetadataError('http', `封面下载失败 HTTP ${response.status}`);
-          await validateImage(response.blob);
           await this.coverGuard(edit, signal);
-          const expected = await hash(response.blob);
+          const prepared = edit.prepared!;
+          const expected = prepared.hash;
           const existingIds = new Set((await this.client.thumbnails(edit.target, signal)).map(t => t.id));
-          const receipt = await this.client.upload(edit.target, response.blob, signal);
+          const receipt = await this.client.upload(edit.target, prepared.blob, signal);
           if (existingIds.has(receipt)) throw new MetadataError('verification', '上传返回了已有封面 ID；不清理已有封面');
           own = receipt;
           if (await hash(await this.client.thumbnail(edit.target, own, signal)) !== expected) throw new MetadataError('verification', '上传封面内容读回不符');

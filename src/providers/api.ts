@@ -36,7 +36,7 @@ export class Bangumi implements Provider {
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
     const data = await json(this.t, 'https://next.bgm.tv/p1/search/subjects?limit=20', c.signal, { keyword: q, filter: { type: [1] } });
-    return arr(data.data).map(v => { const x = obj(v); const id = numeric(idText(x.id)); return candidate(this.id, id, required(x.name), `https://bgm.tv/subject/${id}`); });
+    return arr(data.data).map(v => { const x = obj(v); const id = numeric(idText(x.id)); const images = obj(x.images ?? {}); return candidate(this.id, id, required(x.name), `https://bgm.tv/subject/${id}`, images.common || images.medium || images.large); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     numeric(id);
@@ -102,7 +102,7 @@ export class MangaUpdates implements Provider {
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
     const x = await json(this.t, 'https://api.mangaupdates.com/v1/series/search', c.signal, { search: q.slice(0, 400), perpage: 20, page: 1 });
-    return arr(x.results).map(v => { const row = obj(obj(v).record); return candidate(this.id, numeric(idText(row.series_id)), required(row.title), required(row.url)); });
+    return arr(x.results).map(v => { const row = obj(obj(v).record); const images = obj(obj(row.image ?? {}).url ?? {}); return candidate(this.id, numeric(idText(row.series_id)), required(row.title), required(row.url), images.thumb || images.original); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     numeric(id);
@@ -136,7 +136,7 @@ export class MangaBaka implements Provider {
   async resolveLink(input: string): Promise<string> { return numeric(/^\d+$/.test(input) ? input : linkId(input, ['mangabaka.org', 'www.mangabaka.org'], /^\/(?:(?:manga|series)\/)?(\d+)(?:\/|$)/)); }
   async search(q: string, c: Context): Promise<Candidate[]> {
     const x = await json(this.t, `https://api.mangabaka.org/v1/series/search?q=${encodeURIComponent(q)}`, c.signal);
-    return arr(x.data).map(v => { const row = obj(v); const id = numeric(idText(row.id)); return candidate(this.id, id, str(row.native_title) || str(row.title) || required(list(row.titles).map(v => obj(v).title)[0]), str(row.canonical_url) || `https://mangabaka.org/manga/${id}`); });
+    return arr(x.data).map(v => { const row = obj(v); const id = numeric(idText(row.id)); return candidate(this.id, id, str(row.native_title) || str(row.title) || required(list(row.titles).map(v => obj(v).title)[0]), str(row.canonical_url) || `https://mangabaka.org/manga/${id}`, bakaCover(row.cover)); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     numeric(id);
@@ -189,8 +189,14 @@ export class MangaDex implements Provider {
   }
   async resolveLink(input: string): Promise<string> { return this.validate(input.includes('://') ? linkId(input, ['mangadex.org', 'www.mangadex.org'], /^\/title\/([^/]+)/) : input); }
   async search(q: string, c: Context): Promise<Candidate[]> {
-    const x = await json(this.t, `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=20`, c.signal);
-    return arr(x.data).map(v => { const row = obj(v); const id = this.validate(idText(row.id)); const title = obj(obj(row.attributes).title); return candidate(this.id, id, required(title.ja || Object.values(title)[0]), `https://mangadex.org/title/${id}`); });
+    const x = await json(this.t, `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`, c.signal);
+    return arr(x.data).map(v => {
+      const row = obj(v), id = this.validate(idText(row.id)), title = obj(obj(row.attributes).title);
+      const cover = list(row.relationships).map(obj).find(r => r.type === 'cover_art');
+      const filename = str(obj(cover?.attributes ?? {}).fileName);
+      return candidate(this.id, id, required(title.ja || Object.values(title)[0]), `https://mangadex.org/title/${id}`,
+        /^[\w.-]+$/.test(filename) ? `https://uploads.mangadex.org/covers/${id}/${filename}.256.jpg` : undefined);
+    });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     this.validate(id);
@@ -235,8 +241,8 @@ export class AniList implements Provider {
     return obj(x.data);
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
-    const data = await this.query('query($q:String){Page(perPage:20){media(search:$q,type:MANGA){id siteUrl title{native romaji english}}}}', { q }, c);
-    return arr(obj(data.Page).media).map(v => { const row = obj(v), t = obj(row.title); return candidate(this.id, numeric(idText(row.id)), required(t.native || t.english || t.romaji), required(row.siteUrl)); });
+    const data = await this.query('query($q:String){Page(perPage:20){media(search:$q,type:MANGA){id siteUrl title{native romaji english} coverImage{large}}}}', { q }, c);
+    return arr(obj(data.Page).media).map(v => { const row = obj(v), t = obj(row.title); return candidate(this.id, numeric(idText(row.id)), required(t.native || t.english || t.romaji), required(row.siteUrl), obj(row.coverImage ?? {}).large); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     numeric(id);
@@ -268,7 +274,7 @@ export class MAL implements Provider {
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
     const x = await json(this.t, `https://api.myanimelist.net/v2/manga?q=${encodeURIComponent(q)}&limit=20`, c.signal, undefined, this.headers(c));
-    return arr(x.data).map(v => { const row = obj(obj(v).node), id = numeric(idText(row.id)); return candidate(this.id, id, required(row.title), `https://myanimelist.net/manga/${id}`); });
+    return arr(x.data).map(v => { const row = obj(obj(v).node), id = numeric(idText(row.id)), image = obj(row.main_picture ?? {}); return candidate(this.id, id, required(row.title), `https://myanimelist.net/manga/${id}`, image.medium || image.large); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     numeric(id);
@@ -304,7 +310,7 @@ export class ComicVine implements Provider {
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
     const x = await this.api(`search/?resources=volume&limit=20&query=${encodeURIComponent(q)}`, c);
-    return arr(x.results).map(v => { const row = obj(v); return candidate(this.id, `4050-${numeric(idText(row.id))}`, required(row.name), required(row.site_detail_url)); });
+    return arr(x.results).map(v => { const row = obj(v), image = obj(row.image ?? {}); return candidate(this.id, `4050-${numeric(idText(row.id))}`, required(row.name), required(row.site_detail_url), image.small_url || image.super_url || image.original_url); });
   }
   async get(id: string, c: Context): Promise<MetadataRecord> {
     await this.resolveLink(id);
