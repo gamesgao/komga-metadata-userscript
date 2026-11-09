@@ -1,4 +1,4 @@
-import { readFile, appendFile, writeFile, mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { readFile, appendFile } from 'node:fs/promises';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -16,6 +16,24 @@ function gh(args, optional404=false) {
 function api(path, optional404=false) {
   const text=gh(['api',`repos/${repository}/${path}`],optional404);
   return text===null?null:JSON.parse(text);
+}
+async function releaseRequest(path, {method='GET', body, binary=false, upload=false}={}) {
+  const token=process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if(!token) throw new Error('Release writes require the workflow token');
+  const headers={Authorization:`Bearer ${token}`, 'X-GitHub-Api-Version':'2022-11-28',
+    Accept:binary?'application/octet-stream':'application/vnd.github+json'};
+  if(body!==undefined) headers['Content-Type']=upload?'application/octet-stream':'application/json';
+  const url=`https://${upload?'uploads':'api'}.github.com/repos/${repository}/${path}`;
+  let response=await fetch(url,{method,headers,body:body===undefined?undefined:upload?body:JSON.stringify(body),redirect:'manual'});
+  // Signed asset redirects must not receive the GitHub workflow token.
+  if(binary && response.status===302) {
+    const location=new URL(response.headers.get('location'));
+    if(location.protocol!=='https:' || !location.hostname.endsWith('.githubusercontent.com')) throw new Error('Unexpected asset redirect host');
+    response=await fetch(location);
+  }
+  if(!response.ok) throw new Error(`GitHub ${method} ${path}: HTTP ${response.status}`);
+  if(response.status===204) return null;
+  return binary?Buffer.from(await response.arrayBuffer()):response.json();
 }
 
 async function output(name,value) {
@@ -56,29 +74,27 @@ if (!releaseDecision(existing,taggedCommit(tag),commit)) {
     const hash=createHash('sha256').update(bytes).digest('hex'); expected.set(name,hash);
     if(name!=='SHA256SUMS' && !sums.includes(`${hash}  ${name}`)) throw new Error(`Package checksum mismatch: ${name}`);
   }
-  if (!existing) {
+  let draft=existing;
+  if (!draft) {
     const notes=`## 安装与更新\n\n安装附件 komga-metadata.user.js；已有用户由 komga-metadata.meta.js 检查更新。\n\n本版本来自通过 Verify userscript 的提交 ${commit}，发布构建另跑浏览器回归。\n\nWorker/WASM 固定到 ${tag}，完整静态资源在 ZIP 内，SHA256SUMS 用于校验。**不包含预建数据库或来源归档。**\n\n项目仍为开发版；未完成的跨浏览器及认证来源验收不因创建 Release 而视为通过。见仓库 docs/UI.md 与 docs/RELEASING.md。\n`;
-    await writeFile(join(directory,'notes.md'),notes);
-    gh(['release','create',tag,'--repo',repository,'--draft','--target',commit,'--title',tag,'--notes-file',join(directory,'notes.md')]);
+    // Keep the creation response ID. Tag/list lookups can lag a new draft.
+    draft=await releaseRequest('releases',{method:'POST',body:{tag_name:tag,target_commitish:commit,name:tag,body:notes,draft:true}});
+  } else {
+    draft=await releaseRequest(`releases/${draft.id}`);
   }
-  // Recheck before --clobber: never update assets of an already-published release.
-  const draft=findRelease(api,tag);
-  if (!draft.draft || draft.target_commitish!==commit) throw new Error('Release is no longer our draft');
-  gh(['release','upload',tag,'--repo',repository,'--clobber',...names.map(n=>join(directory,n))]);
-  const uploaded=api(`releases/${draft.id}`).assets.map(a=>a.name).sort();
-  if (JSON.stringify(uploaded)!==JSON.stringify([...names].sort())) throw new Error('Draft has unexpected/missing assets');
-  await mkdir('.runtime',{recursive:true});
-  const check=await mkdtemp(join('.runtime','release-readback-'));
-  try {
-    gh(['release','download',tag,'--repo',repository,'--dir',check]);
-    for (const [name,hash] of expected) {
-      if(createHash('sha256').update(await readFile(join(check,name))).digest('hex')!==hash) throw new Error(`Uploaded asset readback mismatch: ${name}`);
-    }
-  } finally { await rm(check,{recursive:true,force:true}); }
+  if (!draft?.draft || draft.target_commitish!==commit) throw new Error('Release is no longer our draft');
+  if(draft.assets.some(a=>!names.includes(a.name))) throw new Error('Draft has unexpected assets');
+  for(const name of names) {
+    const old=draft.assets.find(a=>a.name===name);
+    if(old) await releaseRequest(`releases/assets/${old.id}`,{method:'DELETE'});
+    const asset=await releaseRequest(`releases/${draft.id}/assets?name=${encodeURIComponent(name)}`,{method:'POST',body:await readFile(join(directory,name)),upload:true});
+    const bytes=await releaseRequest(`releases/assets/${asset.id}`,{binary:true});
+    if(createHash('sha256').update(bytes).digest('hex')!==expected.get(name)) throw new Error(`Uploaded asset readback mismatch: ${name}`);
+    console.log(`Verified uploaded bytes: ${name}`);
+  }
   const latest=api('releases/latest',true);
   const makeLatest=!latest || newerVersion(version,latest.tag_name.replace(/^v/,''));
-  gh(['release','edit',tag,'--repo',repository,'--draft=false',`--latest=${makeLatest}`]);
-  const published=api(`releases/${draft.id}`);
+  const published=await releaseRequest(`releases/${draft.id}`,{method:'PATCH',body:{draft:false,make_latest:String(makeLatest)}});
   if(published.draft || taggedCommit(tag)!==commit) throw new Error('Published release/tag verification failed');
   await output('url',published.html_url);
 }
