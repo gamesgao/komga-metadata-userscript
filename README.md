@@ -2,9 +2,15 @@
 
 桌面浏览器中的 Komga 多源元数据工具。目标是不运行额外后端，在线获取来源资料，或按页读取用户选取的预建 SQLite 目录，然后预览并写回 Komga。
 
-**开发版 v0.2.0，尚非全部验收完成的稳定版本。** 已包含多源搜索、现代亮暗主题界面、分栏字段选择、写入对比预览、锁保护、读回验证与撤销，以及离线 SQLite 目录面板。元数据、本地数据库与设置分为独立页签。本项目不提供官方预建数据库；可导入用户已有目录或自行构建。新版界面参考与本次实测范围见 [UI 设计与验收](docs/UI.md)，历史验收记录见 [VALIDATION.md](VALIDATION.md)。
+**开发版，尚非全部验收完成的稳定版本。** 已包含多源搜索、现代亮暗主题界面、分栏字段选择、写入对比预览、锁保护、读回验证与撤销，以及离线 SQLite 目录面板。元数据、本地数据库与设置分为独立页签。本项目不提供官方预建数据库；可导入用户已有目录或自行构建。新版界面参考与本次实测范围见 [UI 设计与验收](docs/UI.md)，历史验收记录见 [VALIDATION.md](VALIDATION.md)。
 
-## 构建与安装
+## 安装与自动更新
+
+[安装最新版脚本](https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js) · [版本与完整资源包](https://github.com/gamesgao/komga-metadata-userscript/releases)
+
+Release 版使用独立 `.meta.js` 检查更新，并固定同版本 Worker/WASM。推送 main 后，CI 通过且版本号尚未发布时自动创建 Release。流程、校验和及重试方式见 [发布说明](docs/RELEASING.md)。
+
+### 自行构建
 
 ```sh
 npm ci

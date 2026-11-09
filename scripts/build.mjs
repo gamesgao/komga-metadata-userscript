@@ -1,8 +1,10 @@
 import { build } from 'esbuild';
-import { cp, mkdir, readFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { validateVersion, assetBase, latestBase, userFilename, metaFilename } from './release-config.mjs';
+const version = validateVersion(JSON.parse(await readFile('package.json', 'utf8')).version);
 const base = process.env.KOMGA_METADATA_ASSET_BASE ||
-  'https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/catalog/';
+  assetBase(version, process.env.KOMGA_METADATA_RELEASE === '1');
 if (base && !/^https?:\/\/[^?#]+\/$/.test(base)) throw new Error('Asset base must be an HTTP(S) directory URL ending in /');
 execFileSync(process.execPath, ['build.mjs'], { cwd: 'catalog', stdio: 'inherit' });
 await mkdir('dist/catalog', { recursive: true });
@@ -10,10 +12,10 @@ await cp('catalog/dist', 'dist/catalog', { recursive: true });
 const header = `// ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.2.0
+// @version      ${version}
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
-// @downloadURL  https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
-// @updateURL    https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
+// @downloadURL  ${latestBase}${userFilename}
+// @updateURL    ${latestBase}${metaFilename}
 // @license      MIT
 // @match        http://*/*
 // @match        https://*/*
@@ -57,6 +59,7 @@ const header = `// ==UserScript==
 // @run-at       document-idle
 // ==/UserScript==`;
 const license = await readFile('LICENSE', 'utf8');
+await writeFile(`dist/${metaFilename}`, `${header}\n`);
 const notices = `Provider adaptations: Copyright (c) 2022 Snd-R; Copyright (c) 2023 eeezae; Copyright (c) 2025 ramu; Copyright (c) 2025 dyphire.\nSee THIRD_PARTY.md for provenance.\n${license}`;
 await build({
   entryPoints: ['src/entry.ts'], bundle: true, format: 'iife', target: 'es2022',

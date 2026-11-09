@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -21,7 +22,7 @@ CONFIG = RUNTIME / "e2e-config.json"
 STATE = RUNTIME / "e2e-state.json"
 EXTENSION = RUNTIME / "tampermonkey"
 PROFILE = RUNTIME / f"browser-acceptance-{time.time_ns()}"
-ARTIFACT = ROOT / "dist" / "komga-metadata.user.js"
+ARTIFACT = Path(os.environ.get("KOMGA_ACCEPTANCE_ARTIFACT", str(ROOT / "dist" / "komga-metadata.user.js"))).resolve()
 BASE_URL = "http://127.0.0.1:18767"
 SAFE_TITLE = "葬送のフリーレン"
 

@@ -31,6 +31,8 @@ jobs:
       - name: Catalog typecheck
         run: npm --prefix catalog run typecheck
       - run: npm run test:browser
+      - name: Release metadata and versioning tests
+        run: npm run test:release
       - name: Check committed build reproducibility
         run: git diff --exit-code -- dist
       - uses: actions/upload-artifact@v4

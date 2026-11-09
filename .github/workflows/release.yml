@@ -1,0 +1,60 @@
+name: Release userscript
+on:
+  workflow_run:
+    workflows: ['Verify userscript']
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: userscript-release
+  cancel-in-progress: false
+jobs:
+  release:
+    # Never publish PR/fork artifacts, failed runs, or an untested branch tip.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/verify.yml' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.runtime/playwright
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            catalog/package-lock.json
+      - name: Plan version release
+        id: plan
+        run: node scripts/release.mjs plan
+      - name: Install locked dependencies
+        if: steps.plan.outputs.publish == 'true'
+        run: npm ci && npm --prefix catalog ci
+      - name: Install test browser
+        if: steps.plan.outputs.publish == 'true'
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: Build and test actual release bundle
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          KOMGA_METADATA_RELEASE: '1'
+        run: npm run test:browser && npm run test:release
+      - name: Package software and checksums (no databases)
+        if: steps.plan.outputs.publish == 'true'
+        run: python3 scripts/package_release.py
+      - name: Upload draft, verify downloaded bytes, then publish
+        if: steps.plan.outputs.publish == 'true'
+        run: node scripts/release.mjs publish
