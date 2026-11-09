@@ -3,6 +3,18 @@ export const userFilename = 'komga-metadata.user.js';
 export const metaFilename = 'komga-metadata.meta.js';
 export const latestBase = `https://github.com/${repository}/releases/latest/download/`;
 
+export function findRelease(api, tag) {
+  const published=api(`releases/tags/${tag}`,true);
+  if(published) return published;
+  // A new draft has no tag yet; authenticated listing exposes its release ID.
+  for(let page=1;;page++) {
+    const releases=api(`releases?per_page=100&page=${page}`);
+    const draft=releases.find(r=>r.tag_name===tag);
+    if(draft) return draft;
+    if(releases.length<100) return null;
+  }
+}
+
 export function validateVersion(version) {
   if (typeof version !== 'string' || version !== version.trim() || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) ||
       !version.split('.').every(n => Number.isSafeInteger(Number(n)))) {

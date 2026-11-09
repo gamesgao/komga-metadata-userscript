@@ -2,7 +2,7 @@ import { readFile, appendFile, writeFile, mkdtemp, rm, mkdir } from 'node:fs/pro
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { repository, validateVersion, releaseDecision, newerVersion } from './release-config.mjs';
+import { repository, validateVersion, releaseDecision, newerVersion, findRelease } from './release-config.mjs';
 
 function gh(args, optional404=false) {
   const r=spawnSync('gh',args,{encoding:'utf8'});
@@ -17,6 +17,7 @@ function api(path, optional404=false) {
   const text=gh(['api',`repos/${repository}/${path}`],optional404);
   return text===null?null:JSON.parse(text);
 }
+
 async function output(name,value) {
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,`${name}=${value}\n`);
   console.log(`${name}=${value}`);
@@ -36,7 +37,8 @@ if (lock.version!==version || lock.packages[''].version!==version) throw new Err
 const tag=`v${version}`;
 const commit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
 if (process.env.VERIFIED_SHA && process.env.VERIFIED_SHA!==commit) throw new Error('Checkout is not the CI-verified commit');
-const existing=api(`releases/tags/${tag}`,true);
+const existing=findRelease(api,tag);
+if(existing?.draft) console.log(`Found draft ${existing.id} for ${existing.target_commitish}`);
 if (!releaseDecision(existing,taggedCommit(tag),commit)) {
   await output('publish','false'); console.log(`Already published ${tag}; left untouched.`);
 } else if (mode==='plan') {
@@ -60,10 +62,10 @@ if (!releaseDecision(existing,taggedCommit(tag),commit)) {
     gh(['release','create',tag,'--repo',repository,'--draft','--target',commit,'--title',tag,'--notes-file',join(directory,'notes.md')]);
   }
   // Recheck before --clobber: never update assets of an already-published release.
-  const draft=api(`releases/tags/${tag}`);
+  const draft=findRelease(api,tag);
   if (!draft.draft || draft.target_commitish!==commit) throw new Error('Release is no longer our draft');
   gh(['release','upload',tag,'--repo',repository,'--clobber',...names.map(n=>join(directory,n))]);
-  const uploaded=api(`releases/tags/${tag}`).assets.map(a=>a.name).sort();
+  const uploaded=api(`releases/${draft.id}`).assets.map(a=>a.name).sort();
   if (JSON.stringify(uploaded)!==JSON.stringify([...names].sort())) throw new Error('Draft has unexpected/missing assets');
   await mkdir('.runtime',{recursive:true});
   const check=await mkdtemp(join('.runtime','release-readback-'));
@@ -76,7 +78,7 @@ if (!releaseDecision(existing,taggedCommit(tag),commit)) {
   const latest=api('releases/latest',true);
   const makeLatest=!latest || newerVersion(version,latest.tag_name.replace(/^v/,''));
   gh(['release','edit',tag,'--repo',repository,'--draft=false',`--latest=${makeLatest}`]);
-  const published=api(`releases/tags/${tag}`);
+  const published=api(`releases/${draft.id}`);
   if(published.draft || taggedCommit(tag)!==commit) throw new Error('Published release/tag verification failed');
   await output('url',published.html_url);
 }

@@ -1,7 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { validateVersion, releaseDecision, newerVersion, assetBase, latestBase, userFilename, metaFilename } from '../release-config.mjs';
+import { validateVersion, releaseDecision, newerVersion, assetBase, latestBase, userFilename, metaFilename, findRelease } from '../release-config.mjs';
+
+test('draft lookup survives a tag-endpoint 404 and paginates authenticated listings',()=>{
+  const draft={id:123,draft:true,tag_name:'v0.2.1'};
+  const calls=[];
+  const api=(path,optional)=>{
+    calls.push(path);
+    if(path==='releases/tags/v0.2.1') {assert.equal(optional,true);return null;}
+    if(path.endsWith('page=1')) return Array.from({length:100},()=>({tag_name:'other'}));
+    if(path.endsWith('page=2')) return [draft];
+    throw new Error('Unexpected API request');
+  };
+  assert.equal(findRelease(api,'v0.2.1'),draft);
+  assert.equal(calls.length,3);
+  assert.equal(findRelease(path=>path.startsWith('releases/tags/')?null:[],'v0.2.2'),null);
+  assert.equal(findRelease(()=>draft,'v0.2.1'),draft);
+});
 
 test('release versions are canonical stable semver and safe tag names',()=>{
   assert.equal(validateVersion('0.2.1'),'0.2.1');
