@@ -1,6 +1,19 @@
 # Validation ledger
 
-Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. **The tables below are the historical component-1 ledger, not the current project-wide status.** See [v0.2.0 UI and live regression evidence](docs/UI.md) for the latest executed scope. The project is still not fully accepted as a stable release.
+Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. **The component-1 table below is historical, not the current project-wide status.** See the v0.2.1 section here and [UI regression evidence](docs/UI.md) for the executed scope. The project is still not fully accepted as a stable release.
+
+## v0.2.1 automatic Release acceptance (2026-11-09)
+
+- [Source CI](https://github.com/gamesgao/komga-metadata-userscript/actions/runs/42544823020): PASS; 62 core tests, 9 browser tests, 5 catalog tests, 6 release tests, typechecks and committed-dist reproducibility.
+- [Automatic Release run](https://github.com/gamesgao/komga-metadata-userscript/actions/runs/42544921416): attempt 1 built/tested the release-mode bundle, uploaded a draft, downloaded/hash-checked every asset, then published. Attempt 2 skipped the published version; release ID and every asset ID remained unchanged.
+- [Published v0.2.1](https://github.com/gamesgao/komga-metadata-userscript/releases/tag/v0.2.1): all five public assets returned HTTP 200 without authentication; GitHub digests, SHA256SUMS, ZIP manifest and file hashes matched. Version-pinned reader/build Worker and SQLite WASM URLs also returned matching bytes. No databases or source archives shipped.
+- Downloaded script SHA-256: `31160761ee97da9c8124743fdd02bacd4a03b3a6252e67d96f9c9ba11dabd4f7`. Tests below installed these exact public Release bytes, not a local developer rebuild.
+- Actual Tampermonkey / Chromium 156.0.8078.4 / isolated Komga 1.30.0: PASS for live Bangumi details, locks and native author mapping, preview/PATCH/GET, series/book/One-Shot cover upload/readback/undo, stale-preview conflicts and injected 503 handling. Synthetic fixture restore had no errors. An initial extension-startup timeout was retried without modifying the product.
+- Release UI/read-only catalog acceptance: PASS for themes, preview, narrow layout, Escape and an existing full BookWalker catalog opened through the actual GM-loaded, tag-pinned Worker/WASM. No database was rebuilt for release distribution.
+- Installation boundary: direct navigation to the public GitHub attachment URL did not open a native installation prompt in tested Chromium. **File import of the downloaded Release through Tampermonkey was tested successfully**; do not describe the attachment link as universally one-click installation. Update metadata/header/URLs were verified, not a fabricated next-version scheduled-upgrade demonstration.
+- Initial draft lookup failed before publication. Fixed by retaining the creation response ID and using release/asset IDs for upload, byte readback and publication; failed empty drafts were removed, without moving any published tag.
+
+## Historical component-1 acceptance
 
 | Feature | Required acceptance | Status |
 |---|---|---|

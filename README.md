@@ -8,6 +8,8 @@
 
 [安装最新版脚本](https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js) · [版本与完整资源包](https://github.com/gamesgao/komga-metadata-userscript/releases)
 
+如果点击后浏览器直接下载 `.user.js`，在 **Tampermonkey 管理面板 → 实用工具 → 从文件导入** 中选择它即可；不保证所有浏览器都会从 GitHub Release 附件直接弹出安装页。
+
 Release 版使用独立 `.meta.js` 检查更新，并固定同版本 Worker/WASM。推送 main 后，CI 通过且版本号尚未发布时自动创建 Release。流程、校验和及重试方式见 [发布说明](docs/RELEASING.md)。
 
 ### 自行构建

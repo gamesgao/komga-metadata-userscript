@@ -6,6 +6,8 @@
 - [更新元数据](https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js)
 - [全部版本](https://github.com/gamesgao/komga-metadata-userscript/releases)
 
+本机 Chromium 实测：从文件导入 Release 附件成功；直接导航到附件链接未自动出现 Tampermonkey 安装确认。若浏览器将该附件下载为文件，使用 **Tampermonkey 管理面板 → 实用工具 → 从文件导入** 安装 `.user.js`。若你的浏览器能直接弹出确认页，也可直接安装。
+
 安装后由 Tampermonkey 按其设置检查更新。`@updateURL` 只下载 metadata 文件，发现新版本后通过 `@downloadURL` 获取脚本。旧的 main/raw 安装用户可以安装一次 Release 版切换到该通道；脚本 name/namespace 不变，GM 设置键不变。
 
 参考的 [KomgaBangumi](https://github.com/dyphire/KomgaBangumi) 使用 `.user.js` + `.meta.js` 分发。查阅时其仓库没有 Actions Release 工作流，本项目是在沿用更新约定的基础上补充自动发布。
