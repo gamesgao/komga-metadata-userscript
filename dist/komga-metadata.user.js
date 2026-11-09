@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.1.0
+// @version      0.2.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
 // @updateURL    https://raw.githubusercontent.com/gamesgao/komga-metadata-userscript/main/dist/komga-metadata.user.js
@@ -1813,6 +1813,50 @@ SOFTWARE.
     }
   };
 
+  // src/ui-style.ts
+  var panelStyle = `
+:host{font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",system-ui,sans-serif;--bg:#fff;--surface:#f7f8fa;--hover:#eef0f4;--text:#20232b;--muted:#697180;--line:#e4e7ed;--accent:#4f46e5;--tint:#eeedff;--danger:#b42336;--positive:#14804a;color:var(--text);color-scheme:light}
+:host([data-theme=dark]){--bg:#1b1d23;--surface:#14161b;--hover:#282b34;--text:#e9eaf0;--muted:#a2a8b7;--line:#353944;--accent:#a6a0ff;--tint:#302d49;--danger:#ff8b98;--positive:#69d6a0;color-scheme:dark}
+*{box-sizing:border-box} [hidden]{display:none!important}
+.dialog{pointer-events:auto;position:fixed;inset:0;margin:auto;width:min(1120px,calc(100vw - 48px));height:min(820px,calc(100dvh - 64px));max-width:none;max-height:none;padding:0;border:1px solid var(--line);border-radius:16px;background:var(--bg);color:var(--text);box-shadow:0 24px 80px #0005;font:inherit;overflow:hidden}
+.dialog[open]{display:flex;flex-direction:column}.dialog::backdrop{background:#10131d66;backdrop-filter:blur(3px)}
+.header{display:flex;align-items:center;gap:12px;padding:20px 24px 16px;flex-shrink:0}.brand{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--tint);color:var(--accent)}
+.heading{min-width:0;flex:1}.heading h2{margin:0;font-size:17px;font-weight:650;letter-spacing:-.3px}.context{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:65vw}.header-actions{display:flex;gap:6px}
+svg{width:18px;height:18px;flex-shrink:0;vertical-align:middle}button,input,select,textarea{font:inherit;color:inherit}button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:7px 12px;cursor:pointer;font-weight:550;transition:background .12s,border-color .12s;white-space:nowrap}button:hover:not(:disabled){background:var(--hover);border-color:var(--muted)}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:var(--accent);border-color:var(--accent);color:#fff}:host([data-theme=dark]) .primary{color:#191627}.primary:hover:not(:disabled){background:var(--accent);filter:brightness(.93)}.ghost{border-color:transparent;background:transparent;color:var(--muted)}.icon-button{width:34px;padding:7px;min-height:34px}.subtle{font-weight:500;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}input:not([type=checkbox]),select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;max-width:100%;outline-offset:1px}input::placeholder,textarea::placeholder{color:var(--muted)}select{height:38px;text-overflow:ellipsis}input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0;flex-shrink:0;cursor:pointer}label{cursor:pointer}label:has(input[type=password]){cursor:default}
+.tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);padding:0 24px;flex-shrink:0}.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:10px 0 12px;font-size:13px}.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
+.viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--surface);scrollbar-width:thin;scrollbar-color:var(--line) transparent}.tab-panel{padding:22px 24px;min-height:100%}.workspace{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:20px;align-items:start}.card{min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:18px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h3{margin:0;font-size:14px;font-weight:650}.section-title select{font-size:12px;height:32px;padding:4px 8px}
+h3{font-size:14px;font-weight:600;margin:0 0 10px}p{margin:8px 0;overflow-wrap:anywhere}pre{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:1.75;color:var(--muted)}.search-row{display:flex;gap:8px}.search-row input{width:100%;flex:1}.source-toggles{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}.source-toggles label{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:11px;transition:background .12s}.source-toggles label:has(:checked){background:var(--tint);border-color:var(--tint);color:var(--accent)}.source-toggles input{width:12px;height:12px}.direct-row{display:grid;grid-template-columns:115px minmax(0,1fr) auto;gap:8px}.direct-row input{width:100%}
+details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0;user-select:none}details[open]>summary{margin-bottom:8px}.results{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-height:230px}.results:empty::before{content:'\u641C\u7D22\u4F5C\u54C1\uFF0C\u9009\u62E9\u5339\u914D\u7684\u6761\u76EE';display:block;text-align:center;padding:64px 8px;color:var(--muted);font-size:13px}.result-group{margin-bottom:16px}.result-group>h3{font-size:11px;color:var(--muted);letter-spacing:.4px;margin-bottom:6px}.candidate{width:100%;text-align:left;justify-content:space-between;white-space:normal;line-height:1.5;margin:3px 0;font-weight:500;padding:11px 12px}.candidate::after{content:'\u203A';font-size:20px;color:var(--muted);margin-left:10px}.results>h3{font-size:17px;line-height:1.6}.record-url{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-meta{font-size:12px;color:var(--muted)}.record-summary{max-height:210px;overflow:auto;scrollbar-width:thin}.volumes button{display:flex;width:100%;white-space:normal;text-align:left;justify-content:flex-start;margin:5px 0;font-size:12px}
+.field-label{display:grid;gap:6px;color:var(--muted);font-size:12px;margin-bottom:12px}.field-label select{width:100%;color:var(--text);font-size:13px}.field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 6px;padding:12px 0 16px}.field-grid label,.check-label{display:flex;align-items:center;gap:7px;font-size:12px;line-height:1.5;min-height:28px}.field-grid label:first-child{grid-column:span 2}.field-caption{font-size:12px;font-weight:600;border-top:1px solid var(--line);padding-top:16px;margin-top:16px}.hint{font-size:11px;color:var(--muted);margin:8px 0 0}
+.footer{display:flex;align-items:center;gap:10px;padding:14px 24px;border-top:1px solid var(--line);background:var(--bg);flex-shrink:0}.status{flex:1;min-width:0;font-size:12px;color:var(--muted);margin:0;max-height:90px;overflow:auto}.status[data-state=error]{color:var(--danger)}.status[data-state=busy]::before{content:'';display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite;vertical-align:middle}.status[data-state=success]{color:var(--positive);font-size:0}.status[data-state=success]::before{content:'\u2713';font-size:22px}.footer-actions{display:flex;gap:8px;align-items:center}.cancel-action[hidden]{display:none}
+.preview:empty{display:none}.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}.preview-head h3{font-size:18px;margin:0}.target-heading{font-size:12px;color:var(--muted);margin:20px 0 10px}.row{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:14px;margin:10px 0}.row>label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}.diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}.diff-caption{font-size:10px;color:var(--muted);margin-bottom:5px}.diff pre{margin:0;padding:10px;background:var(--surface);border-radius:7px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:180px;overflow:auto}.diff textarea{display:block;width:100%;min-height:92px;resize:vertical;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.row:has(input[data-field]:not(:checked)){opacity:.55}
+.settings-card{max-width:660px;margin:0 auto}.settings-card>summary{font-size:15px;color:var(--text);font-weight:600}.settings-card>label:has(input[type=password]){display:grid;gap:5px;font-size:12px;margin:14px 0;color:var(--muted)}.settings-card input[type=password]{width:100%;color:var(--text)}.settings-card>label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px;margin:18px 0}
+section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
+@keyframes km-spin{to{transform:rotate(360deg)}}
+@media(max-width:820px){.dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);border-radius:12px}.workspace{grid-template-columns:1fr}.tab-panel{padding:16px}.header{padding:16px}.tabs{padding:0 16px}.footer{padding:12px 16px;flex-wrap:wrap}.status{flex-basis:100%}.footer-actions{margin-left:auto}.direct-row{grid-template-columns:95px minmax(0,1fr) auto}.diff{grid-template-columns:1fr}.context{max-width:55vw}}
+@media(prefers-reduced-motion:reduce){*,*::before{transition:none!important;animation-duration:1.5s!important}.dialog{transition:none!important}}
+`;
+  function icon(name) {
+    const paths = {
+      layers: ["m12 3 9 5-9 5-9-5 9-5Z", "m3 12 9 5 9-5", "m3 16 9 5 9-5"],
+      close: ["m6 6 12 12", "M18 6 6 18"],
+      sun: ["M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42", "M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0"],
+      search: ["M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0", "m17 17 4 4"],
+      database: ["M20 6c0 2-3.6 3-8 3S4 8 4 6s3.6-3 8-3 8 1 8 3Z", "M4 6v12c0 2 3.6 3 8 3s8-1 8-3V6", "M4 12c0 2 3.6 3 8 3s8-1 8-3"],
+      settings: ["M4 7h16M4 17h16", "M8 4v6M16 14v6"],
+      back: ["m12 5-7 7 7 7", "M5 12h15"]
+    };
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    for (const [k, v] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+    for (const d of paths[name]) {
+      const path = document.createElementNS(svg.namespaceURI, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
   // src/ui.ts
   var labels = { title: "\u6807\u9898\uFF08\u9ED8\u8BA4\u4E0D\u6539\uFF09", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
   function element(tag, text2) {
@@ -1830,7 +1874,8 @@ SOFTWARE.
     const l = element("label", label), i = element("input");
     i.type = type;
     i.setAttribute("aria-label", label);
-    l.append(i);
+    if (type === "checkbox") l.prepend(i);
+    else l.append(i);
     parent.append(l);
     return i;
   }
@@ -1872,20 +1917,82 @@ SOFTWARE.
       this.client = client;
       this.writer = writer;
       this.host.id = "komga-metadata-panel";
-      this.host.style.cssText = "position:fixed;right:16px;top:48px;z-index:2147483000";
+      this.host.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483000";
+      this.host.dataset.theme = storage.get("ui-theme-v1", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       const style = element("style");
-      style.textContent = `:host{font:14px system-ui;color:#222}section{background:#fff;border:1px solid #888;border-radius:8px;box-shadow:0 4px 20px #0004;padding:14px;width:min(620px,90vw);max-height:85vh;overflow:auto}button,input,select,textarea{font:inherit;margin:4px;padding:5px}button{cursor:pointer}button:disabled{cursor:wait}label{display:inline-block}textarea{width:95%;height:65px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:6px}p{overflow-wrap:anywhere}p[data-state=error]{color:#a21919}p[data-state=success]{color:#137333;transition:opacity .5s}.row{border-top:1px solid #ddd;padding:6px}details{margin:8px 0}h3{font-size:15px}`;
-      const header = element("header", "\u5143\u6570\u636E ");
-      header.append(button("\u5173\u95ED", () => {
-        if (this.busy) this.controller?.abort();
+      style.textContent = panelStyle;
+      this.body.className = "dialog";
+      this.body.setAttribute("aria-label", "\u5143\u6570\u636E");
+      this.body.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        this.controller?.abort();
         void this.close();
-      }), button("\u53D6\u6D88", () => this.controller?.abort()));
+      });
+      this.body.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab" || event.ctrlKey || event.altKey || event.metaKey) return;
+        const focusable = [...this.body.querySelectorAll("button,input,select,textarea,summary,a[href],[tabindex]")].filter((e) => e.tabIndex >= 0 && !e.matches(":disabled") && e.getClientRects().length > 0);
+        const first = focusable[0], last = focusable.at(-1), active = this.shadow.activeElement;
+        if (event.shiftKey && active === first && last) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last && first) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+      const header = element("header");
+      header.className = "header";
+      const brand = element("span");
+      brand.className = "brand";
+      brand.append(icon("layers"));
+      const heading = element("div");
+      heading.className = "heading";
+      this.contextLabel.className = "context";
+      this.contextLabel.textContent = "Komga";
+      heading.append(element("h2", "\u5143\u6570\u636E"), this.contextLabel);
+      const headerActions = element("div");
+      headerActions.className = "header-actions";
+      const theme = button("", () => {
+        this.host.dataset.theme = this.host.dataset.theme === "dark" ? "light" : "dark";
+        storage.set("ui-theme-v1", this.host.dataset.theme);
+      });
+      theme.className = "ghost icon-button";
+      theme.setAttribute("aria-label", "\u5207\u6362\u6DF1\u6D45\u8272");
+      theme.title = "\u5207\u6362\u6DF1\u6D45\u8272";
+      theme.append(icon("sun"));
+      const close = button("", () => {
+        this.controller?.abort();
+        void this.close();
+      });
+      close.className = "ghost icon-button";
+      close.setAttribute("aria-label", "\u5173\u95ED");
+      close.title = "\u5173\u95ED \xB7 Esc";
+      close.append(icon("close"));
+      headerActions.append(theme, close);
+      header.append(brand, heading, headerActions);
+      this.controls.className = "workspace";
+      this.results.className = "results";
+      this.preview.className = "preview";
+      this.sourceToggles.className = "source-toggles";
+      const searchCard = element("div");
+      searchCard.className = "card";
+      const searchTitle = element("div");
+      searchTitle.className = "section-title";
+      searchTitle.append(element("h3", "\u67E5\u627E\u4F5C\u54C1"), this.sourceMode);
+      const searchRow = element("div");
+      searchRow.className = "search-row";
+      const searchButton = button("\u641C\u7D22", () => void this.run(() => this.search()));
+      searchButton.className = "primary";
+      searchButton.prepend(icon("search"));
+      searchRow.append(this.query, searchButton);
+      this.query.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.isComposing) void this.run(() => this.search());
+      });
       this.query.setAttribute("aria-label", "\u641C\u7D22\u8BCD");
       this.query.placeholder = "\u4F5C\u54C1\u540D";
       this.direct.setAttribute("aria-label", "\u6765\u6E90\u94FE\u63A5\u6216 ID");
       this.direct.placeholder = "\u6765\u6E90\u94FE\u63A5\u6216 ID";
       this.provider.setAttribute("aria-label", "\u6765\u6E90");
-      this.controls.append(this.query, button("\u641C\u7D22", () => void this.run(() => this.search())));
       option(this.sourceMode, "online", "\u5728\u7EBF");
       option(this.sourceMode, "offline", "\u79BB\u7EBF");
       this.sourceMode.value = this.settings.sourceMode ?? "online";
@@ -1900,28 +2007,46 @@ SOFTWARE.
       };
       for (const p of registry.list()) option(this.provider, p.id, p.id);
       this.renderSourceChecks();
-      this.controls.append(
-        this.sourceMode,
-        this.sourceToggles,
-        this.provider,
-        this.direct,
-        button("\u8BFB\u53D6", () => void this.run(() => this.readDirect()))
-      );
+      const directDetails = element("details");
+      directDetails.append(element("summary", "\u901A\u8FC7\u94FE\u63A5\u6216 ID \u8BFB\u53D6"));
+      const directRow = element("div");
+      directRow.className = "direct-row";
+      directRow.append(this.provider, this.direct, button("\u8BFB\u53D6", () => void this.run(() => this.readDirect())));
+      directDetails.append(directRow);
+      searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.results);
       const choices = element("div");
+      choices.className = "card";
+      choices.append(element("h3", "\u5199\u5165\u9009\u9879"));
       this.book.setAttribute("aria-label", "\u76EE\u6807\u4E66\u7C4D");
       this.cover.setAttribute("aria-label", "\u5C01\u9762");
       this.coverTarget.setAttribute("aria-label", "\u5C01\u9762\u76EE\u6807");
-      choices.append(element("p", "\u5355\u5377\uFF1A\u660E\u786E\u9009\u62E9\u4E66\u7C4D\u3002\u4F5C\u8005\u53EF\u4F20\u64AD\u81F3\u672A\u9501\u5B9A\u4E66\u7C4D\u3002"), this.book, this.cover, this.coverTarget);
+      option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
+      for (const [label, select] of [["\u76EE\u6807\u4E66\u7C4D", this.book], ["\u5C01\u9762", this.cover], ["\u5C01\u9762\u76EE\u6807", this.coverTarget]]) {
+        const wrapper = element("label", label);
+        wrapper.className = "field-label";
+        wrapper.append(select);
+        choices.append(wrapper);
+      }
+      const caption = element("div", "\u5199\u5165\u5B57\u6BB5");
+      caption.className = "field-caption";
+      choices.append(caption);
+      const fieldGrid = element("div");
+      fieldGrid.className = "field-grid";
       for (const f of [.../* @__PURE__ */ new Set([...seriesFields, ...bookFields])]) {
-        const i = input(labels[f], choices, "checkbox");
+        const i = input(labels[f], fieldGrid, "checkbox");
         i.checked = !["title", "releaseDate", "isbn"].includes(f);
         this.fields.set(f, i);
         i.onchange = () => this.invalidate();
       }
+      choices.append(fieldGrid);
       this.propagate = input("\u4F20\u64AD\u4F5C\u8005", choices, "checkbox");
       this.propagate.checked = true;
+      this.propagate.parentElement.className = "check-label";
+      const hint = element("p", "\u4FDD\u7559\u5DF2\u9501\u5B9A\u5B57\u6BB5\uFF1B\u4F5C\u8005\u4EC5\u5199\u5165\u672A\u9501\u5B9A\u4E66\u7C4D\u3002");
+      hint.className = "hint";
+      choices.append(hint);
       for (const e of [this.book, this.cover, this.coverTarget, this.propagate]) e.onchange = () => this.invalidate();
-      this.controls.append(choices, button("\u751F\u6210\u9884\u89C8", () => void this.run(() => this.makePreview())));
+      this.controls.append(searchCard, choices);
       this.applyButton = button("\u5E94\u7528", () => void this.run(async () => {
         if (!this.plan) throw new MetadataError("verification", "\u8BF7\u5148\u9884\u89C8");
         this.readPreview();
@@ -1946,12 +2071,79 @@ SOFTWARE.
         this.report(result);
       }));
       this.undoButton.disabled = !this.undoData;
-      this.body.append(header, this.controls, this.results, this.preview, this.applyButton, this.undoButton, this.status, this.settingsPanel(), this.catalog);
+      this.applyButton.className = "primary";
+      this.undoButton.className = "ghost";
+      this.previewButton.disabled = true;
+      this.metaActions.className = "footer-actions";
+      this.metaActions.append(this.undoButton, this.previewButton, this.applyButton);
+      this.status.className = "status";
+      this.status.setAttribute("role", "status");
+      this.status.setAttribute("aria-live", "polite");
+      this.cancelButton.className = "ghost cancel-action";
+      this.cancelButton.hidden = true;
+      const footer = element("footer");
+      footer.className = "footer";
+      footer.append(this.status, this.cancelButton, this.metaActions);
+      this.metadataPage.append(this.controls, this.preview);
+      const settingsPage = element("div");
+      settingsPage.append(this.settingsPanel());
+      const tabs = element("nav");
+      tabs.className = "tabs";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "\u5143\u6570\u636E\u5DE5\u5177");
+      this.viewport.className = "viewport";
+      const pages2 = [this.metadataPage, this.catalog, settingsPage];
+      const tabButtons = [];
+      const selectTab = (index) => {
+        pages2.forEach((page, n) => {
+          page.hidden = n !== index;
+          tabButtons[n].setAttribute("aria-selected", String(n === index));
+          tabButtons[n].tabIndex = n === index ? 0 : -1;
+        });
+        this.metaActions.hidden = index !== 0;
+        this.viewport.scrollTop = 0;
+      };
+      ["\u5143\u6570\u636E", "\u672C\u5730\u6570\u636E\u5E93", "\u8BBE\u7F6E"].forEach((name, index) => {
+        const tab = button(name, () => selectTab(index));
+        tab.prepend(icon(["search", "database", "settings"][index]));
+        tab.id = `km-tab-${index}`;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-controls", `km-page-${index}`);
+        tab.addEventListener("keydown", (event) => {
+          let next;
+          if (event.key === "ArrowRight") next = (index + 1) % pages2.length;
+          else if (event.key === "ArrowLeft") next = (index + pages2.length - 1) % pages2.length;
+          else if (event.key === "Home") next = 0;
+          else if (event.key === "End") next = pages2.length - 1;
+          else return;
+          event.preventDefault();
+          selectTab(next);
+          tabButtons[next].focus();
+        });
+        const page = pages2[index];
+        page.id = `km-page-${index}`;
+        page.className = "tab-panel";
+        page.setAttribute("role", "tabpanel");
+        page.setAttribute("aria-labelledby", tab.id);
+        tabButtons.push(tab);
+        tabs.append(tab);
+        this.viewport.append(page);
+      });
+      selectTab(0);
+      this.body.append(header, tabs, this.viewport, footer);
       this.shadow.append(style, this.body);
     }
     host = element("div");
     shadow = this.host.attachShadow({ mode: "open" });
-    body = element("section");
+    body = element("dialog");
+    metadataPage = element("div");
+    viewport = element("div");
+    contextLabel = element("div");
+    metaActions = element("div");
+    previewButton = button("\u751F\u6210\u9884\u89C8", () => void this.run(() => this.makePreview()));
+    cancelButton = button("\u53D6\u6D88", () => this.controller?.abort());
+    finishing = false;
+    returnFocus = document.activeElement?.shadowRoot?.activeElement ?? document.activeElement;
     status = element("p");
     settings = storage.get("settings-v1", { sources: ["bangumi", "mangabaka", "mangadex", "anilist", "mangaupdates"], credentials: {} });
     controller;
@@ -1982,6 +2174,7 @@ SOFTWARE.
     fade;
     mount(extension) {
       if (!this.host.isConnected) document.body.append(this.host);
+      this.body.showModal();
       this.extension = extension;
       this.renderSourceChecks();
       if (extension) this.catalogCleanup = extension.mount(this.catalog) || void 0;
@@ -1990,6 +2183,8 @@ SOFTWARE.
         if (!this.seriesId) throw new MetadataError("invalid-id", "\u8BF7\u6253\u5F00\u7CFB\u5217\u6216 One-shot \u8BE6\u60C5\u9875\uFF0C\u518D\u4ECE\u83DC\u5355\u542F\u52A8");
         this.state = await this.client.state(this.seriesId, this.signal);
         this.query.value = String(this.state.series.metadata.title);
+        this.contextLabel.textContent = this.query.value;
+        this.contextLabel.title = this.query.value;
         this.book.replaceChildren();
         option(this.book, "", "\u4E0D\u6307\u5B9A\u4E66\u7C4D");
         this.coverTarget.replaceChildren();
@@ -2009,16 +2204,23 @@ SOFTWARE.
       this.plan = void 0;
       this.applyButton.disabled = true;
       this.preview.replaceChildren();
+      this.controls.hidden = false;
+      this.previewButton.hidden = false;
+      this.previewButton.disabled = !this.selected;
     }
     async run(action) {
-      if (this.busy) return;
+      if (this.busy || this.finishing) return;
       this.busy = true;
       this.controller = new AbortController();
       clearTimeout(this.fade);
       this.host.style.opacity = "1";
+      this.body.style.opacity = "1";
       this.status.style.opacity = "1";
       this.status.dataset.state = "busy";
-      this.status.textContent = "\u25CC \u5904\u7406\u4E2D";
+      this.status.textContent = "";
+      this.status.setAttribute("aria-label", "\u5904\u7406\u4E2D");
+      this.cancelButton.hidden = false;
+      this.previewButton.disabled = true;
       this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = true);
       this.results.querySelectorAll("button").forEach((e) => e.disabled = true);
       this.applyButton.disabled = true;
@@ -2027,17 +2229,20 @@ SOFTWARE.
         await action();
         if (this.status.dataset.state === "busy") {
           this.status.dataset.state = "idle";
-          if (this.status.textContent === "\u25CC \u5904\u7406\u4E2D") this.status.textContent = "\u8BF7\u9009\u62E9\u5019\u9009\u5E76\u9884\u89C8";
+          if (!this.status.textContent) this.status.textContent = this.plan ? "\u786E\u8BA4\u9884\u89C8\u540E\u5E94\u7528" : this.selected ? "\u5DF2\u9009\u62E9\u6765\u6E90\u6761\u76EE" : "\u8BF7\u9009\u62E9\u5339\u914D\u6761\u76EE";
         }
       } catch (error) {
         this.status.dataset.state = "error";
         this.status.textContent = error instanceof Error ? error.message : String(error);
       } finally {
         this.busy = false;
-        this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = false);
-        this.results.querySelectorAll("button").forEach((e) => e.disabled = false);
-        this.applyButton.disabled = !this.plan;
-        this.undoButton.disabled = !this.undoData;
+        this.status.removeAttribute("aria-label");
+        this.cancelButton.hidden = true;
+        this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = this.finishing);
+        this.results.querySelectorAll("button").forEach((e) => e.disabled = this.finishing);
+        this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
+        this.applyButton.disabled = this.finishing || !this.plan;
+        this.undoButton.disabled = this.finishing || !this.undoData;
       }
     }
     context() {
@@ -2059,13 +2264,19 @@ SOFTWARE.
       }));
       for (const result of results) {
         const group = element("div");
+        group.className = "result-group";
         group.append(element("h3", result.id));
         if (result.error) group.append(element("p", result.error.message));
         else if (!result.candidates?.length) group.append(element("p", "\u65E0\u5339\u914D"));
-        for (const c of result.candidates ?? []) group.append(button(c.title, () => void this.run(async () => {
-          const provider = this.activeProvider(c.provider);
-          this.choose(await provider.get(c.id, this.context()), provider);
-        })));
+        for (const c of result.candidates ?? []) {
+          const candidate2 = button(c.title, () => void this.run(async () => {
+            const provider = this.activeProvider(c.provider);
+            this.choose(await provider.get(c.id, this.context()), provider);
+          }));
+          candidate2.className = "candidate";
+          candidate2.setAttribute("aria-label", c.title);
+          group.append(candidate2);
+        }
         this.results.append(group);
       }
       if (results.some((r) => r.error)) {
@@ -2083,16 +2294,31 @@ SOFTWARE.
       this.invalidate();
       this.selected = record2;
       this.results.replaceChildren();
-      this.results.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), element("p", record2.url));
+      const sourceUrl = element("p", record2.url);
+      sourceUrl.className = "record-url";
+      sourceUrl.title = record2.url;
+      this.results.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), sourceUrl);
       const capabilities = provider.capabilities;
       const scope = capabilities.gallery ? "\u753B\u5ECA\uFF1B\u4E0D\u63A8\u65AD\u5377\u53F7" : capabilities.volumeMetadata ? "\u652F\u6301\u5355\u5377\u8BE6\u60C5\uFF1B\u987B\u660E\u786E\u6620\u5C04" : capabilities.volumeCovers ? "\u4EC5\u7CFB\u5217\u4E0E\u5377\u5C01\u9762\uFF1B\u65E0\u5355\u5377\u8BE6\u60C5" : "\u4EC5\u7CFB\u5217\u5143\u6570\u636E\uFF1B\u4E0D\u63A8\u65AD\u5355\u5377";
-      this.results.append(element("p", `${scope} \xB7 ${record2.status ?? "\u7CFB\u5217\u72B6\u6001\u672A\u77E5"}`));
-      if (record2.summary) this.results.append(element("pre", record2.summary));
+      const meta2 = element("p", `${scope} \xB7 ${record2.status ?? "\u7CFB\u5217\u72B6\u6001\u672A\u77E5"}`);
+      meta2.className = "record-meta";
+      this.results.append(meta2);
+      if (record2.summary) {
+        const summary = element("pre", record2.summary);
+        summary.className = "record-summary";
+        this.results.append(summary);
+      }
       for (const warning of record2.warnings ?? []) this.results.append(element("p", warning));
-      for (const b of record2.books ?? []) this.results.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => {
-        const bookProvider = this.activeProvider(b.provider);
-        this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
-      })));
+      if (record2.books?.length) {
+        const volumes = element("details");
+        volumes.className = "volumes";
+        volumes.append(element("summary", `\u5173\u8054\u5355\u5377 \xB7 ${record2.books.length}`));
+        for (const b of record2.books) volumes.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => {
+          const bookProvider = this.activeProvider(b.provider);
+          this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
+        })));
+        this.results.append(volumes);
+      }
       this.cover.replaceChildren();
       option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
       record2.covers.forEach((c, i) => option(this.cover, String(i), `\u5C01\u9762 ${c.volume === void 0 ? "\u7CFB\u5217/\u672A\u5B9A\u5377" : `\u5377 ${c.volume}`} ${c.language ?? ""}`));
@@ -2112,9 +2338,24 @@ SOFTWARE.
       });
       await this.writer.prepare(plan, this.signal);
       this.plan = plan;
-      this.preview.append(element("h3", "\u9884\u89C8\uFF1A\u52FE\u9009\u5199\u5165\uFF0C\u53EF\u7F16\u8F91 JSON \u65B0\u503C"));
+      const previewHead = element("div");
+      previewHead.className = "preview-head";
+      const back = button("\u8FD4\u56DE\u9009\u9879", () => {
+        if (!this.busy && !this.finishing) {
+          this.invalidate();
+          this.viewport.scrollTop = 0;
+        }
+      });
+      back.className = "ghost";
+      back.prepend(icon("back"));
+      previewHead.append(element("h3", "\u786E\u8BA4\u66F4\u6539"), back);
+      this.preview.append(previewHead);
       plan.edits.forEach((edit, index) => {
-        this.preview.append(element("h3", `${edit.target.kind}/${edit.target.id}`));
+        const target = edit.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === edit.target.id);
+        const targetHeading = element("h3", `${edit.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? edit.target.id}`);
+        targetHeading.className = "target-heading";
+        targetHeading.title = `${edit.target.kind}/${edit.target.id}`;
+        this.preview.append(targetHeading);
         for (const [field, value] of Object.entries(edit.after)) {
           const row = element("div");
           row.className = "row";
@@ -2122,18 +2363,34 @@ SOFTWARE.
           check.checked = true;
           check.dataset.edit = String(index);
           check.dataset.field = field;
-          row.append(element("pre", `\u539F\uFF1A${JSON.stringify(edit.before[field])}`));
+          const diff = element("div");
+          diff.className = "diff";
+          const old = element("div"), updated = element("div");
+          const beforeLabel = element("div", "\u5F53\u524D\u503C"), afterLabel = element("div", "\u5199\u5165\u503C");
+          beforeLabel.className = afterLabel.className = "diff-caption";
+          const before = edit.before[field];
+          old.append(beforeLabel, element("pre", typeof before === "string" ? before || "\u2014" : JSON.stringify(before, null, 2)));
           const next = element("textarea");
-          next.value = JSON.stringify(value, null, 2);
+          next.dataset.format = typeof value === "string" ? "text" : "json";
+          next.value = typeof value === "string" ? value : JSON.stringify(value, null, 2);
           next.dataset.edit = String(index);
           next.dataset.field = field;
-          row.append(next);
+          next.title = next.dataset.format === "text" ? "\u53EF\u76F4\u63A5\u7F16\u8F91\u6587\u672C" : "JSON \u683C\u5F0F";
+          next.setAttribute("aria-label", `${labels[field]}\u5199\u5165\u503C`);
+          updated.append(afterLabel, next);
+          diff.append(old, updated);
+          row.append(diff);
           this.preview.append(row);
         }
       });
       if (plan.cover) this.preview.append(element("p", `\u5C01\u9762\uFF1A${plan.cover.target.kind}/${plan.cover.target.id} \u2190 ${plan.cover.source.url}\uFF08\u5305\u542B\u4E0B\u8F7D\u5931\u8D25\u98CE\u9669\uFF09`));
       for (const skipped of plan.skipped) this.preview.append(element("p", skipped));
-      this.preview.append(element("p", "API \u65E0\u539F\u5B50\u6761\u4EF6\u5199\u5165\uFF1A\u8BFB\u5199\u95F4\u4ECD\u6709\u6781\u77ED\u5E76\u53D1\u7A97\u53E3\u3002\u64A4\u9500\u4EC5\u6062\u590D\u672C\u6B21\u5B57\u6BB5\u3002"));
+      const note = element("p", "\u4EC5\u5E94\u7528\u52FE\u9009\u5B57\u6BB5\u3002\u5199\u5165\u524D\u4F1A\u91CD\u65B0\u68C0\u67E5\uFF0C\u5B8C\u6210\u540E\u8BFB\u56DE\u6838\u5BF9\u3002");
+      note.className = "hint";
+      this.preview.append(note);
+      this.controls.hidden = true;
+      this.previewButton.hidden = true;
+      this.viewport.scrollTop = 0;
     }
     readPreview() {
       if (!this.plan) return;
@@ -2148,7 +2405,7 @@ SOFTWARE.
         const textarea = [...this.preview.querySelectorAll("textarea")].find((t) => t.dataset.edit === i.dataset.edit && t.dataset.field === field);
         let value;
         try {
-          value = JSON.parse(textarea.value);
+          value = textarea.dataset.format === "text" ? textarea.value : JSON.parse(textarea.value);
         } catch {
           throw new MetadataError("verification", `${labels[field]} \u65B0\u503C JSON \u683C\u5F0F\u9519\u8BEF`);
         }
@@ -2158,10 +2415,13 @@ SOFTWARE.
     }
     report(result) {
       if (result.status === "success") {
+        this.finishing = true;
         this.status.dataset.state = "success";
         this.status.textContent = "\u2713 \u5DF2\u8BFB\u56DE\u786E\u8BA4";
         this.fade = setTimeout(() => {
           this.host.style.transition = "opacity 240ms";
+          this.body.style.transition = "opacity 240ms";
+          this.body.style.opacity = "0";
           this.host.style.opacity = "0";
           this.fade = setTimeout(() => {
             void this.close();
@@ -2174,7 +2434,12 @@ SOFTWARE.
     }
     settingsPanel() {
       const d = element("details");
-      d.append(element("summary", "\u8BBE\u7F6E\uFF08\u51ED\u636E\u4EC5\u4FDD\u5B58\u5728 GM \u672C\u5730\uFF09"));
+      d.className = "card settings-card";
+      d.open = true;
+      d.append(element("summary", "\u6765\u6E90\u51ED\u636E"));
+      const note = element("p", "\u4EC5\u4FDD\u5B58\u5728\u5F53\u524D\u811A\u672C\u7BA1\u7406\u5668\u4E2D\u3002\u7559\u7A7A\u7684\u6765\u6E90\u4E0D\u4F1A\u4F7F\u7528\u51ED\u636E\u3002");
+      note.className = "hint";
+      d.append(note);
       const mal = input("MAL Client ID", d, "password"), cv = input("ComicVine API Key", d, "password");
       const exh = input("\u660E\u786E\u542F\u7528 ExH", d, "checkbox"), member = input("ExH member ID", d, "password"), pass = input("ExH pass hash", d, "password"), igneous = input("ExH igneous\uFF08\u53EF\u9009\uFF09", d, "password");
       mal.value = this.settings.credentials.malClientId ?? "";
@@ -2233,7 +2498,9 @@ SOFTWARE.
           await cleanup();
         }
       } finally {
+        this.body.close();
         this.host.remove();
+        if (this.returnFocus instanceof HTMLElement && this.returnFocus.isConnected) this.returnFocus.focus();
       }
     }
   };
@@ -2586,6 +2853,7 @@ SOFTWARE.
     const file = document.createElement("input");
     file.type = "file";
     file.accept = ".sqlite,.db";
+    file.setAttribute("aria-label", "\u672C\u5730\u6570\u636E\u5E93\u6587\u4EF6");
     let selectionGeneration = 0;
     let expectedCatalog;
     const checkManifestCompatibility = (manifest, selectedFile) => {
@@ -2769,6 +3037,7 @@ SOFTWARE.
         initOptions: options.buildInitOptions
       });
       const source = document.createElement("select");
+      source.setAttribute("aria-label", "\u6784\u5EFA\u6765\u6E90");
       for (const id of ["bangumi", "ehentai", "mangabaka", "bookwalker"]) {
         const option2 = document.createElement("option");
         option2.value = id;
@@ -2777,6 +3046,7 @@ SOFTWARE.
       }
       const archive = document.createElement("input");
       archive.type = "file";
+      archive.setAttribute("aria-label", "\u6765\u6E90\u6863\u6848");
       const version = document.createElement("input");
       version.placeholder = "\u6765\u6E90\u7248\u672C\uFF08\u53EF\u9009\uFF09";
       const build = document.createElement("button");
@@ -3091,9 +3361,11 @@ SOFTWARE.
     host.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147482999";
     const shadow = host.attachShadow({ mode: "open" }), button2 = document.createElement("button");
     button2.textContent = "\u5143\u6570\u636E";
-    button2.style.cssText = "font:14px system-ui;padding:8px 14px;cursor:pointer;border:1px solid #888;border-radius:6px;background:#fff;color:#222";
+    button2.prepend(icon("layers"));
+    const style = document.createElement("style");
+    style.textContent = "button{display:flex;align-items:center;gap:8px;font:500 13px system-ui;padding:11px 16px;cursor:pointer;border:1px solid #ffffff30;border-radius:12px;background:#4f46e5;color:#fff;box-shadow:0 6px 24px #15133d33}button:hover{background:#4338ca}button:focus-visible{outline:2px solid #a6a0ff;outline-offset:3px}svg{width:18px;height:18px}";
     button2.addEventListener("click", launch);
-    shadow.append(button2);
+    shadow.append(style, button2);
     document.body.append(host);
     return true;
   }

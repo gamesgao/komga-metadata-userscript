@@ -119,12 +119,13 @@ async function readAndPreview(page: Page, cover = false) {
   await page.getByRole('button', { name: '元数据', exact: true }).click();
   await expect(page.locator('#komga-metadata-panel p[data-state]')).toHaveText('当前：原始标题');
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
+  await page.getByText('通过链接或 ID 读取', { exact: true }).click();
   await page.getByRole('textbox', { name: '来源链接或 ID' }).fill('https://bgm.tv/subject/1');
   await page.getByRole('button', { name: '读取', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
   if (cover) await page.getByLabel('封面', { exact: true }).selectOption('0');
   await page.getByRole('button', { name: '生成预览' }).click();
-  await expect(page.getByRole('heading', { name: '预览：勾选写入，可编辑 JSON 新值' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
 }
 test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover write/readback/undo', async ({ page }) => {
   await install(page); await readAndPreview(page, true);
@@ -138,9 +139,11 @@ test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover 
   expect(book.metadata.authors).toEqual([{ name: '山田鐘人', role: 'writer' }]);
   expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);
   expect(patches.filter(p => p.path.includes('/series/')).every(p => !('authors' in p.body))).toBe(true);
+  await expect(page.getByRole('button', { name: '撤销最近写入' })).toBeDisabled();
   await page.waitForFunction(() => {
-    const host = document.querySelector('#komga-metadata-panel');
-    return !host || Number(getComputedStyle(host).opacity) < 1;
+    const dialog = document.querySelector('#komga-metadata-panel')?.shadowRoot?.querySelector('dialog');
+    const opacity = dialog ? Number(getComputedStyle(dialog).opacity) : 1;
+    return opacity > 0 && opacity < 1;
   });
   await expect(page.locator('#komga-metadata-panel')).toHaveCount(0);
   await page.getByRole('button', { name: '元数据', exact: true }).click();
@@ -190,6 +193,7 @@ test('fixture browser: bundled offline panel uses GM_download completion, error,
   for (const id of ['bangumi', 'ehentai', 'mangabaka', 'bookwalker'])
     await expect(page.getByRole('checkbox', { name: id, exact: true })).toBeVisible();
   await page.getByLabel('来源模式').selectOption('online');
+  await page.getByRole('tab', { name: '本地数据库' }).click();
   await page.getByText('下载与高级操作', { exact: true }).click();
   await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
   await page.getByRole('button', { name: '读取清单' }).click();
@@ -234,11 +238,84 @@ test('fixture browser: cancel source request produces persistent actionable fail
   });
   await page.getByRole('button', { name: '元数据', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
+  await page.getByText('通过链接或 ID 读取', { exact: true }).click();
   await page.getByRole('textbox', { name: '来源链接或 ID' }).fill('1');
   await page.getByRole('button', { name: '读取', exact: true }).click();
   await expect(page.getByRole('button', { name: '读取', exact: true })).toBeDisabled();
+  expect(await page.locator('.status[data-state=busy]').evaluate(e => getComputedStyle(e, '::before').animationName)).toBe('km-spin');
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.locator('#komga-metadata-panel p[data-state="error"]')).toContainText('已取消');
   expect(patches).toEqual([]);
   await expect(page.getByRole('button', { name: '读取', exact: true })).toBeEnabled();
+});
+
+test('modern UI: modal focus, keyboard tabs, theme persistence and responsive layout', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await install(page);
+  const launcher = page.getByRole('button', { name: '元数据', exact: true });
+  await launcher.click();
+  const dialog = page.getByRole('dialog', { name: '元数据' });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate(e => e.matches(':modal'))).toBe(true);
+  await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
+  await page.getByRole('button', { name: '切换深浅色' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('checkbox', { name: '传播作者', exact: true })).toBeFocused();
+  const metadataTab = page.getByRole('tab', { name: '元数据', exact: true });
+  await metadataTab.focus(); await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tabpanel', { name: '本地数据库' })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '元数据', exact: true })).toBeHidden();
+  await page.keyboard.press('End');
+  await expect(page.getByRole('tab', { name: '设置', exact: true })).toBeFocused();
+  await expect(page.getByLabel('ComicVine API Key')).toHaveAttribute('type', 'password');
+  await page.keyboard.press('Home');
+  await expect(metadataTab).toBeFocused();
+  const light = await dialog.evaluate(e => getComputedStyle(e).backgroundColor);
+  await page.getByRole('button', { name: '切换深浅色' }).click();
+  await expect(page.locator('#komga-metadata-panel')).toHaveAttribute('data-theme', 'dark');
+  expect(await dialog.evaluate(e => getComputedStyle(e).backgroundColor)).not.toBe(light);
+  for (const width of [1280, 768, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    const box = await dialog.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    expect(await page.locator('.viewport').evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+    await expect(page.getByRole('button', { name: '关闭', exact: true })).toBeInViewport();
+    await expect(page.getByRole('button', { name: '应用', exact: true })).toBeInViewport();
+  }
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0); await expect(launcher).toBeFocused();
+  await launcher.click();
+  await expect(page.locator('#komga-metadata-panel')).toHaveAttribute('data-theme', 'dark');
+  expect(patches).toEqual([]);
+});
+
+test('modern UI: preview back navigation preserves options without writing', async ({ page }) => {
+  await install(page); await readAndPreview(page);
+  await expect(page.getByRole('button', { name: '应用', exact: true })).toBeEnabled();
+  await expect(page.getByRole('textbox', { name: '搜索词' })).toBeHidden();
+  await page.getByRole('button', { name: '返回选项' }).click();
+  await expect(page.getByRole('textbox', { name: '搜索词' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '应用', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: '标签', exact: true }).uncheck();
+  await page.getByRole('button', { name: '生成预览' }).click();
+  await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
+  await expect(page.locator('textarea[data-field=tags]')).toHaveCount(0);
+  expect(patches).toEqual([]);
+});
+
+test('modern UI: plain-text preview edits, narrow diffs and reduced motion', async ({ page }) => {
+  series.metadata.summaryLock = false;
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await install(page); await readAndPreview(page);
+  await page.setViewportSize({ width: 390, height: 800 });
+  expect(await page.locator('.viewport').evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+  await expect(page.getByRole('dialog')).toHaveCSS('transition-duration', '0s');
+  const summary = page.locator('textarea[data-field=summary][data-edit="0"]');
+  await expect(summary).toHaveAttribute('data-format', 'text');
+  await summary.fill('第一行\n第二行，不需要 JSON 转义');
+  await page.getByRole('button', { name: '应用', exact: true }).click();
+  await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
+  expect(series.metadata.summary).toBe('第一行\n第二行，不需要 JSON 转义');
+  expect(book.metadata.summary).toBe('locked original');
 });

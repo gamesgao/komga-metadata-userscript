@@ -1,6 +1,6 @@
 # Validation ledger
 
-Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. Current status: **component 1 implemented and component/fixture-tested; project not fully accepted or published**.
+Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. **The tables below are the historical component-1 ledger, not the current project-wide status.** See [v0.2.0 UI and live regression evidence](docs/UI.md) for the latest executed scope. The project is still not fully accepted as a stable release.
 
 | Feature | Required acceptance | Status |
 |---|---|---|

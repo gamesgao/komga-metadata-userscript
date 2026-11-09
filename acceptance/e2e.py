@@ -242,6 +242,10 @@ def login_if_needed(page: Page, credentials: dict) -> None:
 
 
 def open_product_panel(page: Page) -> None:
+    # A modal intentionally makes the background launcher inert. Reuse an
+    # already-open panel rather than clicking that background control twice.
+    if page.locator('#komga-metadata-panel dialog[open]').is_visible():
+        return
     try:
         page.locator("#komga-metadata-launcher").wait_for(state="attached", timeout=15_000)
     except PlaywrightTimeout as error:
@@ -311,7 +315,7 @@ def assert_live_search_preview(page: Page, screenshots: Path) -> None:
     )
     preview = panel.get_by_role("button", name="生成预览")
     preview.click()
-    panel.get_by_text("预览：勾选写入", exact=False).wait_for(state="visible", timeout=10_000)
+    panel.get_by_role("heading", name="确认更改", exact=True).wait_for(state="visible", timeout=10_000)
     page.screenshot(path=str(screenshots / "metadata-preview.png"), full_page=True)
     if panel.locator('input[aria-label="标签"]').count() == 0:
         raise AcceptanceBlocked("provider detail/preview did not expose a tags field")

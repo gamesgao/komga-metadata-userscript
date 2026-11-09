@@ -23,6 +23,7 @@ def source_record(page,series_id):
  page.goto(h.BASE_URL+'/series/'+series_id)
  h.open_product_panel(page)
  panel=page.locator('#komga-metadata-panel')
+ panel.get_by_text('通过链接或 ID 读取',exact=True).click()
  panel.get_by_role('textbox',name='来源链接或 ID').fill('https://bgm.tv/subject/305429')
  panel.get_by_role('combobox',name='来源',exact=True).select_option('bangumi')
  panel.get_by_role('button',name='读取',exact=True).click()
@@ -36,7 +37,7 @@ def select_fields(panel,fields):
 
 def preview(panel):
  panel.get_by_role('button',name='生成预览',exact=True).click()
- panel.get_by_text('预览：勾选写入',exact=False).wait_for(timeout=20000)
+ panel.get_by_role('heading',name='确认更改',exact=True).wait_for(timeout=20000)
 
 
 def wait_action(page,button,allow_partial=False):

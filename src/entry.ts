@@ -5,6 +5,7 @@ import { createRegistry } from './providers';
 import { Writer } from './writer';
 import { Panel } from './ui';
 import { createCatalogExtension } from './catalog-extension';
+import { icon } from './ui-style';
 declare function GM_registerMenuCommand(name: string, action: () => void): unknown;
 function activate(): boolean {
   const deployment = detectKomga(document, location);
@@ -25,8 +26,10 @@ function activate(): boolean {
   host.id = 'komga-metadata-launcher';
   host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147482999';
   const shadow = host.attachShadow({ mode: 'open' }), button = document.createElement('button');
-  button.textContent = '元数据'; button.style.cssText = 'font:14px system-ui;padding:8px 14px;cursor:pointer;border:1px solid #888;border-radius:6px;background:#fff;color:#222';
-  button.addEventListener('click', launch); shadow.append(button); document.body.append(host);
+  button.textContent = '元数据'; button.prepend(icon('layers'));
+  const style = document.createElement('style');
+  style.textContent = 'button{display:flex;align-items:center;gap:8px;font:500 13px system-ui;padding:11px 16px;cursor:pointer;border:1px solid #ffffff30;border-radius:12px;background:#4f46e5;color:#fff;box-shadow:0 6px 24px #15133d33}button:hover{background:#4338ca}button:focus-visible{outline:2px solid #a6a0ff;outline-offset:3px}svg{width:18px;height:18px}';
+  button.addEventListener('click', launch); shadow.append(style, button); document.body.append(host);
   return true;
 }
 if (!activate()) {

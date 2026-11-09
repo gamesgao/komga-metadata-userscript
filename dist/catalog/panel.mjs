@@ -41,6 +41,7 @@ export function mountCatalogPanel(container, client, options = {}) {
   const status = document.createElement('p'); status.textContent = '选择预制 SQLite';
   status.setAttribute('role', 'status');
   const file = document.createElement('input'); file.type = 'file'; file.accept = '.sqlite,.db';
+  file.setAttribute('aria-label', '本地数据库文件');
   let selectionGeneration = 0;
   let expectedCatalog;
   const checkManifestCompatibility = (manifest, selectedFile) => {
@@ -192,10 +193,12 @@ export function mountCatalogPanel(container, client, options = {}) {
       workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions
     });
     const source = document.createElement('select');
+    source.setAttribute('aria-label', '构建来源');
     for (const id of ['bangumi', 'ehentai', 'mangabaka', 'bookwalker']) {
       const option = document.createElement('option'); option.value = id; option.textContent = id; source.append(option);
     }
     const archive = document.createElement('input'); archive.type = 'file';
+    archive.setAttribute('aria-label', '来源档案');
     const version = document.createElement('input'); version.placeholder = '来源版本（可选）';
     const build = document.createElement('button'); build.type = 'button'; build.textContent = '构建本地目录';
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消构建或导出';
