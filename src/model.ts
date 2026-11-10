@@ -1,12 +1,13 @@
 export const providerIds = ['bangumi', 'ehentai', 'mangaupdates', 'mangabaka', 'mangadex', 'anilist', 'mal', 'comicvine', 'bookwalker', 'yenpress', 'viz', 'webtoons'] as const;
 export type ProviderId = typeof providerIds[number];
+export type AcceptedLanguage = 'en' | 'ja' | 'zh' | 'romaji' | 'unknown' | 'other';
 export interface Title { text: string; language?: string; type: 'native' | 'localized' | 'alias' }
-export interface Author { name: string; role: string; native?: string; localized?: string }
+export interface Author { name: string; role: string; native?: string; localized?: string; language?: string; nativeLanguage?: string; localizedLanguage?: string }
 export interface Link { label: string; url: string }
 export interface Cover { url: string; volume?: number; language?: string }
 export interface MetadataRecord {
   provider: ProviderId; id: string; url: string; titles: Title[];
-  summary?: string; publisher?: string; language?: string;
+  summary?: string; summaryLanguage?: string; publisher?: string; language?: string;
   status?: 'ONGOING' | 'ENDED' | 'HIATUS' | 'ABANDONED';
   ageRating?: number; releaseDate?: string; isbn?: string; volume?: number;
   tags: string[]; genres: string[]; authors: Author[]; covers: Cover[];

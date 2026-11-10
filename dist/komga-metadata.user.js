@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.4.0
+// @version      0.5.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -422,6 +422,14 @@ SOFTWARE.
     async thumbnail(t, id, signal) {
       return (await this.request(`${this.path(t)}/thumbnails/${validId(id)}`, signal)).blob();
     }
+    async displayedThumbnail(t, signal) {
+      try {
+        return await (await this.request(`${this.path(t)}/thumbnail?_verify=${Date.now()}`, signal)).blob();
+      } catch (error) {
+        if (error instanceof MetadataError && error.status === 404) return void 0;
+        throw error;
+      }
+    }
     async upload(t, blob, signal) {
       const form = new FormData();
       const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : blob.type === "image/gif" ? "gif" : "jpg";
@@ -448,7 +456,7 @@ SOFTWARE.
   }
   function titles(r, native, localized) {
     if (str(native)) r.titles.push({ text: str(native), type: "native" });
-    if (str(localized) && localized !== native) r.titles.push({ text: str(localized), type: "localized" });
+    if (str(localized) && localized !== native) r.titles.push({ text: str(localized), type: "localized", language: r.provider === "bangumi" ? "zh" : void 0 });
     if (!r.titles.length) throw new MetadataError("invalid-response", "\u6765\u6E90\u7F3A\u5C11\u6807\u9898");
   }
   function addCover(r, value, number, language) {
@@ -502,7 +510,7 @@ SOFTWARE.
           const position = obj(obj(p).type);
           if (position.id === 2004) r.publisher = required(person.name);
           const role = typeof position.id === "number" ? roles[position.id] : void 0;
-          if (role) r.authors.push({ name: required(person.name), native: required(person.name), localized: str(person.nameCN) || void 0, role });
+          if (role) r.authors.push({ name: required(person.name), native: required(person.name), localized: str(person.nameCN) || void 0, localizedLanguage: "zh", role });
         }
       }
       for (const v of list(x.infobox)) {
@@ -626,6 +634,7 @@ SOFTWARE.
       r.summary = str(x.description) || void 0;
       r.status = status(x.status);
       r.language = str(x.original_language) || void 0;
+      for (const title of r.titles) if (title.type === "native" && !title.language) title.language = r.language;
       r.releaseDate = x.published ? date(obj(x.published).start_date) : void 0;
       for (const [field, role] of [["authors", "writer"], ["artists", "penciller"]]) r.authors.push(...list(x[field]).map((v) => ({ name: required(v), role })));
       const publishers = list(x.publishers).map((v) => str(obj(v).name)).filter(Boolean);
@@ -656,70 +665,7 @@ SOFTWARE.
       throw new MetadataError("unavailable", "\u5C01\u9762\u5206\u9875\u8D85\u8FC7\u5B89\u5168\u4E0A\u9650");
     }
   };
-  var MangaDex = class {
-    constructor(t) {
-      this.t = t;
-    }
-    id = "mangadex";
-    capabilities = { series: true, volumes: true, volumeMetadata: false, volumeCovers: true };
-    validate(id) {
-      if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id)) throw new MetadataError("invalid-id", "\u9700\u8981 MangaDex UUID");
-      return id;
-    }
-    async resolveLink(input2) {
-      return this.validate(input2.includes("://") ? linkId(input2, ["mangadex.org", "www.mangadex.org"], /^\/title\/([^/]+)/) : input2);
-    }
-    async search(q, c) {
-      const x = await json(this.t, `https://api.mangadex.org/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`, c.signal);
-      return arr(x.data).map((v) => {
-        const row = obj(v), id = this.validate(idText(row.id)), title = obj(obj(row.attributes).title);
-        const cover = list(row.relationships).map(obj).find((r) => r.type === "cover_art");
-        const filename = str(obj(cover?.attributes ?? {}).fileName);
-        return candidate(
-          this.id,
-          id,
-          required(title.ja || Object.values(title)[0]),
-          `https://mangadex.org/title/${id}`,
-          /^[\w.-]+$/.test(filename) ? `https://uploads.mangadex.org/covers/${id}/${filename}.256.jpg` : void 0
-        );
-      });
-    }
-    async get(id, c) {
-      this.validate(id);
-      const x = obj((await json(this.t, `https://api.mangadex.org/manga/${id}?includes[]=author&includes[]=artist`, c.signal)).data);
-      checkId(x.id, id);
-      const a = obj(x.attributes), r = record(this.id, id, `https://mangadex.org/title/${id}`, x);
-      r.language = str(a.originalLanguage) || void 0;
-      for (const entry of [obj(a.title), ...list(a.altTitles).map(obj)]) for (const [language, text2] of Object.entries(entry)) {
-        r.titles.push({ text: required(text2), language, type: language === a.originalLanguage ? "native" : "alias" });
-      }
-      if (!r.titles.length) throw new MetadataError("invalid-response", "MangaDex \u7F3A\u5C11\u6807\u9898");
-      r.summary = a.description ? str(obj(a.description)[r.language ?? ""] || obj(a.description).en || Object.values(obj(a.description))[0]) || void 0 : void 0;
-      r.status = status(a.status);
-      r.ageRating = a.contentRating === "pornographic" || a.contentRating === "erotica" ? 18 : void 0;
-      r.tags = list(a.tags).map((v) => {
-        const name = obj(obj(obj(v).attributes).name);
-        return required(name.en || Object.values(name)[0]);
-      });
-      for (const v of list(x.relationships)) {
-        const rel = obj(v);
-        if (["author", "artist"].includes(str(rel.type))) r.authors.push({ name: required(obj(rel.attributes).name), role: rel.type === "artist" ? "penciller" : "writer" });
-      }
-      for (let offset = 0; offset < 1e3; offset += 100) {
-        const covers = await json(this.t, `https://api.mangadex.org/cover?manga[]=${id}&limit=100&offset=${offset}`, c.signal);
-        for (const v of arr(covers.data)) {
-          const attributes = obj(obj(v).attributes);
-          const n = /^\d+(?:\.\d+)?$/.test(str(attributes.volume)) ? Number(attributes.volume) : void 0;
-          const filename = required(attributes.fileName);
-          if (!/^[\w.-]+$/.test(filename)) throw new MetadataError("invalid-response", "\u975E\u6CD5\u5C01\u9762\u6587\u4EF6\u540D");
-          addCover(r, `https://uploads.mangadex.org/covers/${id}/${filename}`, n, str(attributes.locale) || void 0);
-        }
-        if (arr(covers.data).length < 100 || typeof covers.total === "number" && offset + 100 >= covers.total) return r;
-      }
-      throw new MetadataError("unavailable", "\u5C01\u9762\u5206\u9875\u8D85\u8FC7\u5B89\u5168\u4E0A\u9650");
-    }
-  };
-  var aniFields = `id siteUrl title { native romaji english } description(asHtml:false) status genres startDate { year month day } coverImage { extraLarge large } staff(perPage:50) { pageInfo { hasNextPage } edges { role node { name { native full } } } }`;
+  var aniFields = `id siteUrl countryOfOrigin title { native romaji english } description(asHtml:false) status genres startDate { year month day } coverImage { extraLarge large } staff(perPage:50) { pageInfo { hasNextPage } edges { role node { name { native full } } } }`;
   var AniList = class {
     constructor(t) {
       this.t = t;
@@ -746,8 +692,9 @@ SOFTWARE.
       const x = obj((await this.query(`query($id:Int){Media(id:$id,type:MANGA){${aniFields}}}`, { id: Number(id) }, c)).Media);
       checkId(x.id, id);
       const r = record(this.id, id, required(x.siteUrl), x), t = obj(x.title);
-      titles(r, t.native || t.romaji || t.english, t.english);
-      if (str(t.romaji)) r.titles.push({ text: str(t.romaji), type: "alias" });
+      if (str(t.native)) r.titles.push({ text: str(t.native), type: "native", language: { JP: "ja", CN: "zh", KR: "ko" }[str(x.countryOfOrigin)] });
+      if (str(t.english)) r.titles.push({ text: str(t.english), type: "localized", language: "en" });
+      if (str(t.romaji)) r.titles.push({ text: str(t.romaji), type: "alias", language: "romaji" });
       r.summary = str(x.description) || void 0;
       r.status = status(x.status);
       r.genres = list(x.genres).map(required);
@@ -791,6 +738,8 @@ SOFTWARE.
       const r = record(this.id, id, `https://myanimelist.net/manga/${id}`, x);
       const alt = x.alternative_titles ? obj(x.alternative_titles) : {};
       titles(r, alt.ja || x.title, x.title);
+      if (str(alt.ja)) r.titles[0].language = "ja";
+      if (str(alt.en)) r.titles.push({ text: str(alt.en), type: "localized", language: "en" });
       r.titles.push(...list(alt.synonyms).map((v) => ({ text: required(v), type: "alias" })));
       r.summary = str(x.synopsis) || void 0;
       r.status = status(x.status);
@@ -1136,12 +1085,11 @@ SOFTWARE.
     registry.register(new Bangumi(new SourceTransport(transport, 400)));
     registry.register(new MangaUpdates(new SourceTransport(transport, 1e3)));
     registry.register(new MangaBaka(new SourceTransport(transport, 500)));
-    registry.register(new MangaDex(new SourceTransport(transport, 300)));
     registry.register(new AniList(new SourceTransport(transport, 1e3)));
     registry.register(new EHentai(new SourceTransport(transport, 1500)));
     registry.register(new MAL(new SourceTransport(transport, 1e3)));
     registry.register(new ComicVine(new SourceTransport(transport, 2e3)));
-    for (const id of ["viz", "yenpress", "webtoons"]) registry.register(new HTMLSource(id, new SourceTransport(transport, 1e3)));
+    registry.register(new HTMLSource("viz", new SourceTransport(transport, 1e3)));
     return registry;
   }
 
@@ -1601,7 +1549,7 @@ SOFTWARE.
           continue;
         }
         const next = Array.isArray(value) ? merge(old[field], value) : value;
-        if (equal(old[field], next)) continue;
+        if (!selection.includeUnchanged && equal(old[field], next)) continue;
         before[field] = old[field] ?? null;
         after[field] = next;
         guards[lock] = old[lock] ?? false;
@@ -1624,7 +1572,7 @@ SOFTWARE.
       if (!old || target.kind === "books" && !state.books.some((b) => b.id === target.id)) throw new MetadataError("invalid-id", "\u5C01\u9762\u76EE\u6807\u4E0D\u5C5E\u4E8E\u7CFB\u5217");
       if (volumeSpecific && !state.series.oneshot && target.kind === "series") throw new MetadataError("invalid-id", "\u5355\u5377\u5C01\u9762\u9700\u8981\u4E66\u7C4D\u76EE\u6807");
       if (old.thumbnailLock === true || state.series.metadata.thumbnailLock === true) plan.skipped.push("\u5C01\u9762\u5DF2\u9501\u5B9A");
-      else plan.cover = { target, source: selection.cover };
+      else plan.cover = { target, source: selection.cover, sharedSeries: state.series.oneshot ? { kind: "series", id: state.series.id } : void 0 };
     }
     return plan;
   }
@@ -1692,16 +1640,23 @@ SOFTWARE.
       cancelled(signal);
       return response.blob;
     }
+    async verifySharedCover(target, expected, signal) {
+      if (!target) return;
+      const blob = await this.client.displayedThumbnail(target, signal);
+      if ((blob ? await hash(blob) : void 0) !== expected) throw new MetadataError("conflict", "One-shot \u7CFB\u5217\u4E0E\u4E66\u7C4D\u5C01\u9762\u8BFB\u56DE\u4E0D\u4E00\u81F4");
+    }
     async prepare(plan, signal) {
       if (plan.cover) {
-        plan.cover.prepared = void 0;
-        const blob = await this.image(plan.cover.source.url, signal);
-        const selected = (await this.client.thumbnails(plan.cover.target, signal)).find((t) => t.selected);
-        plan.cover.beforeSelected = selected?.id;
-        plan.cover.beforeBlob = selected ? await this.client.thumbnail(plan.cover.target, selected.id, signal) : void 0;
-        plan.cover.beforeHash = plan.cover.beforeBlob ? await hash(plan.cover.beforeBlob) : void 0;
+        const cover = plan.cover;
+        cover.prepared = void 0;
+        const blob = await this.image(cover.source.url, signal);
+        const selected = (await this.client.thumbnails(cover.target, signal)).find((t) => t.selected);
+        cover.beforeSelected = selected?.id;
+        cover.beforeBlob = selected ? await this.client.thumbnail(cover.target, selected.id, signal) : void 0;
+        cover.beforeHash = cover.beforeBlob ? await hash(cover.beforeBlob) : void 0;
+        await this.verifySharedCover(cover.sharedSeries, cover.beforeHash, signal);
         cancelled(signal);
-        plan.cover.prepared = { url: plan.cover.source.url, blob, hash: await hash(blob) };
+        cover.prepared = { url: cover.source.url, blob, hash: await hash(blob) };
       }
       return plan;
     }
@@ -1731,9 +1686,13 @@ SOFTWARE.
           await this.metadataGuard(e, signal);
         }
         if (plan.cover) {
-          if (plan.cover.target.kind === "books" && !fresh.books.some((b) => b.id === plan.cover.target.id)) throw new MetadataError("conflict", "\u5C01\u9762\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
-          if (!plan.cover.prepared || plan.cover.prepared.url !== plan.cover.source.url) throw new MetadataError("verification", "\u8BF7\u5148\u751F\u6210\u5C01\u9762\u9884\u89C8");
-          await this.coverGuard(plan.cover, signal);
+          const cover = plan.cover;
+          if (cover.target.kind === "books" && !fresh.books.some((b) => b.id === cover.target.id)) throw new MetadataError("conflict", "\u5C01\u9762\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
+          const metadata2 = await this.client.read(cover.target, signal);
+          if (metadata2.thumbnailLock || fresh.series.metadata.thumbnailLock) throw new MetadataError("conflict", "\u5C01\u9762\u5DF2\u9501\u5B9A");
+          if (!cover.prepared || cover.prepared.url !== cover.source.url) throw new MetadataError("verification", "\u8BF7\u5148\u751F\u6210\u5C01\u9762\u9884\u89C8");
+          await this.coverGuard(cover, signal);
+          await this.verifySharedCover(cover.sharedSeries, cover.beforeHash, signal);
         }
         for (const e of plan.edits) {
           try {
@@ -1768,7 +1727,8 @@ SOFTWARE.
             await this.client.select(edit.target, own, signal);
             const selected = (await this.client.thumbnails(edit.target, signal)).find((t) => t.selected);
             if (selected?.id !== own || await hash(await this.client.thumbnail(edit.target, own, signal)) !== expected) throw new MetadataError("verification", "\u5C01\u9762\u9009\u62E9\u8BFB\u56DE\u4E0D\u7B26");
-            result.covers.push({ target: edit.target, previous: edit.beforeSelected, previousHash: edit.beforeHash, uploaded: own, uploadedHash: expected });
+            await this.verifySharedCover(edit.sharedSeries, expected, signal);
+            result.covers.push({ target: edit.target, previous: edit.beforeSelected, previousHash: edit.beforeHash, uploaded: own, uploadedHash: expected, sharedSeries: edit.sharedSeries });
             outcome(result, edit.target, "cover");
           } catch (error) {
             let message = error instanceof Error ? error.message : String(error);
@@ -1824,6 +1784,7 @@ SOFTWARE.
             if (metadata2.thumbnailLock || series2.thumbnailLock) throw new MetadataError("conflict", "\u5C01\u9762\u5DF2\u9501\u5B9A\uFF0C\u4E0D\u80FD\u64A4\u9500");
             const selected = (await this.client.thumbnails(s.target, signal)).find((t) => t.selected);
             if (selected?.id !== s.uploaded || await hash(await this.client.thumbnail(s.target, s.uploaded, signal)) !== s.uploadedHash) throw new MetadataError("conflict", "\u5C01\u9762\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u4FEE\u6539");
+            await this.verifySharedCover(s.sharedSeries, s.uploadedHash, signal);
             if (s.previous) {
               if (await hash(await this.client.thumbnail(s.target, s.previous, signal)) !== s.previousHash) throw new MetadataError("conflict", "\u539F\u5C01\u9762\u5185\u5BB9\u5DF2\u53D8\u5316");
               await this.client.select(s.target, s.previous, signal);
@@ -1831,6 +1792,7 @@ SOFTWARE.
             }
             await this.client.remove(s.target, s.uploaded, signal);
             if ((await this.client.thumbnails(s.target, signal)).some((t) => t.id === s.uploaded)) throw new MetadataError("verification", "\u81EA\u8EAB\u4E0A\u4F20\u5C01\u9762\u5220\u9664\u8BFB\u56DE\u5931\u8D25");
+            await this.verifySharedCover(s.sharedSeries, s.previousHash, signal);
             outcome(result, s.target, "cover");
           } catch (error) {
             outcome(result, s.target, "cover", error);
@@ -1865,6 +1827,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px
 section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
 .cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
 .search-progress{margin-top:16px;display:grid;gap:7px;font-size:12px;color:var(--muted)}.search-progress progress{width:100%;height:7px;border:0;border-radius:4px;overflow:hidden;accent-color:var(--accent)}.search-progress progress::-webkit-progress-bar{background:var(--line)}.search-progress progress::-webkit-progress-value{background:var(--accent)}.result-group[data-state=error] .result-count{color:var(--danger)}.selected-source{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}.selected-source>span{flex:1;min-width:0;overflow-wrap:anywhere}.selected-source button{padding:4px 7px;font-size:11px}.merge-rules{border-top:1px solid var(--line);margin:12px 0;padding-top:4px}.merge-rules>p{font-size:12px;color:var(--muted)}.merge-rules .field-label{grid-template-columns:90px minmax(0,1fr);align-items:center}
+.field-compose{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:10px 0}.field-source-picks{grid-column:1/-1}.field-source-picks label{display:flex;align-items:flex-start;gap:8px;margin-top:8px;overflow-wrap:anywhere;font-size:12px;line-height:1.5}.field-source-picks input{flex-shrink:0}.language-options p{font-size:12px;color:var(--muted);line-height:1.6}.language-options .field-grid{margin:12px 0}
 @keyframes km-spin{to{transform:rotate(360deg)}}
 @media(max-width:820px){.dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);border-radius:12px}.workspace{grid-template-columns:1fr}.tab-panel{padding:16px}.header{padding:16px}.tabs{padding:0 16px}.footer{padding:12px 16px;flex-wrap:wrap}.status{flex-basis:100%}.footer-actions{margin-left:auto}.direct-row{grid-template-columns:95px minmax(0,1fr) auto}.diff{grid-template-columns:1fr}.context{max-width:55vw}}
 @media(prefers-reduced-motion:reduce){*,*::before{transition:none!important;animation-duration:1.5s!important}.dialog{transition:none!important}}
@@ -2014,6 +1977,40 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     return { provider: online, candidates, mode: "\u5728\u7EBF", note };
   }
 
+  // src/languages.ts
+  var allLanguages = ["en", "ja", "zh", "romaji", "unknown", "other"];
+  var languageLabels = { en: "\u82F1\u6587 EN", ja: "\u65E5\u6587 JP", zh: "\u4E2D\u6587 ZH / CH", romaji: "\u7F57\u9A6C\u5B57 Romaji", unknown: "\u672A\u6807\u6CE8", other: "\u5176\u4ED6\u8BED\u8A00" };
+  function languageOf(text2, explicit) {
+    const code = explicit?.trim().toLowerCase().replace(/_/g, "-");
+    if (code && /^(romaji|ja-latn|ja-ro|jp-ro|romanized|romanised)$/.test(code)) return "romaji";
+    if (code && /^(ja|jp|jpn|japanese)(-|$)/.test(code)) return "ja";
+    if (code && /^(zh|ch|zho|chi|chinese)(-|$)/.test(code)) return "zh";
+    if (code && /^(en|eng|english)(-|$)/.test(code)) return "en";
+    if (code && !["und", "unknown", "zxx"].includes(code)) return "other";
+    return /[\u3040-\u30ff]/u.test(text2) ? "ja" : "unknown";
+  }
+  function accepted(text2, code, languages) {
+    return languages.includes(languageOf(text2, code));
+  }
+  function acceptedTitles(r, languages) {
+    return r.titles.filter((t) => accepted(t.text, t.language, languages)).sort((a, b) => Number(b.type === "native") - Number(a.type === "native"));
+  }
+  function languageFields(r, languages) {
+    const values = mappedFields(r), titles2 = acceptedTitles(r, languages);
+    values.title = (titles2.find((t) => t.type === "native") ?? titles2[0])?.text;
+    values.alternateTitles = titles2.map((t) => ({ title: t.text, label: t.language || t.type }));
+    if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = void 0;
+    if (r.publisher && !accepted(r.publisher, void 0, languages)) values.publisher = void 0;
+    values.tags = r.tags.filter((t) => accepted(t, void 0, languages));
+    values.genres = r.genres.filter((t) => accepted(t, void 0, languages));
+    values.authors = r.authors.flatMap((a) => {
+      const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];
+      const name = names.find(([text2, lang]) => text2 && accepted(text2, lang, languages))?.[0];
+      return name ? [{ name, role: a.role }] : [];
+    });
+    return normalizeWriteFields(values);
+  }
+
   // src/merge.ts
   var mergeFields = [.../* @__PURE__ */ new Set([...seriesFields, ...bookFields])];
   var sourceKey = (r) => `${r.provider}:${r.id}`;
@@ -2031,14 +2028,23 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     return result;
   }
-  function mergeRecords(records, choices = {}) {
+  function canMergeField(field, value) {
+    return Array.isArray(value) || ["title", "summary", "publisher"].includes(field);
+  }
+  function combineField(field, values) {
+    if (!values.length) return void 0;
+    if (!canMergeField(field, values[0])) throw new MetadataError("verification", "\u6B64\u5B57\u6BB5\u53EA\u80FD\u4FDD\u5B58\u5355\u503C");
+    if (Array.isArray(values[0])) return union(field, values);
+    return [...new Set(values.filter((v) => typeof v === "string").map((v) => v.trim()).filter(Boolean))].join(field === "summary" ? "\n\n" : " / ");
+  }
+  function mergeRecords(records, choices = {}, languages = allLanguages) {
     if (!records.length) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
     if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError("verification", "\u4E0D\u80FD\u628A\u6574\u90E8\u4F5C\u54C1\u548C\u5355\u5377\u6761\u76EE\u6DF7\u5408\uFF1B\u8BF7\u5148\u79FB\u9664\u4E0D\u540C\u5C42\u7EA7\u7684\u6761\u76EE");
     if (new Set(records.map((r) => r.volume).filter((v) => v !== void 0)).size > 1) throw new MetadataError("verification", "\u9009\u4E2D\u4E86\u4E0D\u540C\u5377\u53F7\uFF0C\u4E0D\u80FD\u5408\u5E76\u5230\u540C\u4E00\u672C\u4E66");
-    const mapped = records.map((r) => ({ r, value: mappedFields(r) }));
+    const mapped = records.map((r) => ({ r, value: languageFields(r, languages) }));
     const values = {}, used = {}, options = {};
     for (const field of mergeFields) {
-      const entries = mapped.filter((x) => present(x.value[field])).map((x) => ({ key: sourceKey(x.r), provider: x.r.provider, value: x.value[field] }));
+      const entries = field === "title" ? records.flatMap((r) => acceptedTitles(r, languages).map((t, i) => ({ key: `${sourceKey(r)}#title${i}`, provider: r.provider, label: `${r.provider} \xB7 ${r.id} \xB7 ${languageOf(t.text, t.language)} \xB7 ${t.text}`, value: t.text }))) : mapped.filter((x) => present(x.value[field])).map((x) => ({ key: sourceKey(x.r), provider: x.r.provider, label: `${x.r.provider} \xB7 ${x.r.id} \xB7 ${nativeTitle(x.r)}`, value: x.value[field] }));
       options[field] = entries;
       if (!entries.length) continue;
       const chosen = entries.find((e) => e.key === choices[field]);
@@ -2054,7 +2060,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
     }
     const covers = [];
-    for (const r of records) for (const cover of r.covers) if (!covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+    for (const r of records) for (const cover of r.covers) if (accepted("", cover.language, languages) && !covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
     return { record: { ...records[0], covers: covers.map((c) => c.cover) }, values, used, options, covers };
   }
 
@@ -2180,6 +2186,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.controls.className = "workspace";
       this.results.className = "results";
       this.preview.className = "preview";
+      this.preview.addEventListener("change", () => this.updateApplyState());
       this.sourceToggles.className = "source-toggles";
       const searchCard = element("div");
       searchCard.className = "card";
@@ -2209,8 +2216,24 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       directRow.append(this.provider, this.direct, button("\u8BFB\u53D6", () => void this.run(() => this.readDirect())));
       this.searchProgress.className = "search-progress";
       this.searchProgress.hidden = true;
+      const languages = element("details");
+      languages.className = "language-options";
+      languages.append(element("summary", "\u63A5\u53D7\u7684\u8D44\u6599\u8BED\u8A00"));
+      const languageChecks = element("div");
+      languageChecks.className = "field-grid";
+      for (const language of allLanguages) {
+        const check = input(languageLabels[language], languageChecks, "checkbox");
+        check.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
+        check.dataset.language = language;
+        check.onchange = () => {
+          this.settings.acceptedLanguages = [...languageChecks.querySelectorAll("input:checked")].map((i) => i.dataset.language);
+          storage.set("settings-v1", this.settings);
+          this.renderSelection();
+        };
+      }
+      languages.append(languageChecks, element("p", "\u7B5B\u9009\u5DF2\u6709\u7684\u6807\u9898\u3001\u7B80\u4ECB\u3001\u4F5C\u8005\u7B49\u6587\u672C\uFF0C\u4E0D\u81EA\u52A8\u7FFB\u8BD1\u3002\u7EAF\u6C49\u5B57\u3001\u62C9\u4E01\u5B57\u6BCD\u7B49\u65E0\u6CD5\u53EF\u9760\u5224\u65AD\u65F6\u5F52\u5165\u300C\u672A\u6807\u6CE8\u300D\u3002\u641C\u7D22\u8BCD\u4E0E\u4F5C\u54C1\u539F\u59CB\u8BED\u8A00\u4E0D\u53D7\u6B64\u9009\u9879\u66F4\u6539\u3002"));
       directDetails.append(directRow);
-      searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.searchProgress, this.results);
+      searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
       const choices = element("div");
       choices.className = "card";
       this.detail.className = "selected-record";
@@ -2339,14 +2362,13 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     finishing = false;
     returnFocus = document.activeElement?.shadowRoot?.activeElement ?? document.activeElement;
     status = element("p");
-    settings = storage.get("settings-v1", { sources: ["bangumi", "mangabaka", "mangadex", "anilist", "mangaupdates"], credentials: {} });
+    settings = storage.get("settings-v1", { sources: ["bangumi", "mangabaka", "anilist", "mangaupdates"], credentials: {} });
     controller;
     busy = false;
     state;
     selected;
     selections = [];
     merged;
-    mergeChoices = {};
     sameWork = false;
     plan;
     seriesId;
@@ -2394,15 +2416,19 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           option(this.coverTarget, `series:${this.seriesId}`, "\u6574\u4E2A\u7CFB\u5217\u7684\u5C01\u9762");
         }
         for (const b of this.state.books) {
-          option(this.book, b.id, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
-          option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
+          option(this.book, b.id, `${this.state.series.oneshot ? "\u7CFB\u5217 + \u552F\u4E00\u4E66\u7C4D \xB7 " : ""}${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
+          if (!this.state.series.oneshot) option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
         }
+        if (this.state.series.oneshot) option(this.coverTarget, "both", "\u7CFB\u5217\u4E0E\u552F\u4E00\u4E66\u7C4D\u5171\u7528\u5C01\u9762");
         this.status.textContent = `\u5F53\u524D\uFF1A${this.state.series.metadata.title}`;
       });
     }
     get signal() {
       if (!this.controller) throw new Error("No action context");
       return this.controller.signal;
+    }
+    updateApplyState() {
+      this.applyButton.disabled = this.busy || this.finishing || !this.plan || !this.plan.cover && !this.preview.querySelector("input[data-edit][data-field]:checked");
     }
     invalidate() {
       for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
@@ -2429,6 +2455,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.previewButton.disabled = true;
       this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = true);
       this.results.querySelectorAll("button").forEach((e) => e.disabled = true);
+      this.preview.querySelectorAll("input,select,textarea,button").forEach((e) => e.disabled = true);
       this.applyButton.disabled = true;
       this.undoButton.disabled = true;
       try {
@@ -2446,8 +2473,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.cancelButton.hidden = true;
         this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = this.finishing);
         this.results.querySelectorAll("button").forEach((e) => e.disabled = this.finishing);
+        this.preview.querySelectorAll("input,select,textarea,button").forEach((e) => e.disabled = this.finishing);
         this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
-        this.applyButton.disabled = this.finishing || !this.plan;
+        this.updateApplyState();
         this.undoButton.disabled = this.finishing || !this.undoData;
       }
     }
@@ -2461,7 +2489,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.searchProgress.replaceChildren();
       this.selections = [];
       this.merged = void 0;
-      this.mergeChoices = {};
       this.sameWork = false;
       this.selected = void 0;
       this.detail.replaceChildren();
@@ -2579,7 +2606,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     choose(record2, provider) {
       const next = [...this.selections];
-      const existing = next.findIndex((s) => s.record.provider === record2.provider);
+      const existing = next.findIndex((s) => sourceKey(s.record) === sourceKey(record2));
       if (existing < 0) next.push({ record: record2, provider });
       else next[existing] = { record: record2, provider };
       mergeRecords(next.map((s) => s.record));
@@ -2605,10 +2632,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.previewButton.disabled = true;
         return;
       }
-      this.merged = mergeRecords(this.selections.map((s) => s.record), this.mergeChoices);
+      this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
       this.selected = this.merged.record;
       const record2 = this.selected;
-      this.detail.append(element("h3", this.selections.length === 1 ? `${record2.provider} \xB7 ${nativeTitle(record2)}` : `\u5DF2\u9009 ${this.selections.length} \u4E2A\u6765\u6E90`));
+      this.detail.append(element("h3", this.selections.length === 1 ? `${record2.provider} \xB7 ${nativeTitle(record2)}` : `\u5DF2\u9009 ${this.selections.length} \u4E2A\u6761\u76EE`));
       for (const { record: r, provider } of this.selections) {
         const row = element("div");
         row.className = "selected-source";
@@ -2627,45 +2654,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       meta2.className = "record-meta";
       this.detail.append(meta2);
       if (this.selections.length > 1) {
-        const primary = element("select");
-        primary.setAttribute("aria-label", "\u4E3B\u8981\u6765\u6E90");
-        for (const s of this.selections) option(primary, sourceKey(s.record), s.record.provider);
-        primary.value = sourceKey(record2);
-        primary.onchange = () => {
-          const i = this.selections.findIndex((s) => sourceKey(s.record) === primary.value);
-          this.selections.unshift(...this.selections.splice(i, 1));
-          this.renderSelection();
-        };
-        const label = element("label", "\u4E3B\u8981\u6765\u6E90");
-        label.className = "field-label";
-        label.append(primary);
-        this.detail.append(label);
-        const rules = element("details");
-        rules.className = "merge-rules";
-        rules.append(element("summary", "\u5408\u5E76\u89C4\u5219\u4E0E\u5B57\u6BB5\u6765\u6E90"));
-        rules.append(element("p", "\u7B80\u4ECB\u7B49\u5355\u503C\u4F18\u5148\u4E3B\u8981\u6765\u6E90\uFF0C\u7F3A\u9879\u8865\u9F50\uFF1B\u6807\u7B7E\u3001\u4F5C\u8005\u3001\u94FE\u63A5\u5408\u5E76\u53BB\u91CD\u3002\u53EF\u9010\u5B57\u6BB5\u6539\u7528\u5176\u4ED6\u6765\u6E90\u3002"));
-        for (const field of mergeFields) {
-          const entries = this.merged.options[field] ?? [];
-          if (entries.length < 2) continue;
-          const select = element("select");
-          select.setAttribute("aria-label", `${labels[field]}\u6765\u6E90`);
-          option(select, "", Array.isArray(entries[0].value) ? "\u5408\u5E76\u53BB\u91CD" : "\u4E3B\u8981\u6765\u6E90\u4F18\u5148\uFF0C\u7F3A\u9879\u8865\u9F50");
-          for (const entry of entries) option(select, entry.key, entry.provider);
-          select.value = entries.some((e) => e.key === this.mergeChoices[field]) ? this.mergeChoices[field] : "";
-          select.onchange = () => {
-            this.mergeChoices[field] = select.value;
-            this.merged = mergeRecords(this.selections.map((s) => s.record), this.mergeChoices);
-            this.selected = this.merged.record;
-            this.invalidate();
-            const summary = this.detail.querySelector(".record-summary");
-            if (summary) summary.textContent = String(this.merged.values.summary ?? "");
-          };
-          const l = element("label", labels[field]);
-          l.className = "field-label";
-          l.append(select);
-          rules.append(l);
-        }
-        this.detail.append(rules);
+        this.detail.append(element("p", "\u5728\u9884\u89C8\u4E2D\u9010\u5B57\u6BB5\u9009\u62E9\u300C\u5355\u9009\u300D\u6216\u300C\u5408\u5E76\u300D\u3002"));
         const confirm = input("\u8FD9\u4E9B\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C", this.detail, "checkbox");
         confirm.parentElement.className = "check-label";
         confirm.checked = this.sameWork;
@@ -2713,6 +2702,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         bookId: this.book.value || void 0,
         propagateAuthors: this.propagate.checked,
         mergedFields: this.merged?.values,
+        includeUnchanged: true,
         cover: this.cover.value === "" ? void 0 : this.selected.covers[Number(this.cover.value)],
         coverTarget: id && (kind === "series" || kind === "books") ? { kind, id } : void 0
       });
@@ -2765,6 +2755,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           next.dataset.field = field;
           next.title = next.dataset.format === "text" ? "\u53EF\u76F4\u63A5\u7F16\u8F91\u6587\u672C" : "JSON \u683C\u5F0F";
           next.setAttribute("aria-label", `${labels[field]}\u5199\u5165\u503C`);
+          this.fieldComposer(row, field, value, before, next, check, afterLabel);
           updated.append(afterLabel, next);
           diff.append(old, updated);
           row.append(diff);
@@ -2781,11 +2772,50 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.previewButton.hidden = true;
       this.viewport.scrollTop = 0;
     }
+    fieldComposer(row, field, value, before, textarea, enabled, caption) {
+      const entries = [...this.merged?.options[field] ?? []];
+      if (before !== void 0 && before !== null && before !== "" && (!Array.isArray(before) || before.length)) entries.unshift({ key: "current", provider: "\u73B0\u6709", label: "Komga \u5F53\u524D\u503C", value: before });
+      if (!entries.length) return;
+      const controls = element("div");
+      controls.className = "field-compose";
+      const mode = element("select");
+      mode.setAttribute("aria-label", `${labels[field]}\u5904\u7406\u65B9\u5F0F`);
+      option(mode, "single", "\u5355\u9009");
+      if (canMergeField(field, value)) option(mode, "merge", "\u5408\u5E76");
+      mode.value = Array.isArray(value) ? "merge" : "single";
+      const select = element("select");
+      select.setAttribute("aria-label", `${labels[field]}\u6765\u6E90`);
+      for (const e of entries) option(select, e.key, e.label);
+      select.value = entries.find((e) => e.key !== "current")?.key ?? entries[0].key;
+      const picks = element("details");
+      picks.className = "field-source-picks";
+      picks.append(element("summary", "\u9009\u62E9\u53C2\u4E0E\u5408\u5E76\u7684\u6761\u76EE"));
+      const checks = entries.map((e) => {
+        const i = input(e.label, picks, "checkbox");
+        i.checked = true;
+        return i;
+      });
+      const refresh = () => {
+        select.hidden = mode.value !== "single";
+        picks.hidden = mode.value !== "merge";
+        const chosen = mode.value === "single" ? entries.filter((e) => e.key === select.value) : entries.filter((_, i) => checks[i].checked);
+        const next = mode.value === "single" ? chosen[0]?.value : combineField(field, chosen.map((e) => e.value));
+        textarea.dataset.format = typeof next === "string" ? "text" : "json";
+        textarea.value = next === void 0 ? "" : typeof next === "string" ? next : JSON.stringify(next, null, 2);
+        enabled.checked = next !== void 0 && !equal(next, before);
+        caption.textContent = `\u5199\u5165\u503C \xB7 ${[...new Set(chosen.map((e) => e.provider))].join(" + ") || "\u672A\u9009\u62E9"}`;
+      };
+      mode.onchange = select.onchange = refresh;
+      checks.forEach((i) => i.onchange = refresh);
+      controls.append(mode, select, picks);
+      row.append(controls);
+      refresh();
+    }
     async coverPreview(cover) {
       const target = cover.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === cover.target.id);
       const section = element("section");
       section.className = "cover-preview";
-      section.append(element("h3", `\u5C01\u9762 \xB7 ${cover.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? cover.target.id}`));
+      section.append(element("h3", `\u5C01\u9762 \xB7 ${cover.sharedSeries ? "\u7CFB\u5217 + \u552F\u4E00\u4E66\u7C4D\uFF08\u5171\u7528\uFF09" : cover.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? cover.target.id}`));
       const comparison = element("div");
       comparison.className = "cover-compare";
       for (const [label, blob] of [["\u5F53\u524D\u5C01\u9762", cover.beforeBlob], ["\u66FF\u6362\u4E3A", cover.prepared.blob]]) {
@@ -2830,6 +2860,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           throw new MetadataError("verification", `${labels[field]} \u65B0\u503C JSON \u683C\u5F0F\u9519\u8BEF`);
         }
         edit.after[field] = validateValue(field, value);
+        if (equal(edit.after[field], edit.before[field])) {
+          delete edit.after[field];
+          delete edit.before[field];
+          delete edit.guards[`${field}Lock`];
+        }
       }
       plan.edits = plan.edits.filter((e) => Object.keys(e.after).length);
       return plan;

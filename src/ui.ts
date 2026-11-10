@@ -1,13 +1,14 @@
-import { type CatalogExtension, type Credentials, type MetadataRecord, type Provider, type Registry, nativeTitle, MetadataError, cancelled } from './model';
+import { type CatalogExtension, type Credentials, type MetadataRecord, type Provider, type Registry, type AcceptedLanguage, nativeTitle, MetadataError, cancelled } from './model';
 import { currentSeries, type KomgaClient, type State, type Value } from './komga';
-import { buildPlan, isVolumeRecord, type Field, type Plan, seriesFields, bookFields } from './plan';
+import { buildPlan, isVolumeRecord, equal, type Field, type Plan, seriesFields, bookFields } from './plan';
 import { type Writer, type Result } from './writer';
 import { storage } from './transport';
 import { panelStyle, icon } from './ui-style';
 import { Thumbnails } from './thumbnails';
 import { searchPreferred } from './search';
-import { mergeRecords, sourceKey, mergeFields, type FieldChoices, type Merged } from './merge';
-interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials }
+import { mergeRecords, sourceKey, canMergeField, combineField, type Merged } from './merge';
+import { allLanguages, languageLabels } from './languages';
+interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[] }
 interface SavedUndo { seriesId: string; result: Result }
 const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -64,14 +65,14 @@ export class Panel {
   private finishing = false;
   private returnFocus = document.activeElement?.shadowRoot?.activeElement ?? document.activeElement;
   private status = element('p');
-  private settings: Settings = storage.get('settings-v1', { sources: ['bangumi', 'mangabaka', 'mangadex', 'anilist', 'mangaupdates'], credentials: {} });
+  private settings: Settings = storage.get('settings-v1', { sources: ['bangumi', 'mangabaka', 'anilist', 'mangaupdates'], credentials: {} });
   private controller?: AbortController;
   private busy = false;
   private state?: State;
   private selected?: MetadataRecord;
   private selections: { record: MetadataRecord; provider: Provider }[] = [];
   private merged?: Merged;
-  private mergeChoices: FieldChoices = {};
+
   private sameWork = false;
   private plan?: Plan;
   private seriesId?: string;
@@ -134,6 +135,7 @@ export class Panel {
     close.className = 'ghost icon-button'; close.setAttribute('aria-label', '关闭'); close.title = '关闭 · Esc'; close.append(icon('close'));
     headerActions.append(theme, close); header.append(brand, heading, headerActions);
     this.controls.className = 'workspace'; this.results.className = 'results'; this.preview.className = 'preview';
+    this.preview.addEventListener('change', () => this.updateApplyState());
     this.sourceToggles.className = 'source-toggles';
     const searchCard = element('div'); searchCard.className = 'card';
     const searchTitle = element('div'); searchTitle.className = 'section-title'; searchTitle.append(element('h3', '查找作品'));
@@ -151,7 +153,18 @@ export class Panel {
     const directRow = element('div'); directRow.className = 'direct-row';
     directRow.append(this.provider, this.direct, button('读取', () => void this.run(() => this.readDirect())));
     this.searchProgress.className = 'search-progress'; this.searchProgress.hidden = true;
-    directDetails.append(directRow); searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.searchProgress, this.results);
+    const languages = element('details'); languages.className = 'language-options'; languages.append(element('summary', '接受的资料语言'));
+    const languageChecks = element('div'); languageChecks.className = 'field-grid';
+    for (const language of allLanguages) {
+      const check = input(languageLabels[language], languageChecks, 'checkbox'); check.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
+      check.dataset.language = language;
+      check.onchange = () => {
+        this.settings.acceptedLanguages = [...languageChecks.querySelectorAll<HTMLInputElement>('input:checked')].map(i => i.dataset.language as AcceptedLanguage);
+        storage.set('settings-v1', this.settings); this.renderSelection();
+      };
+    }
+    languages.append(languageChecks, element('p', '筛选已有的标题、简介、作者等文本，不自动翻译。纯汉字、拉丁字母等无法可靠判断时归入「未标注」。搜索词与作品原始语言不受此选项更改。'));
+    directDetails.append(directRow); searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
     const choices = element('div'); choices.className = 'card';
     this.detail.className = 'selected-record'; choices.append(this.detail, element('h3', '写入选项'));
     this.book.setAttribute('aria-label', '同时更新哪本书'); this.cover.setAttribute('aria-label', '使用哪张封面'); this.coverTarget.setAttribute('aria-label', '替换哪个封面');
@@ -246,15 +259,19 @@ export class Panel {
         option(this.coverTarget, `series:${this.seriesId}`, '整个系列的封面');
       }
       for (const b of this.state.books) {
-        option(this.book, b.id, `${b.metadata.number ?? '?'} · ${b.metadata.title}`);
-        option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? '?'} · ${b.metadata.title}`);
+        option(this.book, b.id, `${this.state.series.oneshot ? '系列 + 唯一书籍 · ' : ''}${b.metadata.number ?? '?'} · ${b.metadata.title}`);
+        if (!this.state.series.oneshot) option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? '?'} · ${b.metadata.title}`);
       }
+      if (this.state.series.oneshot) option(this.coverTarget, 'both', '系列与唯一书籍共用封面');
       this.status.textContent = `当前：${this.state.series.metadata.title}`;
     });
   }
   private get signal(): AbortSignal {
     if (!this.controller) throw new Error('No action context');
     return this.controller.signal;
+  }
+  private updateApplyState(): void {
+    this.applyButton.disabled = this.busy || this.finishing || !this.plan || (!this.plan.cover && !this.preview.querySelector('input[data-edit][data-field]:checked'));
   }
   private invalidate(): void {
     for (const url of this.previewUrls) URL.revokeObjectURL(url);
@@ -270,6 +287,7 @@ export class Panel {
     this.status.setAttribute('aria-label', '处理中'); this.cancelButton.hidden = false; this.previewButton.disabled = true;
     this.controls.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select').forEach(e => e.disabled = true);
     this.results.querySelectorAll<HTMLButtonElement>('button').forEach(e => e.disabled = true);
+    this.preview.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>('input,select,textarea,button').forEach(e => e.disabled = true);
     this.applyButton.disabled = true; this.undoButton.disabled = true;
     try {
       await action();
@@ -284,15 +302,16 @@ export class Panel {
       this.status.removeAttribute('aria-label'); this.cancelButton.hidden = true;
       this.controls.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select').forEach(e => e.disabled = this.finishing);
       this.results.querySelectorAll<HTMLButtonElement>('button').forEach(e => e.disabled = this.finishing);
+      this.preview.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>('input,select,textarea,button').forEach(e => e.disabled = this.finishing);
       this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
-      this.applyButton.disabled = this.finishing || !this.plan; this.undoButton.disabled = this.finishing || !this.undoData;
+      this.updateApplyState(); this.undoButton.disabled = this.finishing || !this.undoData;
     }
   }
   private context() { return { signal: this.signal, credentials: structuredClone(this.settings.credentials) }; }
   private clearSearch(): void {
     this.thumbnails?.dispose(); this.thumbnails = undefined;
     this.searchProgress.hidden = true; this.searchProgress.replaceChildren();
-    this.selections = []; this.merged = undefined; this.mergeChoices = {}; this.sameWork = false;
+    this.selections = []; this.merged = undefined; this.sameWork = false;
     this.selected = undefined; this.detail.replaceChildren(); this.results.replaceChildren(); this.invalidate();
     this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
   }
@@ -361,7 +380,7 @@ export class Panel {
   }
   private choose(record: MetadataRecord, provider: Provider) {
     const next = [...this.selections];
-    const existing = next.findIndex(s => s.record.provider === record.provider);
+    const existing = next.findIndex(s => sourceKey(s.record) === sourceKey(record));
     if (existing < 0) next.push({ record, provider }); else next[existing] = { record, provider };
     mergeRecords(next.map(s => s.record)); // reject incompatible scopes before changing selection
     this.selections = next; this.sameWork = false; this.renderSelection();
@@ -375,10 +394,10 @@ export class Panel {
     this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
     this.results.querySelectorAll<HTMLButtonElement>('.candidate').forEach(e => e.setAttribute('aria-pressed', String(this.selections.some(s => sourceKey(s.record) === e.dataset.key))));
     if (!this.selections.length) { this.selected = undefined; this.merged = undefined; this.previewButton.disabled = true; return; }
-    this.merged = mergeRecords(this.selections.map(s => s.record), this.mergeChoices);
+    this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
     this.selected = this.merged.record;
     const record = this.selected;
-    this.detail.append(element('h3', this.selections.length === 1 ? `${record.provider} · ${nativeTitle(record)}` : `已选 ${this.selections.length} 个来源`));
+    this.detail.append(element('h3', this.selections.length === 1 ? `${record.provider} · ${nativeTitle(record)}` : `已选 ${this.selections.length} 个条目`));
     for (const { record: r, provider } of this.selections) {
       const row = element('div'); row.className = 'selected-source';
       const name = element('span', `${r.provider}${provider.capabilities.offline ? ' · 本地' : ''} · ${nativeTitle(r)}`); name.title = r.url;
@@ -388,27 +407,7 @@ export class Panel {
     const states = { ONGOING: '连载中', ENDED: '已完结', HIATUS: '暂停连载', ABANDONED: '已停止连载' };
     const meta = element('p', `${isVolumeRecord(record) ? '单卷资料' : '整部作品资料'}${record.status ? ` · ${states[record.status]}` : ''}`); meta.className = 'record-meta'; this.detail.append(meta);
     if (this.selections.length > 1) {
-      const primary = element('select'); primary.setAttribute('aria-label', '主要来源');
-      for (const s of this.selections) option(primary, sourceKey(s.record), s.record.provider);
-      primary.value = sourceKey(record);
-      primary.onchange = () => { const i = this.selections.findIndex(s => sourceKey(s.record) === primary.value); this.selections.unshift(...this.selections.splice(i, 1)); this.renderSelection(); };
-      const label = element('label', '主要来源'); label.className = 'field-label'; label.append(primary); this.detail.append(label);
-      const rules = element('details'); rules.className = 'merge-rules'; rules.append(element('summary', '合并规则与字段来源'));
-      rules.append(element('p', '简介等单值优先主要来源，缺项补齐；标签、作者、链接合并去重。可逐字段改用其他来源。'));
-      for (const field of mergeFields) {
-        const entries = this.merged.options[field] ?? [];
-        if (entries.length < 2) continue;
-        const select = element('select'); select.setAttribute('aria-label', `${labels[field]}来源`);
-        option(select, '', Array.isArray(entries[0]!.value) ? '合并去重' : '主要来源优先，缺项补齐');
-        for (const entry of entries) option(select, entry.key, entry.provider);
-        select.value = entries.some(e => e.key === this.mergeChoices[field]) ? this.mergeChoices[field]! : '';
-        select.onchange = () => {
-          this.mergeChoices[field] = select.value; this.merged = mergeRecords(this.selections.map(s => s.record), this.mergeChoices); this.selected = this.merged.record; this.invalidate();
-          const summary = this.detail.querySelector('.record-summary'); if (summary) summary.textContent = String(this.merged.values.summary ?? '');
-        };
-        const l = element('label', labels[field]); l.className = 'field-label'; l.append(select); rules.append(l);
-      }
-      this.detail.append(rules);
+      this.detail.append(element('p', '在预览中逐字段选择「单选」或「合并」。'));
       const confirm = input('这些条目是同一作品／同一卷和版本', this.detail, 'checkbox'); confirm.parentElement!.className = 'check-label'; confirm.checked = this.sameWork;
       confirm.onchange = () => { this.sameWork = confirm.checked; this.invalidate(); };
     }
@@ -441,6 +440,7 @@ export class Panel {
       fields: [...this.fields].filter(([, i]) => i.checked).map(([f]) => f),
       bookId: this.book.value || undefined, propagateAuthors: this.propagate.checked,
       mergedFields: this.merged?.values,
+      includeUnchanged: true,
       cover: this.cover.value === '' ? undefined : this.selected.covers[Number(this.cover.value)],
       coverTarget: id && (kind === 'series' || kind === 'books') ? { kind, id } : undefined
     });
@@ -470,6 +470,7 @@ export class Panel {
         next.value = typeof value === 'string' ? value : JSON.stringify(value, null, 2); next.dataset.edit = String(index); next.dataset.field = field;
         next.title = next.dataset.format === 'text' ? '可直接编辑文本' : 'JSON 格式';
         next.setAttribute('aria-label', `${labels[field as Field]}写入值`);
+        this.fieldComposer(row, field as Field, value!, before, next, check, afterLabel);
         updated.append(afterLabel, next); diff.append(old, updated); row.append(diff); this.preview.append(row);
       }
     });
@@ -478,10 +479,35 @@ export class Panel {
     cancelled(this.signal); this.plan = plan;
     this.controls.hidden = true; this.previewButton.hidden = true; this.viewport.scrollTop = 0;
   }
+  private fieldComposer(row: HTMLElement, field: Field, value: Value, before: Value | undefined, textarea: HTMLTextAreaElement, enabled: HTMLInputElement, caption: HTMLElement): void {
+    const entries = [...(this.merged?.options[field] ?? [])];
+    if (before !== undefined && before !== null && before !== '' && (!Array.isArray(before) || before.length)) entries.unshift({ key: 'current', provider: '现有', label: 'Komga 当前值', value: before });
+    if (!entries.length) return;
+    const controls = element('div'); controls.className = 'field-compose';
+    const mode = element('select'); mode.setAttribute('aria-label', `${labels[field]}处理方式`);
+    option(mode, 'single', '单选'); if (canMergeField(field, value)) option(mode, 'merge', '合并');
+    mode.value = Array.isArray(value) ? 'merge' : 'single';
+    const select = element('select'); select.setAttribute('aria-label', `${labels[field]}来源`);
+    for (const e of entries) option(select, e.key, e.label);
+    select.value = entries.find(e => e.key !== 'current')?.key ?? entries[0]!.key;
+    const picks = element('details'); picks.className = 'field-source-picks'; picks.append(element('summary', '选择参与合并的条目'));
+    const checks = entries.map(e => { const i = input(e.label, picks, 'checkbox'); i.checked = true; return i; });
+    const refresh = () => {
+      select.hidden = mode.value !== 'single'; picks.hidden = mode.value !== 'merge';
+      const chosen = mode.value === 'single' ? entries.filter(e => e.key === select.value) : entries.filter((_, i) => checks[i]!.checked);
+      const next = mode.value === 'single' ? chosen[0]?.value : combineField(field, chosen.map(e => e.value));
+      textarea.dataset.format = typeof next === 'string' ? 'text' : 'json';
+      textarea.value = next === undefined ? '' : typeof next === 'string' ? next : JSON.stringify(next, null, 2);
+      enabled.checked = next !== undefined && !equal(next, before);
+      caption.textContent = `写入值 · ${[...new Set(chosen.map(e => e.provider))].join(' + ') || '未选择'}`;
+    };
+    mode.onchange = select.onchange = refresh; checks.forEach(i => i.onchange = refresh);
+    controls.append(mode, select, picks); row.append(controls); refresh();
+  }
   private async coverPreview(cover: NonNullable<Plan['cover']>): Promise<void> {
     const target = cover.target.kind === 'series' ? this.state!.series : this.state!.books.find(b => b.id === cover.target.id);
     const section = element('section'); section.className = 'cover-preview';
-    section.append(element('h3', `封面 · ${cover.target.kind === 'series' ? '系列' : '书籍'} · ${target?.metadata.title ?? cover.target.id}`));
+    section.append(element('h3', `封面 · ${cover.sharedSeries ? '系列 + 唯一书籍（共用）' : cover.target.kind === 'series' ? '系列' : '书籍'} · ${target?.metadata.title ?? cover.target.id}`));
     const comparison = element('div'); comparison.className = 'cover-compare';
     for (const [label, blob] of [['当前封面', cover.beforeBlob], ['替换为', cover.prepared!.blob]] as const) {
       const figure = element('figure'), frame = element('div'); frame.className = 'cover-frame';
@@ -509,6 +535,7 @@ export class Panel {
       let value: unknown;
       try { value = textarea.dataset.format === 'text' ? textarea.value : JSON.parse(textarea.value); } catch { throw new MetadataError('verification', `${labels[field as Field]} 新值 JSON 格式错误`); }
       edit.after[field] = validateValue(field, value);
+      if (equal(edit.after[field], edit.before[field])) { delete edit.after[field]; delete edit.before[field]; delete edit.guards[`${field}Lock`]; }
     }
     plan.edits = plan.edits.filter(e => Object.keys(e.after).length);
     return plan;

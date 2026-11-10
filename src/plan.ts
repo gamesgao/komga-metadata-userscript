@@ -8,11 +8,13 @@ export interface Selection {
   fields: Field[]; bookId?: string; verifiedVolume?: number; propagateAuthors?: boolean;
   cover?: Cover; coverTarget?: Target;
   mergedFields?: Metadata;
+  includeUnchanged?: boolean;
 }
 export interface Edit { target: Target; before: Metadata; after: Metadata; guards: Metadata }
 export interface CoverEdit {
   target: Target; source: Cover; beforeSelected?: string; beforeHash?: string; beforeBlob?: Blob;
   prepared?: { url: string; blob: Blob; hash: string };
+  sharedSeries?: Target;
 }
 export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; skipped: string[] }
 export function equal(a: unknown, b: unknown): boolean {
@@ -85,7 +87,7 @@ export function buildPlan(state: State, record: MetadataRecord, selection: Selec
       const lock = `${field}Lock`;
       if (old[lock] === true || state.series.metadata[lock] === true) { plan.skipped.push(`${target.kind}/${target.id} ${field} 已锁定`); continue; }
       const next = Array.isArray(value) ? merge(old[field], value) : value;
-      if (equal(old[field], next)) continue;
+      if (!selection.includeUnchanged && equal(old[field], next)) continue;
       before[field] = old[field] ?? null; after[field] = next; guards[lock] = old[lock] ?? false;
     }
     if (Object.keys(after).length) plan.edits.push({ target, before, after, guards });
@@ -107,7 +109,7 @@ export function buildPlan(state: State, record: MetadataRecord, selection: Selec
     if (!old || (target.kind === 'books' && !state.books.some(b => b.id === target!.id))) throw new MetadataError('invalid-id', '封面目标不属于系列');
     if (volumeSpecific && !state.series.oneshot && target.kind === 'series') throw new MetadataError('invalid-id', '单卷封面需要书籍目标');
     if (old.thumbnailLock === true || state.series.metadata.thumbnailLock === true) plan.skipped.push('封面已锁定');
-    else plan.cover = { target, source: selection.cover };
+    else plan.cover = { target, source: selection.cover, sharedSeries: state.series.oneshot ? { kind: 'series', id: state.series.id } : undefined };
   }
   return plan;
 }

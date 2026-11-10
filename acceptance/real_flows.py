@@ -58,6 +58,9 @@ def wait_action(page,button,allow_partial=False):
  raise AssertionError('UI action did not finish: '+button)
 
 
+def displayed_hash(page,kind,id):
+ return page.evaluate('''async p => {const r=await fetch('/api/v1'+p+'?_verify='+Date.now(),{cache:'no-store'});if(r.status===404)return null;if(!r.ok)throw Error('Thumbnail '+r.status);const hash=await crypto.subtle.digest('SHA-256',await r.arrayBuffer());return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('');}''',f'/{kind}/{id}/thumbnail')
+
 def run():
  report={'status':'FAIL','artifact_sha256':hashlib.sha256(h.ARTIFACT.read_bytes()).hexdigest(),'checks':[],'environment':{'manager':'Tampermonkey 5.5','server':'isolated Komga 1.30.0','transport':'real GM + browser session'}}
  state=h.read_json(h.STATE);series_id,oneshot_id,books=h.fixture_ids(state);one_book=next(b['id'] for b in state['books'] if b['seriesId']==oneshot_id)
@@ -90,24 +93,36 @@ def run():
    assert metadata(page,'books',books[1])['authors']==old1['authors']
    report['checks'].append('Undo via actual UI restores only fields written by this run')
    for sid,target,kind,tid in [(series_id,'series','series',series_id),(series_id,'book','books',books[1]),(oneshot_id,'book','books',one_book)]:
-    panel=source_record(page,sid);select_fields(panel,set())
-    if kind=='books':panel.get_by_role('combobox',name='同时更新哪本书',exact=True).select_option(tid)
+    panel=source_record(page,sid);select_fields(panel,{'tags'} if sid==oneshot_id else set())
+    if kind=='books' and sid!=oneshot_id:panel.get_by_role('combobox',name='同时更新哪本书',exact=True).select_option(tid)
     cover=panel.get_by_role('combobox',name='使用哪张封面',exact=True)
     cover.select_option(index=1)
     targets=panel.get_by_role('combobox',name='替换哪个封面',exact=True)
     options=targets.locator('option').evaluate_all('(es)=>es.map(e=>({v:e.value,t:e.textContent}))')
-    value=f'{kind}:{tid}'
+    value='both' if sid==oneshot_id else f'{kind}:{tid}'
     assert value in [x['v'] for x in options],options
     targets.select_option(value)
-    thumbnails=api(page,f'/{kind}/{tid}/thumbnails');selected=next((x['id'] for x in thumbnails if x['selected']),None)
+    pairs=[('series',sid),('books',tid)] if sid==oneshot_id else [(kind,tid)]
+    before_covers={(k,i):api(page,f'/{k}/{i}/thumbnails') for k,i in pairs}
+    before_display={(k,i):displayed_hash(page,k,i) for k,i in pairs}
+    before_tags={(k,i):metadata(page,k,i).get('tags',[]) for k,i in pairs}
     preview(panel);wait_action(page,'应用')
-    now=api(page,f'/{kind}/{tid}/thumbnails');new=next(x['id'] for x in now if x['selected'])
-    assert new!=selected and len(now)==len(thumbnails)+1
+    for k,i in pairs:
+     thumbnails=before_covers[k,i];selected=next((x['id'] for x in thumbnails if x['selected']),None)
+     now=api(page,f'/{k}/{i}/thumbnails')
+     if sid==oneshot_id and k=='series':assert now==thumbnails and displayed_hash(page,k,i)==displayed_hash(page,'books',tid)
+     else:
+      new=next(x['id'] for x in now if x['selected']);assert new!=selected and len(now)==len(thumbnails)+1
+     if sid==oneshot_id:assert len(metadata(page,k,i)['tags'])>len(before_tags[k,i])
     h.open_product_panel(page);wait_action(page,'撤销最近写入')
-    restored=api(page,f'/{kind}/{tid}/thumbnails')
-    assert {x['id'] for x in restored}=={x['id'] for x in thumbnails}
-    assert next((x['id'] for x in restored if x['selected']),None)==selected
-    report['checks'].append('Live cover download/upload/readback/select/undo: '+('One-Shot book' if sid==oneshot_id else kind))
+    for k,i in pairs:
+     thumbnails=before_covers[k,i];selected=next((x['id'] for x in thumbnails if x['selected']),None)
+     restored=api(page,f'/{k}/{i}/thumbnails')
+     assert {x['id'] for x in restored}=={x['id'] for x in thumbnails}
+     assert next((x['id'] for x in restored if x['selected']),None)==selected
+     assert displayed_hash(page,k,i)==before_display[k,i]
+     if sid==oneshot_id:assert metadata(page,k,i)['tags']==before_tags[k,i]
+    report['checks'].append('Live cover download/upload/readback/select/undo: '+('One-Shot book upload -> BOTH displayed-cover SHA256 match; BOTH metadata targets updated and restored' if sid==oneshot_id else kind))
    # Real concurrent edit after preview must block overwriting newer data.
    panel=source_record(page,series_id);select_fields(panel,{'tags'});preview(panel)
    manual=['Concurrent:Owner'];patch_metadata(page,'series',series_id,{'tags':manual})

@@ -4,7 +4,7 @@ import { type KomgaClient, type Metadata, type Target } from './komga';
 import { equal, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
 import type { Transport } from './transport';
 export interface Snapshot { target: Target; before: Metadata; after: Metadata }
-export interface CoverSnapshot { target: Target; previous?: string; previousHash?: string; uploaded: string; uploadedHash: string }
+export interface CoverSnapshot { target: Target; previous?: string; previousHash?: string; uploaded: string; uploadedHash: string; sharedSeries?: Target }
 export interface Outcome { target: Target; action: 'metadata' | 'cover'; status: 'success' | 'error'; message?: string }
 export interface Result { status: 'success' | 'partial' | 'error'; outcomes: Outcome[]; snapshots: Snapshot[]; covers: CoverSnapshot[] }
 export async function hash(blob: Blob): Promise<string> {
@@ -62,17 +62,22 @@ export class Writer {
     cancelled(signal);
     return response.blob;
   }
+  private async verifySharedCover(target: Target | undefined, expected: string | undefined, signal: AbortSignal): Promise<void> {
+    if (!target) return;
+    const blob = await this.client.displayedThumbnail(target, signal);
+    if ((blob ? await hash(blob) : undefined) !== expected) throw new MetadataError('conflict', 'One-shot 系列与书籍封面读回不一致');
+  }
   async prepare(plan: Plan, signal: AbortSignal): Promise<Plan> {
     if (plan.cover) {
-      // Preview and upload the same immutable bytes; never re-download at apply.
-      plan.cover.prepared = undefined;
-      const blob = await this.image(plan.cover.source.url, signal);
-      const selected = (await this.client.thumbnails(plan.cover.target, signal)).find(t => t.selected);
-      plan.cover.beforeSelected = selected?.id;
-      plan.cover.beforeBlob = selected ? await this.client.thumbnail(plan.cover.target, selected.id, signal) : undefined;
-      plan.cover.beforeHash = plan.cover.beforeBlob ? await hash(plan.cover.beforeBlob) : undefined;
+      const cover = plan.cover; cover.prepared = undefined;
+      const blob = await this.image(cover.source.url, signal);
+      const selected = (await this.client.thumbnails(cover.target, signal)).find(t => t.selected);
+      cover.beforeSelected = selected?.id;
+      cover.beforeBlob = selected ? await this.client.thumbnail(cover.target, selected.id, signal) : undefined;
+      cover.beforeHash = cover.beforeBlob ? await hash(cover.beforeBlob) : undefined;
+      await this.verifySharedCover(cover.sharedSeries, cover.beforeHash, signal);
       cancelled(signal);
-      plan.cover.prepared = { url: plan.cover.source.url, blob, hash: await hash(blob) };
+      cover.prepared = { url: cover.source.url, blob, hash: await hash(blob) };
     }
     return plan;
   }
@@ -101,9 +106,13 @@ export class Writer {
         await this.metadataGuard(e, signal);
       }
       if (plan.cover) {
-        if (plan.cover.target.kind === 'books' && !fresh.books.some(b => b.id === plan.cover!.target.id)) throw new MetadataError('conflict', '封面书籍归属已变化');
-        if (!plan.cover.prepared || plan.cover.prepared.url !== plan.cover.source.url) throw new MetadataError('verification', '请先生成封面预览');
-        await this.coverGuard(plan.cover, signal);
+        const cover = plan.cover;
+        if (cover.target.kind === 'books' && !fresh.books.some(b => b.id === cover.target.id)) throw new MetadataError('conflict', '封面书籍归属已变化');
+        const metadata = await this.client.read(cover.target, signal);
+        if (metadata.thumbnailLock || fresh.series.metadata.thumbnailLock) throw new MetadataError('conflict', '封面已锁定');
+        if (!cover.prepared || cover.prepared.url !== cover.source.url) throw new MetadataError('verification', '请先生成封面预览');
+        await this.coverGuard(cover, signal);
+        await this.verifySharedCover(cover.sharedSeries, cover.beforeHash, signal);
       }
       for (const e of plan.edits) {
         try {
@@ -135,7 +144,8 @@ export class Writer {
           await this.client.select(edit.target, own, signal);
           const selected = (await this.client.thumbnails(edit.target, signal)).find(t => t.selected);
           if (selected?.id !== own || await hash(await this.client.thumbnail(edit.target, own, signal)) !== expected) throw new MetadataError('verification', '封面选择读回不符');
-          result.covers.push({ target: edit.target, previous: edit.beforeSelected, previousHash: edit.beforeHash, uploaded: own, uploadedHash: expected });
+          await this.verifySharedCover(edit.sharedSeries, expected, signal);
+          result.covers.push({ target: edit.target, previous: edit.beforeSelected, previousHash: edit.beforeHash, uploaded: own, uploadedHash: expected, sharedSeries: edit.sharedSeries });
           outcome(result, edit.target, 'cover');
         } catch (error) {
           let message = error instanceof Error ? error.message : String(error);
@@ -185,6 +195,7 @@ export class Writer {
           if (metadata.thumbnailLock || series.thumbnailLock) throw new MetadataError('conflict', '封面已锁定，不能撤销');
           const selected = (await this.client.thumbnails(s.target, signal)).find(t => t.selected);
           if (selected?.id !== s.uploaded || await hash(await this.client.thumbnail(s.target, s.uploaded, signal)) !== s.uploadedHash) throw new MetadataError('conflict', '封面已被其他操作修改');
+          await this.verifySharedCover(s.sharedSeries, s.uploadedHash, signal);
           if (s.previous) {
             if (await hash(await this.client.thumbnail(s.target, s.previous, signal)) !== s.previousHash) throw new MetadataError('conflict', '原封面内容已变化');
             await this.client.select(s.target, s.previous, signal);
@@ -192,6 +203,7 @@ export class Writer {
           }
           await this.client.remove(s.target, s.uploaded, signal);
           if ((await this.client.thumbnails(s.target, signal)).some(t => t.id === s.uploaded)) throw new MetadataError('verification', '自身上传封面删除读回失败');
+          await this.verifySharedCover(s.sharedSeries, s.previousHash, signal);
           outcome(result, s.target, 'cover');
         } catch (error) { outcome(result, s.target, 'cover', error); }
       }

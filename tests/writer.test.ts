@@ -15,6 +15,7 @@ class Server {
   state = state(); requests: { path: string; method: string; body?: Metadata }[] = [];
   thumbnails: (Thumbnail & { blob: Blob })[] = [{ id: 'existing-user-cover', selected: true, type: 'USER_UPLOADED', blob: png(2) }];
   failBook = false; failCover = false; corruptCover = false; ignorePatch = false; wrongReceipt = false;
+  mirrorStale = false;
   onPatch?: () => void; afterUpload?: () => void;
   fetch: typeof fetch = async (url, init) => {
     const u = new URL(String(url)), path = u.pathname, method = init?.method ?? 'GET';
@@ -23,6 +24,7 @@ class Server {
     if (method === 'GET' && path.endsWith('/series/s')) return response(this.state.series);
     if (method === 'GET' && path.endsWith('/series/s/books')) return response({ content: this.state.books, last: true });
     if (method === 'GET' && path.endsWith('/books/actual-book')) return response(this.state.books[0]);
+    if (method === 'GET' && path.endsWith('/thumbnail')) { const blob = this.mirrorStale ? png(9) : this.thumbnails.find(t=>t.selected)?.blob; return blob ? new Response(blob) : response({},404); }
     if (path.endsWith('/metadata') && method === 'PATCH') {
       if (path.includes('/books/') && this.failBook) return response({}, 500);
       const metadata = path.includes('/books/') ? this.state.books[0]!.metadata : this.state.series.metadata;
@@ -33,6 +35,7 @@ class Server {
     if (path.endsWith('/thumbnails')) {
       if (method === 'GET') return response(this.thumbnails.map(({ blob, ...t }) => t));
       if (method === 'POST') {
+        if (this.state.series.oneshot && path.includes('/series/')) return response({},400);
         if (this.failCover) return response({}, 500);
         const file = (init!.body as FormData).get('file');
         if (!(file instanceof Blob)) throw new Error('Missing multipart image');
@@ -101,17 +104,28 @@ describe('real client/writer against in-memory HTTP fixture, not real Komga', ()
     expect(s.state.series.metadata.tags).toEqual(['edited-later']);
     expect(s.state.books[0]?.metadata.authors).toEqual([]);
   });
-  it('One-shot cover goes to actual associated book, content hash and selected ID verify, undo removes only own', async () => {
+  it('One-shot writes only the book cover and verifies the series shared image, including undo', async () => {
     const s = new Server(); s.state.series.oneshot = true;
-    const w = new Writer(s.client, transport()), source = record();
-    const p = buildPlan(s.state, source, { fields: ['authors'], cover: source.covers[0], coverTarget: { kind: 'series', id: 's' } });
+    const t = transport(), request = vi.spyOn(t, 'request'), w = new Writer(s.client, t), source = record();
+    const p = buildPlan(s.state, source, { fields: ['authors'], cover: source.covers[0] });
     await w.prepare(p, signal());
-    const r = await w.apply(p, signal());
-    expect(r.status).toBe('success'); expect(r.covers[0]?.target).toEqual({ kind: 'books', id: 'actual-book' });
-    expect(s.requests.find(r => r.method === 'POST')?.path).toBe('/reader/api/v1/books/actual-book/thumbnails');
-    expect(s.thumbnails.find(t => t.selected)?.id).toBe('own-cover');
+    const r = await w.apply(p, signal()); expect(r.status).toBe('success');
+    expect(r.covers[0]?.target).toEqual({ kind: 'books', id: 'actual-book' }); expect(r.covers[0]?.sharedSeries).toEqual({kind:'series',id:'s'});
+    expect(s.requests.filter(r => r.method === 'POST').map(r=>r.path)).toEqual(['/reader/api/v1/books/actual-book/thumbnails']);
+    expect(s.requests.some(r=>r.path==='/reader/api/v1/series/s/thumbnail')).toBe(true); expect(request).toHaveBeenCalledTimes(1);
     expect((await w.undo(r, 's', signal())).status).toBe('success');
     expect(s.thumbnails.map(t => t.id)).toEqual(['existing-user-cover']); expect(s.thumbnails[0]?.selected).toBe(true);
+  });
+  it('shared cover new lock prevents all writes; failed series readback is not success and cleans its upload', async () => {
+    const s = new Server(); s.state.series.oneshot = true;
+    const w = new Writer(s.client, transport()), source = record();
+    const p = buildPlan(s.state, source, { fields: [], cover: source.covers[0] }); await w.prepare(p, signal());
+    s.state.books[0]!.metadata.thumbnailLock = true;
+    await expect(w.apply(p, signal())).rejects.toThrow('锁定'); expect(s.requests.filter(r=>r.method==='POST')).toHaveLength(0);
+    s.state.books[0]!.metadata.thumbnailLock = false; s.afterUpload = () => { s.mirrorStale = true; };
+    const result = await w.apply(p, signal()); expect(result.status).toBe('error'); expect(result.covers).toHaveLength(0);
+    expect(result.outcomes[0]?.message).toContain('读回不一致');
+    expect(s.thumbnails.map(t=>t.id)).toEqual(['existing-user-cover']); expect(s.thumbnails[0]?.selected).toBe(true);
   });
   it('failed cover preparation blocks ALL writes, even when metadata could succeed', async () => {
     const s = new Server(), source = record();

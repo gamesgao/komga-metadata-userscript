@@ -1,6 +1,15 @@
 # Validation ledger
 
-## v0.4.0 multi-source / automatic local routing
+## v0.5.0 field composition / language selection / One-shot shared cover
+
+- PASS: 82 core tests, 17 actual-bundle browser tests, 6 release tests, 5 catalog tests, both typechecks. Tests cover same-provider multi-select, same-value defaults still offering alternative sources, explicit array replacement versus union, per-target field choices, text composition, incompatible scalar types, accepted-language persistence and withdrawn registry entries.
+- PASS (real Tampermonkey + isolated Komga): actual AniList native `葬送のフリーレン`, romaji `Sousou no Frieren`, English `Frieren: Beyond Journey’s End` selected from existing upstream variants, not translation. English title written/read back on both One-shot metadata targets and undone.
+- PASS (real manager): Bangumi + MangaBaka field preview/write/readback/undo, full local Bangumi database routing and online fallback. Original lock, conflict and injected-503 acceptance retained.
+- One-shot independent series upload was tested and returned HTTP 400. This matches [Komga 1.30.0 SeriesController](https://github.com/gotson/komga/blob/1.30.0/komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/SeriesController.kt#L523). The final implementation uses native series-to-book image fallback, verified in [SeriesLifecycle](https://github.com/gotson/komga/blob/1.30.0/komga/src/main/kotlin/org/gotson/komga/domain/service/SeriesLifecycle.kt#L262-L285), NOT a fabricated second upload. Real acceptance independently hashes both displayed endpoints after application and undo and checks both metadata targets. Shared-image mismatch prevents false success; a new cover lock prevents all writes.
+- Language boundaries: provider-labelled alternatives and detectable Japanese kana supported; ambiguous Han/Latin text is explicitly unknown, not guessed. No translation or remote language negotiation is claimed. Temporarily withdrawn providers remain historical adapter fixtures only, not active UI providers.
+- Reports/screenshots live under ignored `.runtime/acceptance/{languages,multi-source,real-flows*}`; no production NAS mutation, fixtures/credentials/databases are not released.
+
+## v0.4.0 historical multi-source / automatic local routing
 
 - PASS (component): 74 core tests, 15 actual-bundle browser tests; new tests assert local hit never invokes online search/detail, local miss/error falls back, cancellation never launches fallback, primary/field priority, array deduplication, incompatible scope/volume rejection and all-field locks.
 - PASS (browser component): a blocked second source does not hide the first result; progress is 1/2 then 2/2. Two selections require same-work confirmation, explicit summary override writes the chosen source, a locked book summary stays unchanged, and an unselected cover remains unmodified.

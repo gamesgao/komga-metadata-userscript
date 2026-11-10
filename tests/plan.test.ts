@@ -39,6 +39,7 @@ describe('field/lock-aware explicit plans', () => {
     const p = buildPlan(s, r, { fields: ['authors'], cover: r.covers[0], coverTarget: { kind: 'series', id: 's-real' } });
     expect(p.edits[0]?.target).toEqual({ kind: 'books', id: 'b-nine' });
     expect(p.cover?.target).toEqual({ kind: 'books', id: 'b-nine' });
+    expect(p.cover?.sharedSeries).toEqual({ kind: 'series', id: 's-real' });
     s.books.push(state().books[1]!);
     expect(() => buildPlan(s, r, { fields: ['authors'] })).toThrow('唯一实际关联');
   });

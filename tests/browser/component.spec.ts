@@ -23,6 +23,7 @@ let uploaded: string[];
 let series: { id: string; oneshot: boolean; metadata: Record<string, unknown> };
 let book: { id: string; seriesId: string; metadata: Record<string, unknown> };
 let covers: { id: string; selected: boolean; type: string }[];
+let seriesCovers: typeof covers;
 let coverFails: boolean;
 let uploadFails: boolean, coverCorrupt: boolean, coverDownloads: number;
 test.beforeAll(async () => {
@@ -31,9 +32,15 @@ test.beforeAll(async () => {
     const url = new URL(req.url!, base);
     const json = (value: unknown) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname.startsWith('/reader/api/v1/')) {
+      const activeCovers = url.pathname.includes('/series/') ? seriesCovers : covers;
       if (req.method === 'GET' && url.pathname.endsWith('/series/s-real')) return json(series);
       if (req.method === 'GET' && url.pathname.endsWith('/series/s-real/books')) return json({ content: [book], last: true });
       if (req.method === 'GET' && url.pathname.endsWith('/books/book-actual')) return json(book);
+      if (req.method === 'GET' && url.pathname.endsWith('/thumbnail')) {
+        const selected = (series.oneshot ? covers : activeCovers).find(c=>c.selected);
+        if (!selected) { res.statusCode = 404; return json({}); }
+        res.setHeader('Content-Type','image/png'); return res.end(selected.id === 'original-user' ? oldPng : png);
+      }
       if (req.method === 'PATCH') {
         const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
         const body = JSON.parse(Buffer.concat(buffers).toString());
@@ -42,20 +49,21 @@ test.beforeAll(async () => {
         return json({});
       }
       if (url.pathname.endsWith('/thumbnails')) {
-        if (req.method === 'GET') return json(covers);
+        if (req.method === 'GET') return json(activeCovers);
         if (req.method === 'POST') {
+          if (series.oneshot && url.pathname.includes('/series/')) { res.statusCode = 400; return json({}); }
           if (uploadFails) { res.statusCode = 503; return json({}); }
           const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(Buffer.from(chunk));
           const body = Buffer.concat(buffers);
           if (!req.headers['content-type']?.includes('multipart/form-data') || !body.includes(png)) { res.statusCode = 400; return json({}); }
           uploaded.push(url.pathname);
-          covers.push({ id: 'uploaded-own', selected: false, type: 'USER_UPLOADED' }); return json(covers.at(-1));
+          activeCovers.push({ id: 'uploaded-own', selected: false, type: 'USER_UPLOADED' }); return json(activeCovers.at(-1));
         }
       }
       const match = url.pathname.match(/\/thumbnails\/([\w-]+)(\/selected)?$/);
       if (match) {
-        if (req.method === 'PUT') { covers.forEach(c => c.selected = c.id === match[1]); return json({}); }
-        if (req.method === 'DELETE') { covers = covers.filter(c => c.id !== match[1]); return json({}); }
+        if (req.method === 'PUT') { activeCovers.forEach(c => c.selected = c.id === match[1]); return json({}); }
+        if (req.method === 'DELETE') { activeCovers.splice(0, activeCovers.length, ...activeCovers.filter(c => c.id !== match[1])); return json({}); }
         res.setHeader('Content-Type', 'image/png'); return res.end(match[1] === 'original-user' ? oldPng : png);
       }
       res.statusCode = 404; return json({});
@@ -80,6 +88,7 @@ test.beforeEach(() => {
   series = { id: 's-real', oneshot: true, metadata: { title: '原始标题', titleLock: false, tags: ['old'], tagsLock: false, summary: 'old summary', summaryLock: true, links: [], alternateTitles: [] } };
   book = { id: 'book-actual', seriesId: 's-real', metadata: { title: 'Original Book', number: '1', authors: [], authorsLock: false, tags: [], links: [], summary: 'locked original', summaryLock: true } };
   covers = [{ id: 'original-user', selected: true, type: 'USER_UPLOADED' }];
+  seriesCovers = structuredClone(covers);
 });
 async function install(page: Page, path = '/reader/oneshot/s-real') {
   await page.addInitScript(() => {
@@ -157,6 +166,7 @@ test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover 
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toHaveCSS('opacity', '1');
   expect(series.metadata.tags).toEqual(['old']); expect(book.metadata.authors).toEqual([]);
   expect(covers).toEqual([{ id: 'original-user', selected: true, type: 'USER_UPLOADED' }]);
+  expect(seriesCovers).toEqual([{ id: 'original-user', selected: true, type: 'USER_UPLOADED' }]);
 });
 test('fixture browser: upload failure remains actionable partial and undo conflict does not overwrite', async ({ page }) => {
   await install(page); await readAndPreview(page, true); uploadFails = true;
@@ -219,7 +229,7 @@ test('fixture browser: one failed source keeps candidate visible; editable/unsel
   await install(page);
   await page.getByRole('button', { name: '元数据', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
-  for (const id of ['mangabaka', 'mangadex', 'anilist', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
+  for (const id of ['mangabaka', 'anilist', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'mal', exact: true }).check();
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('MAL 需要自行填写 Client ID', { exact: true })).toBeVisible();
@@ -342,7 +352,7 @@ test('cover UI: source groups fold, image cards persist after selection and blob
     { id: 3, title: { native: '別来源作品' }, siteUrl: 'https://anilist.co/manga/3', coverImage: { large: `${base}/fixture-cover.png` } }
   ] } } }, headers: { 'Access-Control-Allow-Origin': '*' } }));
   await page.getByRole('button', { name: '元数据', exact: true }).click();
-  for (const id of ['mangabaka', 'mangadex', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
+  for (const id of ['mangabaka', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   const bg = page.locator('.result-group[data-provider=bangumi]'), ani = page.locator('.result-group[data-provider=anilist]');
   await expect(bg.locator('.cover-thumb[data-state=ready]')).toHaveCount(2);
@@ -367,8 +377,9 @@ test('cover UI: source groups fold, image cards persist after selection and blob
 
 test('cover UI: decoded current/new comparison and apply reuse the previewed download', async ({ page }) => {
   await install(page); await readAndPreview(page, true);
-  const before = page.getByRole('img', { name: '当前封面', exact: true }), after = page.getByRole('img', { name: '替换为', exact: true });
-  for (const image of [before, after]) {
+  await expect(page.locator('.cover-preview')).toHaveCount(1);
+  const before = page.getByRole('img', { name: '当前封面', exact: true }).first(), after = page.getByRole('img', { name: '替换为', exact: true }).first();
+  for (const image of await page.locator('.cover-preview img').all()) {
     await expect(image).toBeVisible(); expect(await image.evaluate(e => (e as HTMLImageElement).naturalWidth)).toBe(1);
   }
   const pixel = (image: typeof before) => image.evaluate(e => {
@@ -395,7 +406,7 @@ for (const failure of ['missing', 'html']) test(`cover UI: ${failure} source blo
   expect(patches).toEqual([]); expect(uploaded).toEqual([]);
   coverFails = coverCorrupt = false;
   await page.getByRole('button', { name: '生成预览' }).click();
-  await expect(page.getByRole('img', { name: '替换为', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: '替换为', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '应用', exact: true })).toBeEnabled();
 });
 
@@ -411,6 +422,61 @@ test('preview retry cannot lose a book field lock guard after an invalid edit', 
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await expect(page.locator('.status[data-state=error]')).toContainText('tagsLock');
   expect(patches).toEqual([]); expect(book.metadata.tags).toEqual([]);
+});
+
+test('same-provider multi-select and per-column preview single/merge semantics', async ({ page }) => {
+  series.metadata.summaryLock = false; series.metadata.summary = '第一简介'; book.metadata.summaryLock = false;
+  await install(page);
+  await page.route('https://next.bgm.tv/p1/subjects/**', route => {
+    const u = route.request().url(), id = Number(u.match(/subjects\/(\d+)/)?.[1]);
+    const body = u.includes('staffs/persons') ? { data: [], total: 0 } : { id, name: id === 1 ? '日本語候选' : '日本語候选別名', summary: id === 1 ? '第一简介' : '第二简介', tags: [{name:'shared'},{name:id===1?'first':'second'}], series: false, infobox: [] };
+    return route.fulfill({ json: body, headers: { 'Access-Control-Allow-Origin': '*' } });
+  });
+  await readAndPreview(page); await page.getByRole('button', { name:'返回选项' }).click();
+  await page.getByRole('textbox', { name:'来源链接或 ID' }).fill('2'); await page.getByRole('button', { name:'读取', exact:true }).click();
+  await expect(page.getByRole('heading', { name:'已选 2 个条目' })).toBeVisible();
+  await expect(page.getByLabel('主要来源', { exact:true })).toHaveCount(0);
+  for (const id of ['mangadex','webtoons','yenpress']) await expect(page.locator(`.source-toggles input[aria-label=${id}]`)).toHaveCount(0);
+  await page.getByRole('checkbox', { name:'这些条目是同一作品／同一卷和版本' }).check();
+  await page.getByRole('button', { name:'生成预览' }).click();
+  const summary = page.locator('.row:has(input[data-edit="0"][data-field="summary"])');
+  await expect(summary.getByLabel('简介处理方式')).toHaveValue('single');
+  await expect(summary.locator('input[data-field=summary]')).not.toBeChecked(); // unchanged default still offers alternate source
+  await summary.getByLabel('简介处理方式').selectOption('merge');
+  await expect(summary.getByRole('textbox')).toHaveValue('第一简介\n\n第二简介');
+  await summary.getByLabel('简介处理方式').selectOption('single'); await summary.getByLabel('简介来源').selectOption('bangumi:2');
+  const tags = page.locator('.row:has(input[data-edit="0"][data-field="tags"])');
+  await expect(tags.getByLabel('标签处理方式')).toHaveValue('merge');
+  expect(JSON.parse(await tags.getByRole('textbox').inputValue())).toEqual(['old','shared','first','second']);
+  await tags.getByLabel('标签处理方式').selectOption('single'); await tags.getByLabel('标签来源').selectOption('bangumi:2');
+  for (const check of await page.locator('.preview input[data-edit][data-field]').all()) await check.uncheck();
+  await expect(page.getByRole('button', { name:'应用', exact:true })).toBeDisabled();
+  for (const check of await page.locator('.preview input[data-field=summary],.preview input[data-field=tags]').all()) await check.check();
+  await expect(page.getByRole('button', { name:'应用', exact:true })).toBeEnabled();
+  await page.getByRole('button', { name:'应用', exact:true }).click(); await expect(page.getByText('✓ 已读回确认', {exact:true})).toBeVisible();
+  expect(series.metadata.summary).toBe('第二简介'); expect(book.metadata.summary).toBe('第一简介');
+  expect(series.metadata.tags).toEqual(['shared','second']); expect(book.metadata.tags).toEqual(['shared','first','second']);
+});
+
+test('accepted languages select real English/romaji title variants and persist without translation', async ({ page }) => {
+  await install(page);
+  await page.route('https://graphql.anilist.co', route => route.fulfill({json:{data:{Media:{id:2,siteUrl:'https://anilist.co/manga/2',countryOfOrigin:'JP',title:{native:'日本語の作品',english:'English title',romaji:'Nihongo no Sakuhin'},coverImage:{},startDate:{},genres:[],staff:{edges:[],pageInfo:{hasNextPage:false}}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.getByRole('button', {name:'元数据',exact:true}).click();
+  await page.getByText('接受的资料语言',{exact:true}).click();
+  for (const i of await page.locator('.language-options input').all()) await i.setChecked(await i.getAttribute('data-language') === 'en');
+  await page.getByText('通过链接或 ID 读取',{exact:true}).click(); await page.getByRole('combobox',{name:'来源',exact:true}).selectOption('anilist');
+  await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('2'); await page.getByRole('button',{name:'读取',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'anilist · 日本語の作品'})).toBeVisible();
+  await page.getByRole('checkbox',{name:'标题（默认不改）',exact:true}).check(); await page.getByRole('button',{name:'生成预览'}).click();
+  for (const t of await page.getByRole('textbox',{name:'标题（默认不改）写入值',exact:true}).all()) await expect(t).toHaveValue('English title');
+  await page.getByRole('button',{name:'返回选项'}).click();
+  for (const i of await page.locator('.language-options input').all()) await i.setChecked(await i.getAttribute('data-language') === 'romaji');
+  await page.getByRole('button',{name:'生成预览'}).click();
+  for (const t of await page.getByRole('textbox',{name:'标题（默认不改）写入值',exact:true}).all()) await expect(t).toHaveValue('Nihongo no Sakuhin');
+  await page.getByRole('button',{name:'应用',exact:true}).click(); await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(series.metadata.title).toBe('Nihongo no Sakuhin');expect(book.metadata.title).toBe('Nihongo no Sakuhin');
+  await expect(page.locator('#komga-metadata-panel')).toHaveCount(0); await page.getByRole('button',{name:'元数据',exact:true}).click();
+  await page.getByText('接受的资料语言',{exact:true}).click(); await expect(page.getByLabel('罗马字 Romaji',{exact:true})).toBeChecked(); await expect(page.getByLabel('英文 EN',{exact:true})).not.toBeChecked();
 });
 
 test('multi-source UI: parallel incremental progress, primary/field merge, confirmation, locked book and single apply', async ({ page }) => {
@@ -431,7 +497,7 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
     await route.fulfill({ json: { data: search ? { Page: { media: [second] } } : { Media: second } }, headers: { 'Access-Control-Allow-Origin': '*' } });
   });
   await page.getByRole('button', { name: '元数据', exact: true }).click();
-  for (const id of ['mangabaka', 'mangadex', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
+  for (const id of ['mangabaka', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   const bg = page.locator('.result-group[data-provider=bangumi]'), ani = page.locator('.result-group[data-provider=anilist]');
   try {
@@ -445,7 +511,7 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
   await expect(ani).toHaveAttribute('data-state', 'ready');
   await expect(page.getByRole('progressbar', { name: '搜索进度' })).toHaveJSProperty('value', 2);
   await bg.locator('.candidate').click(); await ani.locator('.candidate').click();
-  await expect(page.getByRole('heading', { name: '已选 2 个来源' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '已选 2 个条目' })).toBeVisible();
   await expect(bg.locator('.candidate')).toHaveAttribute('aria-pressed', 'true'); await expect(ani.locator('.candidate')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('使用哪张封面', { exact: true })).toHaveValue('');
   await expect(page.getByText('系列状态未知', { exact: false })).toHaveCount(0);
@@ -453,9 +519,8 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
   await page.getByRole('button', { name: '生成预览' }).click();
   await expect(page.locator('.status[data-state=error]')).toContainText('先确认'); expect(patches).toEqual([]);
   await page.getByRole('checkbox', { name: '这些条目是同一作品／同一卷和版本' }).check();
-  await page.getByText('合并规则与字段来源', { exact: true }).click();
-  await page.getByLabel('简介来源', { exact: true }).selectOption('anilist:2');
   await page.getByRole('button', { name: '生成预览' }).click();
+  await page.getByLabel('简介来源', { exact: true }).selectOption('anilist:2');
   await expect(page.getByRole('textbox', { name: '简介写入值', exact: true })).toHaveValue('Second source summary');
   await expect(page.getByText('写入值 · anilist', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: '应用', exact: true }).click();

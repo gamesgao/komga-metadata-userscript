@@ -107,6 +107,10 @@ export class KomgaClient {
   async thumbnail(t: Target, id: string, signal: AbortSignal): Promise<Blob> {
     return (await this.request(`${this.path(t)}/thumbnails/${validId(id)}`, signal)).blob();
   }
+  async displayedThumbnail(t: Target, signal: AbortSignal): Promise<Blob | undefined> {
+    try { return await (await this.request(`${this.path(t)}/thumbnail?_verify=${Date.now()}`, signal)).blob(); }
+    catch (error) { if (error instanceof MetadataError && error.status === 404) return undefined; throw error; }
+  }
   async upload(t: Target, blob: Blob, signal: AbortSignal): Promise<string> {
     const form = new FormData();
     const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : blob.type === 'image/gif' ? 'gif' : 'jpg';

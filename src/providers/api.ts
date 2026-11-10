@@ -12,7 +12,7 @@ function linkId(input: string, hosts: string[], expression: RegExp): string {
 }
 function titles(r: MetadataRecord, native: unknown, localized?: unknown): void {
   if (str(native)) r.titles.push({ text: str(native), type: 'native' });
-  if (str(localized) && localized !== native) r.titles.push({ text: str(localized), type: 'localized' });
+  if (str(localized) && localized !== native) r.titles.push({ text: str(localized), type: 'localized', language: r.provider === 'bangumi' ? 'zh' : undefined });
   if (!r.titles.length) throw new MetadataError('invalid-response', '来源缺少标题');
 }
 function addCover(r: MetadataRecord, value: unknown, number?: number, language?: string): void {
@@ -58,7 +58,7 @@ export class Bangumi implements Provider {
         const position = obj(obj(p).type);
         if (position.id === 2004) r.publisher = required(person.name);
         const role = typeof position.id === 'number' ? roles[position.id] : undefined;
-        if (role) r.authors.push({ name: required(person.name), native: required(person.name), localized: str(person.nameCN) || undefined, role });
+        if (role) r.authors.push({ name: required(person.name), native: required(person.name), localized: str(person.nameCN) || undefined, localizedLanguage: 'zh', role });
       }
     }
     for (const v of list(x.infobox)) {
@@ -154,6 +154,7 @@ export class MangaBaka implements Provider {
     if (!r.titles.length) throw new MetadataError('invalid-response', 'MangaBaka 缺少标题');
     r.summary = str(x.description) || undefined;
     r.status = status(x.status); r.language = str(x.original_language) || undefined;
+    for (const title of r.titles) if (title.type === 'native' && !title.language) title.language = r.language;
     r.releaseDate = x.published ? date(obj(x.published).start_date) : undefined;
     for (const [field, role] of [['authors', 'writer'], ['artists', 'penciller']] as const) r.authors.push(...list(x[field]).map(v => ({ name: required(v), role })));
     const publishers = list(x.publishers).map(v => str(obj(v).name)).filter(Boolean);
@@ -230,7 +231,7 @@ export class MangaDex implements Provider {
     throw new MetadataError('unavailable', '封面分页超过安全上限');
   }
 }
-const aniFields = `id siteUrl title { native romaji english } description(asHtml:false) status genres startDate { year month day } coverImage { extraLarge large } staff(perPage:50) { pageInfo { hasNextPage } edges { role node { name { native full } } } }`;
+const aniFields = `id siteUrl countryOfOrigin title { native romaji english } description(asHtml:false) status genres startDate { year month day } coverImage { extraLarge large } staff(perPage:50) { pageInfo { hasNextPage } edges { role node { name { native full } } } }`;
 export class AniList implements Provider {
   readonly id = 'anilist'; capabilities = { series: true, volumes: false };
   constructor(private t: Transport) {}
@@ -249,8 +250,9 @@ export class AniList implements Provider {
     const x = obj((await this.query(`query($id:Int){Media(id:$id,type:MANGA){${aniFields}}}`, { id: Number(id) }, c)).Media);
     checkId(x.id, id);
     const r = record(this.id, id, required(x.siteUrl), x), t = obj(x.title);
-    titles(r, t.native || t.romaji || t.english, t.english);
-    if (str(t.romaji)) r.titles.push({ text: str(t.romaji), type: 'alias' });
+    if (str(t.native)) r.titles.push({ text: str(t.native), type: 'native', language: ({ JP: 'ja', CN: 'zh', KR: 'ko' } as Record<string, string>)[str(x.countryOfOrigin)] });
+    if (str(t.english)) r.titles.push({ text: str(t.english), type: 'localized', language: 'en' });
+    if (str(t.romaji)) r.titles.push({ text: str(t.romaji), type: 'alias', language: 'romaji' });
     r.summary = str(x.description) || undefined; r.status = status(x.status); r.genres = list(x.genres).map(required);
     const d = obj(x.startDate);
     if (d.year && d.month && d.day) r.releaseDate = date(`${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`);
@@ -284,6 +286,8 @@ export class MAL implements Provider {
     const r = record(this.id, id, `https://myanimelist.net/manga/${id}`, x);
     const alt = x.alternative_titles ? obj(x.alternative_titles) : {};
     titles(r, alt.ja || x.title, x.title);
+    if (str(alt.ja)) r.titles[0]!.language = 'ja';
+    if (str(alt.en)) r.titles.push({ text: str(alt.en), type: 'localized', language: 'en' });
     r.titles.push(...list(alt.synonyms).map(v => ({ text: required(v), type: 'alias' as const })));
     r.summary = str(x.synopsis) || undefined; r.status = status(x.status); r.releaseDate = date(x.start_date);
     r.genres = list(x.genres).map(v => required(obj(v).name));

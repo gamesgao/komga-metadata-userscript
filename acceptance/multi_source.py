@@ -28,7 +28,7 @@ def run():
    bg.locator('.candidate[data-key="bangumi:305429"]').click()
    expect(panel.get_by_role('heading',name='bangumi · 葬送のフリーレン',exact=True)).to_be_visible(timeout=90000)
    bg.locator('summary').click();baka.get_by_role('button',name='葬送のフリーレン',exact=True).click()
-   expect(panel.get_by_role('heading',name='已选 2 个来源')).to_be_visible(timeout=90000)
+   expect(panel.get_by_role('heading',name='已选 2 个条目')).to_be_visible(timeout=90000)
    expect(panel.get_by_label('使用哪张封面',exact=True)).to_have_value('')
    panel.get_by_role('checkbox',name='这些条目是同一作品／同一卷和版本').check()
    flows.select_fields(panel,{'tags','links'})
