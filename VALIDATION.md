@@ -1,5 +1,14 @@
 # Validation ledger
 
+## v0.4.0 multi-source / automatic local routing
+
+- PASS (component): 74 core tests, 15 actual-bundle browser tests; new tests assert local hit never invokes online search/detail, local miss/error falls back, cancellation never launches fallback, primary/field priority, array deduplication, incompatible scope/volume rejection and all-field locks.
+- PASS (browser component): a blocked second source does not hide the first result; progress is 1/2 then 2/2. Two selections require same-work confirmation, explicit summary override writes the chosen source, a locked book summary stays unchanged, and an unselected cover remains unmodified.
+- PASS (live): actual Tampermonkey + isolated Komga; Bangumi/MangaBaka merge -> preview provenance -> PATCH/GET equality -> scoped undo. Existing full Bangumi SQLite loaded readonly -> local search/detail -> a no-match query invokes online fallback. No NAS access or database rebuild.
+- PASS (live regression): existing real metadata and series/book/One-Shot cover write/readback/undo, conflict and injected-503 acceptance; fixture restore errors none.
+- Source audit 2026-11-10 (real GM): Webtoons old search rejected; public desktop-search adaptation returned 15 candidates. YenPress search service still HTTP 502, direct series detail succeeded. MangaDex still HTTP 403; a separate direct request returned browser-verification HTML. Do not mark the latter two searches usable or infer permanent retirement from these failures.
+- Reproducible harnesses: `acceptance/multi_source.py`, `acceptance/provider_audit.py`, `acceptance/real_flows.py`; use Python Playwright 1.64.1 for the installed Chromium 156. Fixture/component assertions do not stand in for all-provider live coverage.
+
 Status legend: NOT RUN, PASS (fixture/component), PASS (live), BLOCKED (specific reason), FAIL. No blanket all-pass claim until every advertised feature and environment is exercised. **The component-1 table below is historical, not the current project-wide status.** See the v0.2.1 section here and [UI regression evidence](docs/UI.md) for the executed scope. The project is still not fully accepted as a stable release.
 
 ## v0.3.0 source galleries and cover preview acceptance

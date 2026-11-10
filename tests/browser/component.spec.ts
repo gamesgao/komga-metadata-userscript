@@ -128,7 +128,7 @@ async function readAndPreview(page: Page, cover = false, ready = true) {
   await page.getByRole('textbox', { name: '来源链接或 ID' }).fill('https://bgm.tv/subject/1');
   await page.getByRole('button', { name: '读取', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
-  if (cover) await page.getByLabel('封面', { exact: true }).selectOption('0');
+  if (cover) await page.getByLabel('使用哪张封面', { exact: true }).selectOption('0');
   await page.getByRole('button', { name: '生成预览' }).click();
   if (ready) await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
 }
@@ -194,10 +194,10 @@ test('fixture browser: bundled offline panel uses GM_download completion, error,
     })
   }));
   await page.getByRole('button', { name: '元数据', exact: true }).click();
-  await page.getByLabel('来源模式').selectOption('offline');
+  await expect(page.getByLabel('来源模式')).toHaveCount(0);
   for (const id of ['bangumi', 'ehentai', 'mangabaka', 'bookwalker'])
     await expect(page.getByRole('checkbox', { name: id, exact: true })).toBeVisible();
-  await page.getByLabel('来源模式').selectOption('online');
+
   await page.getByRole('tab', { name: '本地数据库' }).click();
   await page.getByText('下载与高级操作', { exact: true }).click();
   await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
@@ -266,7 +266,7 @@ test('modern UI: modal focus, keyboard tabs, theme persistence and responsive la
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
   await page.getByRole('button', { name: '切换深浅色' }).focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('checkbox', { name: '传播作者', exact: true })).toBeFocused();
+  await expect(page.getByRole('checkbox', { name: '将作者同步到系列内所有书籍', exact: true })).toBeFocused();
   const metadataTab = page.getByRole('tab', { name: '元数据', exact: true });
   await metadataTab.focus(); await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tabpanel', { name: '本地数据库' })).toBeVisible();
@@ -397,4 +397,71 @@ for (const failure of ['missing', 'html']) test(`cover UI: ${failure} source blo
   await page.getByRole('button', { name: '生成预览' }).click();
   await expect(page.getByRole('img', { name: '替换为', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '应用', exact: true })).toBeEnabled();
+});
+
+test('preview retry cannot lose a book field lock guard after an invalid edit', async ({ page }) => {
+  await install(page); await readAndPreview(page);
+  const tag = page.locator('.preview input[data-edit="1"][data-field="tags"]');
+  const links = page.locator('.preview textarea[data-edit="1"][data-field="links"]');
+  const valid = await links.inputValue(); await tag.uncheck(); await links.fill('not-json');
+  await page.getByRole('button', { name: '应用', exact: true }).click();
+  await expect(page.locator('.status[data-state=error]')).toContainText('JSON'); expect(patches).toEqual([]);
+  book.metadata.tagsLock = true;
+  await tag.check(); await links.fill(valid);
+  await page.getByRole('button', { name: '应用', exact: true }).click();
+  await expect(page.locator('.status[data-state=error]')).toContainText('tagsLock');
+  expect(patches).toEqual([]); expect(book.metadata.tags).toEqual([]);
+});
+
+test('multi-source UI: parallel incremental progress, primary/field merge, confirmation, locked book and single apply', async ({ page }) => {
+  series.metadata.summaryLock = false;
+  let release!: () => void;
+  const gate = new Promise<void>(r => { release = r; });
+  let releaseFirst!: () => void, firstStarted = false, secondStarted = false;
+  const firstGate = new Promise<void>(r => { releaseFirst = r; });
+  const second = { id: 2, siteUrl: 'https://anilist.co/manga/2', title: { native: '第二来源作品' }, description: 'Second source summary', genres: ['Fantasy'], startDate: {}, staff: { edges: [{ role: 'Story', node: { name: { native: '山田鐘人' } } }], pageInfo: { hasNextPage: false } }, coverImage: { large: `${base}/fixture-cover.png` } };
+  await install(page);
+  await page.route('https://next.bgm.tv/p1/search/**', async route => {
+    firstStarted = true; await firstGate;
+    await route.fulfill({ json: { data: [{ id: 1, name: '日本語候选' }] }, headers: { 'Access-Control-Allow-Origin': '*' } });
+  });
+  await page.route('https://graphql.anilist.co', async route => {
+    const search = JSON.parse(route.request().postData()!).query.includes('Page(');
+    if (search) { secondStarted = true; await gate; }
+    await route.fulfill({ json: { data: search ? { Page: { media: [second] } } : { Media: second } }, headers: { 'Access-Control-Allow-Origin': '*' } });
+  });
+  await page.getByRole('button', { name: '元数据', exact: true }).click();
+  for (const id of ['mangabaka', 'mangadex', 'mangaupdates']) await page.getByRole('checkbox', { name: id, exact: true }).uncheck();
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  const bg = page.locator('.result-group[data-provider=bangumi]'), ani = page.locator('.result-group[data-provider=anilist]');
+  try {
+    await expect.poll(() => firstStarted && secondStarted).toBe(true);
+    await expect(page.getByRole('progressbar', { name: '搜索进度' })).toHaveJSProperty('value', 0);
+    releaseFirst();
+    await expect(bg).toHaveAttribute('data-state', 'ready'); await expect(ani).toHaveAttribute('data-state', 'pending');
+    await expect(page.getByRole('progressbar', { name: '搜索进度' })).toHaveJSProperty('value', 1);
+    await expect(bg.locator('.candidate')).toHaveCount(1);
+  } finally { releaseFirst(); release(); }
+  await expect(ani).toHaveAttribute('data-state', 'ready');
+  await expect(page.getByRole('progressbar', { name: '搜索进度' })).toHaveJSProperty('value', 2);
+  await bg.locator('.candidate').click(); await ani.locator('.candidate').click();
+  await expect(page.getByRole('heading', { name: '已选 2 个来源' })).toBeVisible();
+  await expect(bg.locator('.candidate')).toHaveAttribute('aria-pressed', 'true'); await expect(ani.locator('.candidate')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('使用哪张封面', { exact: true })).toHaveValue('');
+  await expect(page.getByText('系列状态未知', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('保留已锁定字段；作者仅写入未锁定书籍。')).toHaveCount(0);
+  await page.getByRole('button', { name: '生成预览' }).click();
+  await expect(page.locator('.status[data-state=error]')).toContainText('先确认'); expect(patches).toEqual([]);
+  await page.getByRole('checkbox', { name: '这些条目是同一作品／同一卷和版本' }).check();
+  await page.getByText('合并规则与字段来源', { exact: true }).click();
+  await page.getByLabel('简介来源', { exact: true }).selectOption('anilist:2');
+  await page.getByRole('button', { name: '生成预览' }).click();
+  await expect(page.getByRole('textbox', { name: '简介写入值', exact: true })).toHaveValue('Second source summary');
+  await expect(page.getByText('写入值 · anilist', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: '应用', exact: true }).click();
+  await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
+  expect(series.metadata.summary).toBe('Second source summary'); expect(book.metadata.summary).toBe('locked original');
+  expect(series.metadata.tags).toEqual(expect.arrayContaining(['old', 'female:glasses'])); expect(series.metadata.genres).toEqual(['fantasy']);
+  expect(book.metadata.authors).toEqual([{ name: '山田鐘人', role: 'writer' }]);
+  expect(series.metadata.title).toBe('原始标题'); expect(uploaded).toEqual([]);
 });

@@ -261,6 +261,7 @@ export function catalogProvider(client, provider) {
     throw new Error(`不支持的本地目录来源：${provider}`);
   return {
     id: provider, capabilities: { series: provider !== 'ehentai', volumes: ['bangumi','bookwalker'].includes(provider), volumeMetadata: ['bangumi','bookwalker'].includes(provider), gallery: provider === 'ehentai', offline: true },
+    available: () => Boolean(client.file),
     async search(query, context) {
       if (context.signal.aborted) throw new DOMException('已取消', 'AbortError');
       const abort = () => client.cancel();

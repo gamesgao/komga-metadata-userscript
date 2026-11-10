@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.3.0
+// @version      0.4.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -209,7 +209,7 @@ SOFTWARE.
           this.next = Date.now() + this.interval;
           const response = await this.inner.request(input2, signal);
           if (![429, 503].includes(response.status) || attempt >= this.retries) {
-            if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? "authentication-required" : "http", `\u6765\u6E90 HTTP ${response.status}`, response.status);
+            if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? "authentication-required" : "http", `\u6765\u6E90 HTTP ${response.status}${response.status === 403 ? "\uFF1A\u62D2\u7EDD\u8BBF\u95EE\uFF0C\u53EF\u80FD\u9700\u8981\u6D4F\u89C8\u5668\u9A8C\u8BC1\u6216\u53D7\u7F51\u7EDC\uFF0F\u5730\u533A\u9650\u5236" : ""}`, response.status);
             return response;
           }
           const retry = response.headers["retry-after"];
@@ -293,6 +293,7 @@ SOFTWARE.
   }
   async function json(t, url2, signal, body, headers) {
     const r = await t.request({ url: url2, method: body === void 0 ? "GET" : "POST", headers: { Accept: "application/json", ...body === void 0 ? {} : { "Content-Type": "application/json" }, ...headers }, body: body === void 0 ? void 0 : JSON.stringify(body) }, signal);
+    if (/^\s*</.test(r.text) && /Browser verification|cf-chl|challenge-assets/i.test(r.text)) throw new MetadataError("unavailable", "\u6765\u6E90\u8981\u6C42\u6D4F\u89C8\u5668\u9A8C\u8BC1\uFF0C\u5F53\u524D\u533F\u540D\u8BF7\u6C42\u65E0\u6CD5\u8BFB\u53D6");
     try {
       return obj(JSON.parse(r.text));
     } catch (e) {
@@ -982,40 +983,39 @@ SOFTWARE.
     }
     async search(q, c) {
       if (this.id === "yenpress") {
-        const source = await this.t.request({ url: `${this.base}/search` }, c.signal);
-        const key = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
-        if (!key) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
-        const x = await json(
-          this.t,
-          "https://enterprise-search.yenpress.com/api/as/v1/engines/yenpress/search.json",
-          c.signal,
-          { query: q, filters: { all: [{ type: "series" }] }, page: { size: 20, current: 1 } },
-          { Authorization: `Bearer ${key}` }
-        );
-        return Promise.all(arr(x.results).map(async (v) => {
-          const row = obj(v), url2 = required(obj(row.url).raw), id = await this.resolveLink(url2);
-          return candidate(this.id, id, required(obj(row.title).raw), href(id, this.base));
-        }));
+        try {
+          const source = await this.t.request({ url: `${this.base}/search` }, c.signal);
+          const key = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
+          if (!key) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
+          const x = await json(
+            this.t,
+            "https://enterprise-search.yenpress.com/api/as/v1/engines/yenpress/search.json",
+            c.signal,
+            { query: q, filters: { all: [{ type: "series" }] }, page: { size: 20, current: 1 } },
+            { Authorization: `Bearer ${key}` }
+          );
+          return Promise.all(arr(x.results).map(async (v) => {
+            const row = obj(v), url2 = required(obj(row.url).raw), id = await this.resolveLink(url2);
+            return candidate(this.id, id, required(obj(row.title).raw), href(id, this.base));
+          }));
+        } catch (error) {
+          if (error instanceof MetadataError && error.status === 502) throw new MetadataError("http", "YenPress \u641C\u7D22\u670D\u52A1\u6682\u65F6\u4E0D\u53EF\u7528\uFF08HTTP 502\uFF09\uFF1B\u53EF\u901A\u8FC7\u4F5C\u54C1\u94FE\u63A5\u8BFB\u53D6", 502);
+          throw error;
+        }
       }
       if (this.id === "webtoons") {
-        const results2 = [];
-        for (const type of ["WEBTOON", "CHALLENGE"]) {
-          const x = await json(this.t, `https://m.webtoons.com/undefined/search/result?keyword=${encodeURIComponent(q)}&searchType=${type}&start=1`, c.signal, void 0, { Referer: "https://m.webtoons.com" });
-          if (x.success !== true) throw new MetadataError("unavailable", "Webtoons \u62D2\u7EDD\u641C\u7D22");
-          const result = obj(x.result), value = result[type === "WEBTOON" ? "webtoonResult" : "challengeResult"];
-          if (!value) throw new MetadataError("invalid-response", "Webtoons \u641C\u7D22\u7ED3\u6784\u53D8\u5316");
-          for (const v of arr(obj(value).titleList)) {
-            const row = obj(v);
-            const titleNo = numeric(String(row.titleNo ?? ""));
-            const group = str(row.titleGroupName) || plain(required(row.title)).toLowerCase().replace(/[`~!@#$%^&*|\\'" ;:/?({[\]})]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "_";
-            const genre = type === "CHALLENGE" ? "canvas" : str(row.representGenre);
-            if (!genre || !/^[\w-]+$/.test(genre)) throw new MetadataError("invalid-response", "Webtoons \u7F3A\u5C11\u7C7B\u578B\uFF0C\u4E0D\u80FD\u6784\u9020\u4F5C\u54C1\u94FE\u63A5");
-            const rawUrl = str(row.titleUrl) || str(row.url) || `${this.base}/en/${genre.toLowerCase()}/${encodeURIComponent(group)}/list?title_no=${titleNo}`;
-            const id = await this.resolveLink(rawUrl);
-            results2.push(candidate(this.id, id, required(row.title || row.titleName), href(id, this.base)));
-          }
+        const response2 = await this.t.request({ url: `${this.base}/en/search?keyword=${encodeURIComponent(q)}` }, c.signal);
+        const doc2 = documentOf(response2.text);
+        known(doc2, "#content");
+        if (!/^\s*Search\s*::\s*WEBTOON/i.test(doc2.title)) throw new MetadataError("unavailable", "Webtoons \u641C\u7D22\u9875\u88AB\u62E6\u622A\u6216\u9875\u9762\u7ED3\u6784\u5DF2\u53D8\u5316");
+        const found = /* @__PURE__ */ new Map();
+        for (const a of doc2.querySelectorAll("#content .webtoon_list a._card_item[href]")) {
+          const id = await this.resolveLink(href(a.getAttribute("href"), this.base));
+          const img = a.querySelector("img");
+          const cover = img?.getAttribute("data-src") || img?.getAttribute("src");
+          found.set(id, candidate(this.id, id, required(text(a, ".title")), href(id, this.base), cover ? href(cover, this.base) : void 0));
         }
-        return results2;
+        return [...found.values()];
       }
       const response = await this.t.request({ url: `${this.base}/search?search=${encodeURIComponent(q)}&category=Manga` }, c.signal);
       const doc = documentOf(response.text);
@@ -1555,7 +1555,7 @@ SOFTWARE.
     }
     return normalized;
   }
-  function mapped(r) {
+  function mappedFields(r) {
     return normalizeWriteFields({
       title: nativeTitle(r),
       summary: r.summary === void 0 ? void 0 : plain(r.summary),
@@ -1572,9 +1572,12 @@ SOFTWARE.
       authors: r.authors.map((a) => ({ name: a.native || a.name, role: a.role }))
     });
   }
+  function isVolumeRecord(record2) {
+    return record2.volume !== void 0 || record2.provider === "viz" || record2.provider === "ehentai" || record2.id.startsWith("4000-") || record2.id.startsWith("/titles/");
+  }
   function buildPlan(state, record2, selection) {
     const plan = { seriesId: state.series.id, edits: [], skipped: [] };
-    const incoming = mapped(record2);
+    const incoming = selection.mergedFields ?? mappedFields(record2);
     let chosen = selection.bookId ? state.books.find((b) => b.id === validId(selection.bookId)) : void 0;
     if (selection.bookId && !chosen) throw new MetadataError("invalid-id", "\u6240\u9009\u4E66\u7C4D\u4E0D\u5C5E\u4E8E\u5F53\u524D\u7CFB\u5217");
     if (!chosen && selection.verifiedVolume !== void 0) {
@@ -1605,7 +1608,7 @@ SOFTWARE.
       }
       if (Object.keys(after).length) plan.edits.push({ target, before, after, guards });
     };
-    const volumeSpecific = record2.volume !== void 0 || record2.provider === "viz" || record2.provider === "ehentai" || record2.id.startsWith("4000-") || record2.id.startsWith("/titles/");
+    const volumeSpecific = isVolumeRecord(record2);
     if (!volumeSpecific || state.series.oneshot) add({ kind: "series", id: state.series.id }, state.series.metadata, seriesFields);
     if (chosen) add({ kind: "books", id: chosen.id }, chosen.metadata, bookFields);
     else if (selection.fields.some((f) => ["releaseDate", "isbn"].includes(f)) || volumeSpecific && selection.fields.some((f) => bookFields.includes(f))) throw new MetadataError("invalid-id", "\u5355\u5377\u5B57\u6BB5\u9700\u8981\u660E\u786E\u76EE\u6807\u4E66\u7C4D");
@@ -1861,6 +1864,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px
 .settings-card{max-width:660px;margin:0 auto}.settings-card>summary{font-size:15px;color:var(--text);font-weight:600}.settings-card>label:has(input[type=password]){display:grid;gap:5px;font-size:12px;margin:14px 0;color:var(--muted)}.settings-card input[type=password]{width:100%;color:var(--text)}.settings-card>label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px;margin:18px 0}
 section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
 .cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
+.search-progress{margin-top:16px;display:grid;gap:7px;font-size:12px;color:var(--muted)}.search-progress progress{width:100%;height:7px;border:0;border-radius:4px;overflow:hidden;accent-color:var(--accent)}.search-progress progress::-webkit-progress-bar{background:var(--line)}.search-progress progress::-webkit-progress-value{background:var(--accent)}.result-group[data-state=error] .result-count{color:var(--danger)}.selected-source{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}.selected-source>span{flex:1;min-width:0;overflow-wrap:anywhere}.selected-source button{padding:4px 7px;font-size:11px}.merge-rules{border-top:1px solid var(--line);margin:12px 0;padding-top:4px}.merge-rules>p{font-size:12px;color:var(--muted)}.merge-rules .field-label{grid-template-columns:90px minmax(0,1fr);align-items:center}
 @keyframes km-spin{to{transform:rotate(360deg)}}
 @media(max-width:820px){.dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);border-radius:12px}.workspace{grid-template-columns:1fr}.tab-panel{padding:16px}.header{padding:16px}.tabs{padding:0 16px}.footer{padding:12px 16px;flex-wrap:wrap}.status{flex-basis:100%}.footer-actions{margin-left:auto}.direct-row{grid-template-columns:95px minmax(0,1fr) auto}.diff{grid-template-columns:1fr}.context{max-width:55vw}}
 @media(prefers-reduced-motion:reduce){*,*::before{transition:none!important;animation-duration:1.5s!important}.dialog{transition:none!important}}
@@ -1970,6 +1974,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
     }
     dispose() {
+      for (const { frame } of this.jobs.values()) if (frame.dataset.state === "pending") {
+        frame.dataset.state = "empty";
+        frame.textContent = "\u672A\u52A0\u8F7D";
+        frame.setAttribute("aria-label", "\u672A\u52A0\u8F7D");
+      }
       this.controller.abort();
       this.observer.disconnect();
       this.queue.length = 0;
@@ -1979,6 +1988,75 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.urls.clear();
     }
   };
+
+  // src/search.ts
+  async function searchPreferred(online, offline, query, context, phase = () => {
+  }) {
+    let note;
+    if (offline && offline.available?.() !== false) {
+      phase("\u672C\u5730\u68C0\u7D22");
+      try {
+        const candidates2 = await offline.search(query, context);
+        cancelled(context.signal);
+        if (candidates2.length || !online) return { provider: offline, candidates: candidates2, mode: "\u672C\u5730" };
+        note = "\u672C\u5730\u65E0\u5339\u914D\uFF0C\u5DF2\u67E5\u8BE2\u5728\u7EBF";
+      } catch (error) {
+        cancelled(context.signal);
+        if (!online) throw error;
+        note = `\u672C\u5730\u67E5\u8BE2\u5931\u8D25\uFF0C\u5DF2\u67E5\u8BE2\u5728\u7EBF\uFF1A${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+    cancelled(context.signal);
+    if (!online) throw new MetadataError("unavailable", "\u8BF7\u5148\u5728\u300C\u672C\u5730\u6570\u636E\u5E93\u300D\u52A0\u8F7D\u6B64\u6765\u6E90\u7684\u76EE\u5F55");
+    phase(note ? "\u5728\u7EBF\u515C\u5E95" : "\u5728\u7EBF\u68C0\u7D22");
+    const candidates = await online.search(query, context);
+    cancelled(context.signal);
+    return { provider: online, candidates, mode: "\u5728\u7EBF", note };
+  }
+
+  // src/merge.ts
+  var mergeFields = [.../* @__PURE__ */ new Set([...seriesFields, ...bookFields])];
+  var sourceKey = (r) => `${r.provider}:${r.id}`;
+  function present(v) {
+    return v !== void 0 && v !== null && v !== "" && (!Array.isArray(v) || v.length > 0);
+  }
+  function union(field, values) {
+    const result = [];
+    const same = (a, b) => {
+      if (field === "links" && a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) return a.url === b.url;
+      return equal(a, b);
+    };
+    for (const value of values) if (Array.isArray(value)) {
+      for (const item of value) if (!result.some((old) => same(old, item))) result.push(item);
+    }
+    return result;
+  }
+  function mergeRecords(records, choices = {}) {
+    if (!records.length) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
+    if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError("verification", "\u4E0D\u80FD\u628A\u6574\u90E8\u4F5C\u54C1\u548C\u5355\u5377\u6761\u76EE\u6DF7\u5408\uFF1B\u8BF7\u5148\u79FB\u9664\u4E0D\u540C\u5C42\u7EA7\u7684\u6761\u76EE");
+    if (new Set(records.map((r) => r.volume).filter((v) => v !== void 0)).size > 1) throw new MetadataError("verification", "\u9009\u4E2D\u4E86\u4E0D\u540C\u5377\u53F7\uFF0C\u4E0D\u80FD\u5408\u5E76\u5230\u540C\u4E00\u672C\u4E66");
+    const mapped = records.map((r) => ({ r, value: mappedFields(r) }));
+    const values = {}, used = {}, options = {};
+    for (const field of mergeFields) {
+      const entries = mapped.filter((x) => present(x.value[field])).map((x) => ({ key: sourceKey(x.r), provider: x.r.provider, value: x.value[field] }));
+      options[field] = entries;
+      if (!entries.length) continue;
+      const chosen = entries.find((e) => e.key === choices[field]);
+      if (chosen) {
+        values[field] = chosen.value;
+        used[field] = [chosen.provider];
+      } else if (Array.isArray(entries[0].value)) {
+        values[field] = union(field, entries.map((e) => e.value));
+        used[field] = [...new Set(entries.map((e) => e.provider))];
+      } else {
+        values[field] = entries[0].value;
+        used[field] = [entries[0].provider];
+      }
+    }
+    const covers = [];
+    for (const r of records) for (const cover of r.covers) if (!covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+    return { record: { ...records[0], covers: covers.map((c) => c.cover) }, values, used, options, covers };
+  }
 
   // src/ui.ts
   var labels = { title: "\u6807\u9898\uFF08\u9ED8\u8BA4\u4E0D\u6539\uFF09", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
@@ -2039,6 +2117,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.registry = registry;
       this.client = client;
       this.writer = writer;
+      if (this.settings.sourceMode !== void 0 || this.settings.offlineSources !== void 0) {
+        if (this.settings.sourceMode === "offline" && this.settings.offlineSources) this.settings.sources = this.settings.offlineSources;
+        delete this.settings.sourceMode;
+        delete this.settings.offlineSources;
+        storage.set("settings-v1", this.settings);
+      }
       this.host.id = "komga-metadata-panel";
       this.host.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483000";
       this.host.dataset.theme = storage.get("ui-theme-v1", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -2101,7 +2185,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       searchCard.className = "card";
       const searchTitle = element("div");
       searchTitle.className = "section-title";
-      searchTitle.append(element("h3", "\u67E5\u627E\u4F5C\u54C1"), this.sourceMode);
+      searchTitle.append(element("h3", "\u67E5\u627E\u4F5C\u54C1"));
       const searchRow = element("div");
       searchRow.className = "search-row";
       const searchButton = button("\u641C\u7D22", () => void this.run(() => this.search()));
@@ -2116,17 +2200,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.direct.setAttribute("aria-label", "\u6765\u6E90\u94FE\u63A5\u6216 ID");
       this.direct.placeholder = "\u6765\u6E90\u94FE\u63A5\u6216 ID";
       this.provider.setAttribute("aria-label", "\u6765\u6E90");
-      option(this.sourceMode, "online", "\u5728\u7EBF");
-      option(this.sourceMode, "offline", "\u79BB\u7EBF");
-      this.sourceMode.value = this.settings.sourceMode ?? "online";
-      this.sourceMode.setAttribute("aria-label", "\u6765\u6E90\u6A21\u5F0F");
-      this.sourceMode.onchange = () => {
-        this.saveSourceChecks();
-        this.settings.sourceMode = this.sourceMode.value;
-        this.clearSearch();
-        this.renderSourceChecks();
-        storage.set("settings-v1", this.settings);
-      };
       for (const p of registry.list()) option(this.provider, p.id, p.id);
       this.renderSourceChecks();
       const directDetails = element("details");
@@ -2134,17 +2207,19 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const directRow = element("div");
       directRow.className = "direct-row";
       directRow.append(this.provider, this.direct, button("\u8BFB\u53D6", () => void this.run(() => this.readDirect())));
+      this.searchProgress.className = "search-progress";
+      this.searchProgress.hidden = true;
       directDetails.append(directRow);
-      searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.results);
+      searchCard.append(searchTitle, searchRow, this.sourceToggles, directDetails, this.searchProgress, this.results);
       const choices = element("div");
       choices.className = "card";
       this.detail.className = "selected-record";
       choices.append(this.detail, element("h3", "\u5199\u5165\u9009\u9879"));
-      this.book.setAttribute("aria-label", "\u76EE\u6807\u4E66\u7C4D");
-      this.cover.setAttribute("aria-label", "\u5C01\u9762");
-      this.coverTarget.setAttribute("aria-label", "\u5C01\u9762\u76EE\u6807");
+      this.book.setAttribute("aria-label", "\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66");
+      this.cover.setAttribute("aria-label", "\u4F7F\u7528\u54EA\u5F20\u5C01\u9762");
+      this.coverTarget.setAttribute("aria-label", "\u66FF\u6362\u54EA\u4E2A\u5C01\u9762");
       option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
-      for (const [label, select] of [["\u76EE\u6807\u4E66\u7C4D", this.book], ["\u5C01\u9762", this.cover], ["\u5C01\u9762\u76EE\u6807", this.coverTarget]]) {
+      for (const [label, select] of [["\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66", this.book], ["\u4F7F\u7528\u54EA\u5F20\u5C01\u9762", this.cover], ["\u66FF\u6362\u54EA\u4E2A\u5C01\u9762", this.coverTarget]]) {
         const wrapper = element("label", label);
         wrapper.className = "field-label";
         wrapper.append(select);
@@ -2162,18 +2237,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         i.onchange = () => this.invalidate();
       }
       choices.append(fieldGrid);
-      this.propagate = input("\u4F20\u64AD\u4F5C\u8005", choices, "checkbox");
-      this.propagate.checked = true;
+      this.propagate = input("\u5C06\u4F5C\u8005\u540C\u6B65\u5230\u7CFB\u5217\u5185\u6240\u6709\u4E66\u7C4D", choices, "checkbox");
+      this.propagate.checked = false;
       this.propagate.parentElement.className = "check-label";
-      const hint = element("p", "\u4FDD\u7559\u5DF2\u9501\u5B9A\u5B57\u6BB5\uFF1B\u4F5C\u8005\u4EC5\u5199\u5165\u672A\u9501\u5B9A\u4E66\u7C4D\u3002");
-      hint.className = "hint";
-      choices.append(hint);
       for (const e of [this.book, this.cover, this.coverTarget, this.propagate]) e.onchange = () => this.invalidate();
       this.controls.append(searchCard, choices);
       this.applyButton = button("\u5E94\u7528", () => void this.run(async () => {
         if (!this.plan) throw new MetadataError("verification", "\u8BF7\u5148\u9884\u89C8");
-        this.readPreview();
-        const plan = this.plan;
+        const plan = this.readPreview();
         const result = await this.writer.apply(plan, this.signal);
         this.undoData = { seriesId: plan.seriesId, result };
         storage.set("undo-v1", this.undoData);
@@ -2273,6 +2344,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     busy = false;
     state;
     selected;
+    selections = [];
+    merged;
+    mergeChoices = {};
+    sameWork = false;
     plan;
     seriesId;
     undoData = storage.get("undo-v1", void 0);
@@ -2286,7 +2361,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     query = element("input");
     direct = element("input");
     provider = element("select");
-    sourceMode = element("select");
+    searchProgress = element("div");
     sourceToggles = element("div");
     extension;
     catalogCleanup;
@@ -2313,12 +2388,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.contextLabel.textContent = this.query.value;
         this.contextLabel.title = this.query.value;
         this.book.replaceChildren();
-        option(this.book, "", "\u4E0D\u6307\u5B9A\u4E66\u7C4D");
         this.coverTarget.replaceChildren();
-        option(this.coverTarget, `series:${this.seriesId}`, "\u7CFB\u5217\u5C01\u9762");
+        if (!this.state.series.oneshot) {
+          option(this.book, "", "\u4EC5\u66F4\u65B0\u7CFB\u5217\u8D44\u6599");
+          option(this.coverTarget, `series:${this.seriesId}`, "\u6574\u4E2A\u7CFB\u5217\u7684\u5C01\u9762");
+        }
         for (const b of this.state.books) {
-          option(this.book, b.id, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title} \xB7 ${b.id}`);
-          option(this.coverTarget, `books:${b.id}`, `\u4E66\u7C4D ${b.metadata.number ?? "?"} \xB7 ${b.id}`);
+          option(this.book, b.id, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
+          option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
         }
         this.status.textContent = `\u5F53\u524D\uFF1A${this.state.series.metadata.title}`;
       });
@@ -2356,7 +2433,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.undoButton.disabled = true;
       try {
         await action();
-        if (this.status.dataset.state === "busy") {
+        if (this.status.dataset.state === "busy" || this.status.dataset.state === "search") {
           this.status.dataset.state = "idle";
           if (!this.status.textContent) this.status.textContent = this.plan ? "\u786E\u8BA4\u9884\u89C8\u540E\u5E94\u7528" : this.selected ? "\u5DF2\u9009\u62E9\u6765\u6E90\u6761\u76EE" : "\u8BF7\u9009\u62E9\u5339\u914D\u6761\u76EE";
         }
@@ -2380,6 +2457,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     clearSearch() {
       this.thumbnails?.dispose();
       this.thumbnails = void 0;
+      this.searchProgress.hidden = true;
+      this.searchProgress.replaceChildren();
+      this.selections = [];
+      this.merged = void 0;
+      this.mergeChoices = {};
+      this.sameWork = false;
       this.selected = void 0;
       this.detail.replaceChildren();
       this.results.replaceChildren();
@@ -2393,102 +2476,235 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const ids = this.sourceIds();
       if (!this.query.value.trim() || !ids.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
       const query = this.query.value.trim(), context = this.context();
-      const results = await Promise.all(ids.map(async (id) => {
-        try {
-          return { id, candidates: await this.activeProvider(id).search(query, context) };
-        } catch (error) {
-          return { id, error: error instanceof Error ? error : new Error(String(error)) };
-        }
-      }));
-      cancelled(context.signal);
       const thumbnails = this.thumbnails = new Thumbnails(this.viewport, (url2, signal) => this.writer.image(url2, signal));
+      context.signal.addEventListener("abort", () => thumbnails.dispose(), { once: true });
       const imageContext = { ...context, signal: thumbnails.signal };
-      for (const result of results) {
+      const bar = element("progress"), progressLabel = element("span");
+      bar.max = ids.length;
+      bar.value = 0;
+      bar.setAttribute("aria-label", "\u641C\u7D22\u8FDB\u5EA6");
+      this.searchProgress.replaceChildren(progressLabel, bar);
+      this.searchProgress.hidden = false;
+      this.status.dataset.state = "search";
+      let completed = 0, failed = 0;
+      const progress = () => {
+        bar.value = completed;
+        progressLabel.textContent = `\u5DF2\u7ED3\u675F ${completed} / ${ids.length} \u4E2A\u6765\u6E90`;
+      };
+      progress();
+      await Promise.all(ids.map(async (id) => {
         const group = element("details");
         group.className = "result-group";
-        group.dataset.provider = result.id;
-        group.open = !this.collapsedSources.has(`${this.sourceMode.value}:${result.id}`);
-        const groupKey = `${this.sourceMode.value}:${result.id}`;
+        group.dataset.provider = id;
+        group.dataset.state = "pending";
+        group.open = !this.collapsedSources.has(id);
         group.addEventListener("toggle", () => {
-          if (group.open) this.collapsedSources.delete(groupKey);
-          else this.collapsedSources.add(groupKey);
+          if (group.open) this.collapsedSources.delete(id);
+          else this.collapsedSources.add(id);
         });
         const heading = element("summary");
-        heading.append(element("span", result.id));
-        const count = element("span", result.error ? "\u6765\u6E90\u5931\u8D25" : `${result.candidates?.length ?? 0} \u9879`);
+        heading.append(element("span", id));
+        const count = element("span", "\u68C0\u7D22\u4E2D");
         count.className = "result-count";
         heading.append(count);
         group.append(heading);
-        if (result.error) group.append(element("p", result.error.message));
-        else if (!result.candidates?.length) group.append(element("p", "\u65E0\u5339\u914D"));
-        const grid = element("div");
-        grid.className = "candidate-grid";
-        for (const c of result.candidates ?? []) {
-          const provider = this.activeProvider(c.provider);
-          const candidate2 = button("", () => void this.run(async () => {
-            this.choose(await provider.get(c.id, this.context()), provider);
-          }));
-          candidate2.className = "candidate";
-          candidate2.setAttribute("aria-label", c.title);
-          candidate2.setAttribute("aria-pressed", "false");
-          candidate2.dataset.key = `${c.provider}:${c.id}`;
-          candidate2.title = c.title;
-          const title = element("span", c.title);
-          title.className = "candidate-title";
-          candidate2.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title);
-          grid.append(candidate2);
-        }
-        group.append(grid);
         this.results.append(group);
-      }
-      if (results.some((r) => r.error)) {
+        try {
+          const result = await searchPreferred(this.registry.list().find((p) => p.id === id), this.extension?.providers.find((p) => p.id === id), query, context, (phase) => {
+            count.textContent = phase;
+          });
+          group.dataset.state = "ready";
+          count.textContent = `${result.mode} \xB7 ${result.candidates.length} \u9879`;
+          if (result.note) {
+            const note = element("p", result.note);
+            note.className = "hint";
+            group.append(note);
+          }
+          if (!result.candidates.length) group.append(element("p", "\u65E0\u5339\u914D"));
+          const grid = element("div");
+          grid.className = "candidate-grid";
+          for (const c of result.candidates) {
+            const provider = result.provider;
+            const candidate2 = button("", () => void this.run(async () => {
+              if (this.selections.some((s) => sourceKey(s.record) === `${c.provider}:${c.id}`)) {
+                this.removeSelection(`${c.provider}:${c.id}`);
+                return;
+              }
+              this.choose(await provider.get(c.id, this.context()), provider);
+            }));
+            candidate2.disabled = this.busy;
+            candidate2.className = "candidate";
+            candidate2.setAttribute("aria-label", c.title);
+            candidate2.setAttribute("aria-pressed", "false");
+            candidate2.dataset.key = `${c.provider}:${c.id}`;
+            candidate2.title = c.title;
+            const title = element("span", c.title);
+            title.className = "candidate-title";
+            candidate2.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title);
+            grid.append(candidate2);
+          }
+          group.append(grid);
+        } catch (error) {
+          failed++;
+          group.dataset.state = "error";
+          count.textContent = context.signal.aborted ? "\u5DF2\u53D6\u6D88" : "\u6765\u6E90\u5931\u8D25";
+          group.append(element("p", error instanceof Error ? error.message : String(error)));
+        } finally {
+          completed++;
+          progress();
+        }
+      }));
+      cancelled(context.signal);
+      if (failed) {
         this.status.dataset.state = "error";
         this.status.textContent = "\u90E8\u5206\u6765\u6E90\u5931\u8D25\uFF1B\u5176\u4ED6\u7ED3\u679C\u4ECD\u53EF\u9009\u62E9";
       }
     }
     async readDirect() {
       this.invalidate();
-      const p = this.activeProvider(this.provider.value);
-      const id = await p.resolveLink(this.direct.value.trim(), this.context());
-      this.choose(await p.get(id, this.context()), p);
+      const online = this.registry.list().find((p2) => p2.id === this.provider.value);
+      const offline = this.extension?.providers.find((p2) => p2.id === this.provider.value && p2.available?.() !== false);
+      let p = offline ?? online;
+      if (!p) throw new MetadataError("unavailable", "\u8BF7\u5148\u52A0\u8F7D\u6B64\u6765\u6E90\u7684\u672C\u5730\u76EE\u5F55");
+      let record2;
+      try {
+        record2 = await p.get(await p.resolveLink(this.direct.value.trim(), this.context()), this.context());
+      } catch (error) {
+        cancelled(this.signal);
+        if (!offline || !online || p !== offline) throw error;
+        p = online;
+        record2 = await p.get(await p.resolveLink(this.direct.value.trim(), this.context()), this.context());
+      }
+      this.choose(record2, p);
     }
-    choose(record2, provider = this.activeProvider(record2.provider)) {
+    choose(record2, provider) {
+      const next = [...this.selections];
+      const existing = next.findIndex((s) => s.record.provider === record2.provider);
+      if (existing < 0) next.push({ record: record2, provider });
+      else next[existing] = { record: record2, provider };
+      mergeRecords(next.map((s) => s.record));
+      this.selections = next;
+      this.sameWork = false;
+      this.renderSelection();
+    }
+    removeSelection(key) {
+      this.selections = this.selections.filter((s) => sourceKey(s.record) !== key);
+      this.sameWork = false;
+      this.renderSelection();
+    }
+    renderSelection() {
       this.invalidate();
-      this.selected = record2;
       this.detail.replaceChildren();
-      this.results.querySelectorAll(".candidate").forEach((e) => e.setAttribute("aria-pressed", String(e.dataset.key === `${record2.provider}:${record2.id}`)));
-      const sourceUrl = element("p", record2.url);
-      sourceUrl.className = "record-url";
-      sourceUrl.title = record2.url;
-      this.detail.append(element("h3", `${record2.provider} \xB7 ${nativeTitle(record2)}`), sourceUrl);
-      const capabilities = provider.capabilities;
-      const scope = capabilities.gallery ? "\u753B\u5ECA\uFF1B\u4E0D\u63A8\u65AD\u5377\u53F7" : capabilities.volumeMetadata ? "\u652F\u6301\u5355\u5377\u8BE6\u60C5\uFF1B\u987B\u660E\u786E\u6620\u5C04" : capabilities.volumeCovers ? "\u4EC5\u7CFB\u5217\u4E0E\u5377\u5C01\u9762\uFF1B\u65E0\u5355\u5377\u8BE6\u60C5" : "\u4EC5\u7CFB\u5217\u5143\u6570\u636E\uFF1B\u4E0D\u63A8\u65AD\u5355\u5377";
-      const meta2 = element("p", `${scope} \xB7 ${record2.status ?? "\u7CFB\u5217\u72B6\u6001\u672A\u77E5"}`);
-      meta2.className = "record-meta";
-      this.detail.append(meta2);
-      if (record2.summary) {
-        const summary = element("pre", record2.summary);
-        summary.className = "record-summary";
-        this.detail.append(summary);
-      }
-      for (const warning of record2.warnings ?? []) this.detail.append(element("p", warning));
-      if (record2.books?.length) {
-        const volumes = element("details");
-        volumes.className = "volumes";
-        volumes.append(element("summary", `\u5173\u8054\u5355\u5377 \xB7 ${record2.books.length}`));
-        for (const b of record2.books) volumes.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => {
-          const bookProvider = this.activeProvider(b.provider);
-          this.choose(await bookProvider.get(b.id, this.context()), bookProvider);
-        })));
-        this.detail.append(volumes);
-      }
+      const previousCover = this.cover.value === "" ? void 0 : this.selected?.covers[Number(this.cover.value)]?.url;
       this.cover.replaceChildren();
       option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
-      record2.covers.forEach((c, i) => option(this.cover, String(i), `\u5C01\u9762 ${c.volume === void 0 ? "\u7CFB\u5217/\u672A\u5B9A\u5377" : `\u5377 ${c.volume}`} ${c.language ?? ""}`));
+      this.results.querySelectorAll(".candidate").forEach((e) => e.setAttribute("aria-pressed", String(this.selections.some((s) => sourceKey(s.record) === e.dataset.key))));
+      if (!this.selections.length) {
+        this.selected = void 0;
+        this.merged = void 0;
+        this.previewButton.disabled = true;
+        return;
+      }
+      this.merged = mergeRecords(this.selections.map((s) => s.record), this.mergeChoices);
+      this.selected = this.merged.record;
+      const record2 = this.selected;
+      this.detail.append(element("h3", this.selections.length === 1 ? `${record2.provider} \xB7 ${nativeTitle(record2)}` : `\u5DF2\u9009 ${this.selections.length} \u4E2A\u6765\u6E90`));
+      for (const { record: r, provider } of this.selections) {
+        const row = element("div");
+        row.className = "selected-source";
+        const name = element("span", `${r.provider}${provider.capabilities.offline ? " \xB7 \u672C\u5730" : ""} \xB7 ${nativeTitle(r)}`);
+        name.title = r.url;
+        const remove = button("\u79FB\u9664", () => {
+          if (!this.busy) this.removeSelection(sourceKey(r));
+        });
+        remove.className = "ghost";
+        remove.setAttribute("aria-label", `\u79FB\u9664 ${r.provider}`);
+        row.append(name, remove);
+        this.detail.append(row);
+      }
+      const states = { ONGOING: "\u8FDE\u8F7D\u4E2D", ENDED: "\u5DF2\u5B8C\u7ED3", HIATUS: "\u6682\u505C\u8FDE\u8F7D", ABANDONED: "\u5DF2\u505C\u6B62\u8FDE\u8F7D" };
+      const meta2 = element("p", `${isVolumeRecord(record2) ? "\u5355\u5377\u8D44\u6599" : "\u6574\u90E8\u4F5C\u54C1\u8D44\u6599"}${record2.status ? ` \xB7 ${states[record2.status]}` : ""}`);
+      meta2.className = "record-meta";
+      this.detail.append(meta2);
+      if (this.selections.length > 1) {
+        const primary = element("select");
+        primary.setAttribute("aria-label", "\u4E3B\u8981\u6765\u6E90");
+        for (const s of this.selections) option(primary, sourceKey(s.record), s.record.provider);
+        primary.value = sourceKey(record2);
+        primary.onchange = () => {
+          const i = this.selections.findIndex((s) => sourceKey(s.record) === primary.value);
+          this.selections.unshift(...this.selections.splice(i, 1));
+          this.renderSelection();
+        };
+        const label = element("label", "\u4E3B\u8981\u6765\u6E90");
+        label.className = "field-label";
+        label.append(primary);
+        this.detail.append(label);
+        const rules = element("details");
+        rules.className = "merge-rules";
+        rules.append(element("summary", "\u5408\u5E76\u89C4\u5219\u4E0E\u5B57\u6BB5\u6765\u6E90"));
+        rules.append(element("p", "\u7B80\u4ECB\u7B49\u5355\u503C\u4F18\u5148\u4E3B\u8981\u6765\u6E90\uFF0C\u7F3A\u9879\u8865\u9F50\uFF1B\u6807\u7B7E\u3001\u4F5C\u8005\u3001\u94FE\u63A5\u5408\u5E76\u53BB\u91CD\u3002\u53EF\u9010\u5B57\u6BB5\u6539\u7528\u5176\u4ED6\u6765\u6E90\u3002"));
+        for (const field of mergeFields) {
+          const entries = this.merged.options[field] ?? [];
+          if (entries.length < 2) continue;
+          const select = element("select");
+          select.setAttribute("aria-label", `${labels[field]}\u6765\u6E90`);
+          option(select, "", Array.isArray(entries[0].value) ? "\u5408\u5E76\u53BB\u91CD" : "\u4E3B\u8981\u6765\u6E90\u4F18\u5148\uFF0C\u7F3A\u9879\u8865\u9F50");
+          for (const entry of entries) option(select, entry.key, entry.provider);
+          select.value = entries.some((e) => e.key === this.mergeChoices[field]) ? this.mergeChoices[field] : "";
+          select.onchange = () => {
+            this.mergeChoices[field] = select.value;
+            this.merged = mergeRecords(this.selections.map((s) => s.record), this.mergeChoices);
+            this.selected = this.merged.record;
+            this.invalidate();
+            const summary = this.detail.querySelector(".record-summary");
+            if (summary) summary.textContent = String(this.merged.values.summary ?? "");
+          };
+          const l = element("label", labels[field]);
+          l.className = "field-label";
+          l.append(select);
+          rules.append(l);
+        }
+        this.detail.append(rules);
+        const confirm = input("\u8FD9\u4E9B\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C", this.detail, "checkbox");
+        confirm.parentElement.className = "check-label";
+        confirm.checked = this.sameWork;
+        confirm.onchange = () => {
+          this.sameWork = confirm.checked;
+          this.invalidate();
+        };
+      }
+      const summaryText = this.merged.values.summary;
+      if (typeof summaryText === "string" && summaryText) {
+        const summary = element("pre", summaryText);
+        summary.className = "record-summary";
+        if (this.selections.length > 1) {
+          const about = element("details");
+          about.append(element("summary", "\u4F5C\u54C1\u7B80\u4ECB"), summary);
+          this.detail.append(about);
+        } else this.detail.append(summary);
+      }
+      for (const { record: r, provider } of this.selections) {
+        for (const warning of r.warnings ?? []) this.detail.append(element("p", warning));
+        if (r.books?.length) {
+          const volumes = element("details");
+          volumes.className = "volumes";
+          volumes.append(element("summary", `${r.provider} \xB7 \u5173\u8054\u5355\u5377 \xB7 ${r.books.length}`));
+          for (const b of r.books) volumes.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => this.choose(await provider.get(b.id, this.context()), provider))));
+          this.detail.append(volumes);
+        }
+      }
+      this.merged.covers.forEach(({ cover, provider }, i) => option(this.cover, String(i), `${provider} \xB7 ${cover.volume === void 0 ? `\u56FE\u7247 ${i + 1}` : `\u7B2C ${cover.volume} \u5377`} ${cover.language ?? ""}`));
+      if (previousCover) {
+        const index = this.merged.covers.findIndex((c) => c.cover.url === previousCover);
+        if (index >= 0) this.cover.value = String(index);
+      }
+      this.previewButton.disabled = this.busy;
     }
     async makePreview() {
       this.invalidate();
       if (!this.selected || !this.seriesId) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
+      if (this.selections.length > 1 && !this.sameWork) throw new MetadataError("verification", "\u8BF7\u5148\u786E\u8BA4\u9009\u4E2D\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C");
       if (currentSeries(location, document) !== this.seriesId) throw new MetadataError("conflict", "\u9875\u9762\u7CFB\u5217\u53D8\u5316\uFF0C\u8BF7\u5173\u95ED\u540E\u91CD\u65B0\u542F\u52A8");
       this.state = await this.client.state(this.seriesId, this.signal);
       const [kind, id] = this.coverTarget.value.split(":");
@@ -2496,6 +2712,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         fields: [...this.fields].filter(([, i]) => i.checked).map(([f]) => f),
         bookId: this.book.value || void 0,
         propagateAuthors: this.propagate.checked,
+        mergedFields: this.merged?.values,
         cover: this.cover.value === "" ? void 0 : this.selected.covers[Number(this.cover.value)],
         coverTarget: id && (kind === "series" || kind === "books") ? { kind, id } : void 0
       });
@@ -2536,7 +2753,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           const diff = element("div");
           diff.className = "diff";
           const old = element("div"), updated = element("div");
-          const beforeLabel = element("div", "\u5F53\u524D\u503C"), afterLabel = element("div", "\u5199\u5165\u503C");
+          const sources = this.merged?.used[field]?.join(" + ");
+          const beforeLabel = element("div", "\u5F53\u524D\u503C"), afterLabel = element("div", `\u5199\u5165\u503C${sources ? ` \xB7 ${sources}` : ""}`);
           beforeLabel.className = afterLabel.className = "diff-caption";
           const before = edit.before[field];
           old.append(beforeLabel, element("pre", typeof before === "string" ? before || "\u2014" : JSON.stringify(before, null, 2)));
@@ -2594,9 +2812,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.preview.append(section);
     }
     readPreview() {
-      if (!this.plan) return;
+      if (!this.plan) throw new MetadataError("verification", "\u8BF7\u5148\u9884\u89C8");
+      const plan = { ...this.plan, edits: structuredClone(this.plan.edits) };
       for (const i of this.preview.querySelectorAll("input[data-field]")) {
-        const edit = this.plan.edits[Number(i.dataset.edit)], field = i.dataset.field;
+        const edit = plan.edits[Number(i.dataset.edit)], field = i.dataset.field;
         if (!i.checked) {
           delete edit.after[field];
           delete edit.before[field];
@@ -2612,7 +2831,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         }
         edit.after[field] = validateValue(field, value);
       }
-      this.plan.edits = this.plan.edits.filter((e) => Object.keys(e.after).length);
+      plan.edits = plan.edits.filter((e) => Object.keys(e.after).length);
+      return plan;
     }
     report(result) {
       if (result.status === "success") {
@@ -2662,14 +2882,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     saveSourceChecks() {
       const selected = this.sourceIds();
-      if (this.sourceMode.value === "offline") this.settings.offlineSources = selected;
-      else this.settings.sources = selected;
+      this.settings.sources = selected;
     }
     renderSourceChecks() {
       this.sourceToggles.replaceChildren();
-      const offline = this.sourceMode.value === "offline";
-      const providers2 = offline ? this.extension?.providers ?? [] : this.registry.list();
-      const selected = offline ? this.settings.offlineSources ?? providers2.map((p) => p.id) : this.settings.sources;
+      const providers2 = [...new Map([...this.registry.list(), ...this.extension?.providers ?? []].map((p) => [p.id, p])).values()];
+      const selected = this.settings.sources;
       this.provider.replaceChildren();
       for (const p of providers2) option(this.provider, p.id, p.id);
       for (const p of providers2) {
@@ -2680,14 +2898,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           storage.set("settings-v1", this.settings);
         };
       }
-    }
-    activeProvider(id) {
-      if (this.sourceMode.value === "offline") {
-        const provider = this.extension?.providers.find((p) => p.id === id);
-        if (!provider) throw new MetadataError("unknown-provider", "\u79BB\u7EBF\u76EE\u5F55\u672A\u63A5\u5165");
-        return provider;
-      }
-      return this.registry.get(id);
     }
     async close() {
       this.controller?.abort();
@@ -3341,6 +3551,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     return {
       id: provider,
       capabilities: { series: provider !== "ehentai", volumes: ["bangumi", "bookwalker"].includes(provider), volumeMetadata: ["bangumi", "bookwalker"].includes(provider), gallery: provider === "ehentai", offline: true },
+      available: () => Boolean(client.file),
       async search(query, context) {
         if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
         const abort = () => client.cancel();

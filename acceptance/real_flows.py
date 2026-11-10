@@ -33,6 +33,7 @@ def source_record(page,series_id):
 
 def select_fields(panel,fields):
  for key,label in FIELDS.items():panel.get_by_role('checkbox',name=label,exact=True).set_checked(key in fields)
+ panel.get_by_role('checkbox',name='将作者同步到系列内所有书籍',exact=True).set_checked('authors' in fields)
 
 
 def preview(panel):
@@ -90,10 +91,10 @@ def run():
    report['checks'].append('Undo via actual UI restores only fields written by this run')
    for sid,target,kind,tid in [(series_id,'series','series',series_id),(series_id,'book','books',books[1]),(oneshot_id,'book','books',one_book)]:
     panel=source_record(page,sid);select_fields(panel,set())
-    if kind=='books':panel.get_by_role('combobox',name='目标书籍',exact=True).select_option(tid)
-    cover=panel.get_by_role('combobox',name='封面',exact=True)
+    if kind=='books':panel.get_by_role('combobox',name='同时更新哪本书',exact=True).select_option(tid)
+    cover=panel.get_by_role('combobox',name='使用哪张封面',exact=True)
     cover.select_option(index=1)
-    targets=panel.get_by_role('combobox',name='封面目标',exact=True)
+    targets=panel.get_by_role('combobox',name='替换哪个封面',exact=True)
     options=targets.locator('option').evaluate_all('(es)=>es.map(e=>({v:e.value,t:e.textContent}))')
     value=f'{kind}:{tid}'
     assert value in [x['v'] for x in options],options

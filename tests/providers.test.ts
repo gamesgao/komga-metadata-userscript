@@ -190,14 +190,14 @@ describe('online providers: fixture behavior, not live acceptance', () => {
     expect(r.books?.map(b => b.id)).toEqual(['/titles/title-vol-2', '/titles/title-vol-1']);
     expect(r.books?.map(b => b.volume)).toEqual([2, 1]);
   });
-  it('Webtoons uses real mobile Title shape for both source kinds and maps detail', async () => {
+  it('Webtoons parses desktop search cards with covers and maps detail without mobile Referer dependency', async () => {
     const p = new HTMLSource('webtoons', mock([
-      { success: true, result: { webtoonResult: { titleList: [{ titleNo: 1, title: 'Original', representGenre: 'fantasy', titleGroupName: 'original' }] } } },
-      { success: true, result: { challengeResult: { titleList: [{ titleNo: 2, title: 'Canvas Title' }] } } },
+      '<title>Search :: WEBTOON</title><div id="content"><ul class="webtoon_list"><li><a class="_card_item" href="/en/fantasy/original/list?title_no=1"><img src="https://webtoon-phinf.pstatic.net/cover.png"><strong class="title">Original</strong></a></li><li><a class="_card_item" href="/en/canvas/canvas-title/list?title_no=2"><strong class="title">Canvas Title</strong></a></li></ul></div>',
       '<meta property="og:url" content="https://www.webtoons.com/en/fantasy/original/list?title_no=1"><h1 class="subj">Original</h1><div class="detail_header"><div class="author">Author</div><p class="genre">Fantasy</p></div><div id="_asideDetail"><p class="summary">Text</p><p class="day_info">COMPLETED</p></div>'
     ]));
     const found = await p.search('x', context());
     expect(found.map(c => c.id)).toEqual(['/en/fantasy/original/list?title_no=1', '/en/canvas/canvas-title/list?title_no=2']);
+    expect(found[0]?.cover).toBe('https://webtoon-phinf.pstatic.net/cover.png');
     const r = await p.get(found[0]!.id, context());
     expect(r.status).toBe('ENDED'); expect(r.summary).toBe('Text'); expect(r.authors[0]?.name).toBe('Author');
     expect(p.capabilities.volumes).toBe(false);

@@ -58,6 +58,9 @@ export class Thumbnails {
     }
   }
   dispose(): void {
+    for (const { frame } of this.jobs.values()) if (frame.dataset.state === 'pending') {
+      frame.dataset.state = 'empty'; frame.textContent = '未加载'; frame.setAttribute('aria-label', '未加载');
+    }
     this.controller.abort(); this.observer.disconnect(); this.queue.length = 0; this.jobs.clear(); this.cache.clear();
     for (const url of this.urls) URL.revokeObjectURL(url);
     this.urls.clear();

@@ -74,7 +74,7 @@ export class SourceTransport implements Transport {
         this.next = Date.now() + this.interval;
         const response = await this.inner.request(input, signal);
         if (![429, 503].includes(response.status) || attempt >= this.retries) {
-          if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? 'authentication-required' : 'http', `来源 HTTP ${response.status}`, response.status);
+          if (response.status < 200 || response.status >= 300) throw new MetadataError(response.status === 401 || response.status === 403 ? 'authentication-required' : 'http', `来源 HTTP ${response.status}${response.status === 403 ? '：拒绝访问，可能需要浏览器验证或受网络／地区限制' : ''}`, response.status);
           return response;
         }
         const retry = response.headers['retry-after'];

@@ -43,6 +43,7 @@ export function candidate(provider: ProviderId, id: string, title: string, url: 
 }
 export async function json(t: Transport, url: string, signal: AbortSignal, body?: unknown, headers?: Record<string, string>): Promise<Obj> {
   const r = await t.request({ url, method: body === undefined ? 'GET' : 'POST', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }, signal);
+  if (/^\s*</.test(r.text) && /Browser verification|cf-chl|challenge-assets/i.test(r.text)) throw new MetadataError('unavailable', '来源要求浏览器验证，当前匿名请求无法读取');
   try { return obj(JSON.parse(r.text)); }
   catch (e) { if (e instanceof MetadataError) throw e; throw new MetadataError('invalid-response', '来源返回非 JSON（可能受限）'); }
 }

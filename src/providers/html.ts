@@ -101,6 +101,7 @@ export class HTMLSource implements Provider {
   }
   async search(q: string, c: Context): Promise<Candidate[]> {
     if (this.id === 'yenpress') {
+      try {
       const source = await this.t.request({ url: `${this.base}/search` }, c.signal);
       const key = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
       if (!key) throw new MetadataError('unavailable', 'YenPress 公开搜索配置已变化，可粘贴作品链接');
@@ -110,26 +111,25 @@ export class HTMLSource implements Provider {
         const row = obj(v), url = required(obj(row.url).raw), id = await this.resolveLink(url);
         return candidate(this.id, id, required(obj(row.title).raw), href(id, this.base));
       }));
+      } catch (error) {
+        if (error instanceof MetadataError && error.status === 502) throw new MetadataError('http', 'YenPress 搜索服务暂时不可用（HTTP 502）；可通过作品链接读取', 502);
+        throw error;
+      }
     }
     if (this.id === 'webtoons') {
-      const results: Candidate[] = [];
-      for (const type of ['WEBTOON', 'CHALLENGE']) {
-        const x = await json(this.t, `https://m.webtoons.com/undefined/search/result?keyword=${encodeURIComponent(q)}&searchType=${type}&start=1`, c.signal, undefined, { Referer: 'https://m.webtoons.com' });
-        if (x.success !== true) throw new MetadataError('unavailable', 'Webtoons 拒绝搜索');
-        const result = obj(x.result), value = result[type === 'WEBTOON' ? 'webtoonResult' : 'challengeResult'];
-        if (!value) throw new MetadataError('invalid-response', 'Webtoons 搜索结构变化');
-        for (const v of arr(obj(value).titleList)) {
-          const row = obj(v);
-          const titleNo = numeric(String(row.titleNo ?? ''));
-          const group = str(row.titleGroupName) || plain(required(row.title)).toLowerCase().replace(/[`~!@#$%^&*|\\'" ;:/?({[\]})]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || '_';
-          const genre = type === 'CHALLENGE' ? 'canvas' : str(row.representGenre);
-          if (!genre || !/^[\w-]+$/.test(genre)) throw new MetadataError('invalid-response', 'Webtoons 缺少类型，不能构造作品链接');
-          const rawUrl = str(row.titleUrl) || str(row.url) || `${this.base}/en/${genre.toLowerCase()}/${encodeURIComponent(group)}/list?title_no=${titleNo}`;
-          const id = await this.resolveLink(rawUrl);
-          results.push(candidate(this.id, id, required(row.title || row.titleName), href(id, this.base)));
-        }
+      // The mobile JSON route rejects anonymous GM requests although it may work
+      // with a terminal-supplied Referer. The public desktop search is SSR HTML.
+      const response = await this.t.request({ url: `${this.base}/en/search?keyword=${encodeURIComponent(q)}` }, c.signal);
+      const doc = documentOf(response.text); known(doc, '#content');
+      if (!/^\s*Search\s*::\s*WEBTOON/i.test(doc.title)) throw new MetadataError('unavailable', 'Webtoons 搜索页被拦截或页面结构已变化');
+      const found = new Map<string, Candidate>();
+      for (const a of doc.querySelectorAll<HTMLAnchorElement>('#content .webtoon_list a._card_item[href]')) {
+        const id = await this.resolveLink(href(a.getAttribute('href')!, this.base));
+        const img = a.querySelector('img');
+        const cover = img?.getAttribute('data-src') || img?.getAttribute('src');
+        found.set(id, candidate(this.id, id, required(text(a, '.title')), href(id, this.base), cover ? href(cover, this.base) : undefined));
       }
-      return results;
+      return [...found.values()];
     }
     const response = await this.t.request({ url: `${this.base}/search?search=${encodeURIComponent(q)}&category=Manga` }, c.signal);
     const doc = documentOf(response.text);

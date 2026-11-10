@@ -25,6 +25,7 @@ export interface Credentials {
 export interface Context { signal: AbortSignal; credentials: Credentials }
 export interface Provider {
   id: ProviderId; capabilities: Capabilities;
+  available?(): boolean;
   search(query: string, context: Context): Promise<Candidate[]>;
   get(id: string, context: Context): Promise<MetadataRecord>;
   resolveLink(input: string, context: Context): Promise<string>;

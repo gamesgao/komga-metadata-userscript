@@ -7,6 +7,7 @@ export type Field = typeof seriesFields[number] | typeof bookFields[number];
 export interface Selection {
   fields: Field[]; bookId?: string; verifiedVolume?: number; propagateAuthors?: boolean;
   cover?: Cover; coverTarget?: Target;
+  mergedFields?: Metadata;
 }
 export interface Edit { target: Target; before: Metadata; after: Metadata; guards: Metadata }
 export interface CoverEdit {
@@ -47,7 +48,7 @@ export function normalizeWriteFields(metadata: Metadata): Metadata {
   }
   return normalized;
 }
-function mapped(r: MetadataRecord): Metadata {
+export function mappedFields(r: MetadataRecord): Metadata {
   return normalizeWriteFields({
     title: nativeTitle(r), summary: r.summary === undefined ? undefined : plain(r.summary),
     publisher: r.publisher, language: r.language, status: r.status, ageRating: r.ageRating,
@@ -58,9 +59,12 @@ function mapped(r: MetadataRecord): Metadata {
     authors: r.authors.map(a => ({ name: a.native || a.name, role: a.role }))
   });
 }
+export function isVolumeRecord(record: MetadataRecord): boolean {
+  return record.volume !== undefined || record.provider === 'viz' || record.provider === 'ehentai' || record.id.startsWith('4000-') || record.id.startsWith('/titles/');
+}
 export function buildPlan(state: State, record: MetadataRecord, selection: Selection): Plan {
   const plan: Plan = { seriesId: state.series.id, edits: [], skipped: [] };
-  const incoming = mapped(record);
+  const incoming = selection.mergedFields ?? mappedFields(record);
   let chosen = selection.bookId ? state.books.find(b => b.id === validId(selection.bookId!)) : undefined;
   if (selection.bookId && !chosen) throw new MetadataError('invalid-id', '所选书籍不属于当前系列');
   if (!chosen && selection.verifiedVolume !== undefined) {
@@ -87,7 +91,7 @@ export function buildPlan(state: State, record: MetadataRecord, selection: Selec
     if (Object.keys(after).length) plan.edits.push({ target, before, after, guards });
   };
   // Volume records must not overwrite the series title/summary with a single issue.
-  const volumeSpecific = record.volume !== undefined || record.provider === 'viz' || record.provider === 'ehentai' || record.id.startsWith('4000-') || record.id.startsWith('/titles/');
+  const volumeSpecific = isVolumeRecord(record);
   if (!volumeSpecific || state.series.oneshot) add({ kind: 'series', id: state.series.id }, state.series.metadata, seriesFields);
   if (chosen) add({ kind: 'books', id: chosen.id }, chosen.metadata, bookFields);
   else if (selection.fields.some(f => ['releaseDate', 'isbn'].includes(f)) || (volumeSpecific && selection.fields.some(f => bookFields.includes(f as typeof bookFields[number])))) throw new MetadataError('invalid-id', '单卷字段需要明确目标书籍');
