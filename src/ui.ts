@@ -113,7 +113,11 @@ export class Panel {
     this.host.dataset.theme = storage.get('ui-theme-v1', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     const style = element('style'); style.textContent = panelStyle;
     this.body.className = 'dialog'; this.body.setAttribute('aria-label', '元数据');
-    this.body.addEventListener('cancel', event => { event.preventDefault(); this.controller?.abort(); void this.close(); });
+    this.body.addEventListener('cancel', event => {
+      // File inputs also emit a bubbling cancel event (Escape or unchanged selection).
+      if (event.target !== this.body) return;
+      event.preventDefault(); this.controller?.abort(); void this.close();
+    });
     this.body.addEventListener('keydown', event => {
       if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey) return;
       const focusable = [...this.body.querySelectorAll<HTMLElement>('button,input,select,textarea,summary,a[href],[tabindex]')]

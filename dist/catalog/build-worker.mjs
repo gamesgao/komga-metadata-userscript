@@ -9152,6 +9152,7 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
   const outHandle = await directory.getFileHandle(outputName, { create: true });
   const sourceHandle = await directory.getFileHandle(sourceName, { create: true });
   let sourceFile = file;
+  self.postMessage({ type: "progress", phase: "\u89E3\u538B\u539F\u59CB\u6570\u636E" });
   if (provider === "bangumi" && !/\.zip$/i.test(file.name)) throw new Error("Bangumi \u8F93\u5165\u5FC5\u987B\u662F ZIP");
   if (provider === "mangabaka" && /\.tar\.gz$/i.test(file.name)) {
     await extractTarGzip(file, sourceHandle);
@@ -9177,6 +9178,7 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
     output.exec(SCHEMA.replace("PRAGMA journal_mode=DELETE;", ""));
     output.exec({ sql: "INSERT INTO manifest VALUES (?,?,?,?,?)", bind: [SCHEMA_VERSION, ANALYZER_VERSION, provider, sourceVersion || file.name, (/* @__PURE__ */ new Date()).toISOString()] });
     let staging = [];
+    self.postMessage({ type: "progress", phase: "\u6574\u7406\u6807\u7B7E\u548C\u5173\u8054\u6570\u636E" });
     if (provider === "bangumi") {
       await stageBangumi(file, output);
       staging = ["subjects", "persons", "subject_persons", "relations"];
@@ -9208,6 +9210,8 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
     const insertBook = output.prepare("INSERT INTO book_entries(provider,source_id,record) VALUES (?,?,?)");
     const index = output.prepare("INSERT INTO title_fts(rowid,tokens) VALUES (?,?)");
     let count = 0;
+    const total = provider === "bangumi" ? output.selectValue("SELECT count(*) FROM stage_subjects WHERE json_extract(json, '$.type') = 1 OR json_type(json, '$.type') IS NULL") : source.selectValue(`SELECT count(*) FROM ${provider === "ehentai" ? "gallery" : "series"}`);
+    self.postMessage({ type: "progress", phase: "\u5EFA\u7ACB\u68C0\u7D22\u7D22\u5F15", count, total });
     try {
       output.exec("BEGIN");
       const add = (record) => {
@@ -9222,7 +9226,10 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
         index.bind([rowId, indexText(record.titles.map((t4) => t4.text))]).stepReset();
         if (record.provider === "bookwalker") for (const book of record.books ?? [])
           insertBook.bind([book.provider, book.id, JSON.stringify(book)]).stepReset();
-        if (++count % 1e3 === 0) output.exec("COMMIT; BEGIN");
+        if (++count % 1e3 === 0) {
+          output.exec("COMMIT; BEGIN");
+          self.postMessage({ type: "progress", phase: "\u5EFA\u7ACB\u68C0\u7D22\u7D22\u5F15", count, total });
+        }
       };
       if (provider === "bangumi") {
         const make = (subject, withBooks) => {
@@ -9271,6 +9278,7 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
       }
       output.exec("COMMIT");
       if (!count) throw new Error("Source contained no records");
+      self.postMessage({ type: "progress", phase: "\u6821\u9A8C\u6570\u636E\u5E93", count, total });
       for (const table of staging) output.exec(`DROP TABLE stage_${table}`);
       output.exec("INSERT INTO title_fts(title_fts) VALUES('optimize'); INSERT INTO title_fts(title_fts) VALUES('integrity-check');");
       if (output.selectValue("PRAGMA integrity_check") !== "ok") throw new Error("Output integrity check failed");

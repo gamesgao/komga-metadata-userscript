@@ -194,36 +194,30 @@ test('fixture browser: no UI/menu/storage/network outside detected Komga; menu s
   await page.evaluate(() => { const w = window as unknown as { fixtureMenu: () => void }; w.fixtureMenu(); });
   await expect(page.locator('#komga-metadata-panel')).toBeVisible();
 });
-test('fixture browser: bundled offline panel uses GM_download completion, error, and cancellation callbacks', async ({ page }) => {
+test('catalog UI: four preset downloads on HTTP, completion/error/cancel, no URL or primary prebuilt import', async ({ page }) => {
   await install(page);
-  await page.route('https://downloads.example/manifest.json', route => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify({
-      schema_version: 1, analyzer_version: 1,
-      catalogs: [{ provider: 'bangumi', source_version: 'fixture', url: 'https://downloads.example/prepared.sqlite' }]
-    })
-  }));
-  await page.getByRole('button', { name: '元数据', exact: true }).click();
-  await expect(page.getByLabel('来源模式')).toHaveCount(0);
-  for (const id of ['bangumi', 'ehentai', 'mangabaka', 'bookwalker'])
-    await expect(page.getByRole('checkbox', { name: id, exact: true })).toBeVisible();
-
-  await page.getByRole('tab', { name: '本地数据库' }).click();
-  await page.getByText('下载与高级操作', { exact: true }).click();
-  await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
-  await page.getByRole('button', { name: '读取清单' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '选择预制目录' })).toBeVisible();
-  await page.getByLabel('预制目录').selectOption('https://downloads.example/prepared.sqlite');
-  await page.getByRole('button', { name: '下载所选目录' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '下载完成，请选择文件' })).toBeVisible();
-  await page.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/catalog.sqlite');
-  await page.evaluate(() => { (window as unknown as { fixtureDownloadMode: string }).fixtureDownloadMode = 'error'; });
-  await page.getByRole('button', { name: '下载数据库' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '下载失败：fixture failure' })).toBeVisible();
-  await page.evaluate(() => { (window as unknown as { fixtureDownloadMode: string }).fixtureDownloadMode = 'hold'; });
-  await page.getByRole('button', { name: '下载数据库' }).click();
-  await page.getByRole('button', { name: '取消下载' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '下载失败：已取消下载' })).toBeVisible();
+  await page.evaluate(() => Object.defineProperty(window,'isSecureContext',{value:false,configurable:true}));
+  await page.route('https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json',route=>route.fulfill({json:{browser_download_url:'https://github.com/bangumi/Archive/releases/download/archive/source.zip'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('tab',{name:'本地数据库'}).click();
+  const area=page.locator('section[data-km-catalog]'),status=area.locator('[role=status]');
+  await expect(area.getByPlaceholder('预制数据库或清单 URL')).toHaveCount(0);
+  await expect(area.getByLabel('本地数据库文件')).not.toBeVisible();
+  await expect(area.getByText(/当前页面使用普通 HTTP/)).toBeVisible();
+  for(const name of ['Bangumi','E-Hentai','MangaBaka','BookWalker']) {
+    await area.getByRole('button',{name:name+' · 下载原始数据',exact:true}).click();
+    await expect(status).toContainText('原始数据已下载');
+  }
+  await page.evaluate(()=>{(window as unknown as {fixtureDownloadMode:string}).fixtureDownloadMode='error'});
+  await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await expect(status).toContainText('fixture failure');
+  await page.evaluate(()=>{(window as unknown as {fixtureDownloadMode:string}).fixtureDownloadMode='hold'});
+  await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await area.getByRole('button',{name:'取消当前任务'}).click();await expect(status).toContainText('已取消');
+});
+test('file picker cancellation bubbles without closing dialog or losing input; dialog Escape still closes',async({page})=>{
+  await install(page);await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('textbox',{name:'搜索词'}).fill('keep this query');
+  await page.getByRole('tab',{name:'本地数据库'}).click();
+  for(const input of await page.locator('section[data-km-catalog] input[type=file]').all())await input.dispatchEvent('cancel',{bubbles:true});
+  await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('tab',{name:'元数据',exact:true}).click();await expect(page.getByRole('textbox',{name:'搜索词'})).toHaveValue('keep this query');
+  await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 test('fixture browser: one failed source keeps candidate visible; editable/unselected preview fields obey selection', async ({ page }) => {
   await install(page);

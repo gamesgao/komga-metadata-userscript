@@ -1,7 +1,7 @@
 import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 await mkdir('dist/sqlite', { recursive: true });
-for (const name of ['analyzer.mjs', 'worker.mjs', 'client.mjs', 'client.d.mts', 'panel.mjs', 'panel.d.mts', 'browser-builder.mjs', 'browser-builder.d.mts']) {
+for (const name of ['analyzer.mjs', 'worker.mjs', 'client.mjs', 'client.d.mts', 'collection.mjs', 'collection.d.mts', 'panel.mjs', 'panel.d.mts', 'browser-builder.mjs', 'browser-builder.d.mts']) {
   await cp(`src/${name}`, `dist/${name}`);
 }
 await build({ entryPoints: ['src/worker.mjs'], outfile: 'dist/worker.mjs', bundle: true,

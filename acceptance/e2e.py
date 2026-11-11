@@ -227,6 +227,12 @@ def login_if_needed(page: Page, credentials: dict) -> None:
         raise AcceptanceBlocked("Komga login form has no visible account input")
     text_inputs.first.fill(email)
     password.first.fill(secret)
+    # Native Chromium/extension autofocus can steal keyboard insertion between
+    # fill's focus and insertText. Verify silently; never log field contents.
+    if text_inputs.first.input_value() != email or password.first.input_value() != secret:
+        set_value = "(input, value) => { input.value = value; input.dispatchEvent(new Event('input', {bubbles:true})); input.dispatchEvent(new Event('change', {bubbles:true})); }"
+        text_inputs.first.evaluate(set_value, email)
+        password.first.evaluate(set_value, secret)
     submit = page.locator('button[type="submit"]:visible')
     if submit.count() == 0:
         submit = page.get_by_role("button", name=re.compile(r"登录|sign in|log in", re.I))

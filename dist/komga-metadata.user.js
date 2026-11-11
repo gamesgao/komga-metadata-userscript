@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.6.2
+// @version      0.7.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -2237,6 +2237,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.body.className = "dialog";
       this.body.setAttribute("aria-label", "\u5143\u6570\u636E");
       this.body.addEventListener("cancel", (event) => {
+        if (event.target !== this.body) return;
         event.preventDefault();
         this.controller?.abort();
         void this.close();
@@ -3235,9 +3236,215 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   };
 
+  // catalog/src/collection.mjs
+  var CatalogCollection = class {
+    constructor(workerUrl, options = {}) {
+      this.generation = 0;
+      this.workerUrl = workerUrl;
+      this.options = options;
+      this.clients = /* @__PURE__ */ new Map();
+      this.current = void 0;
+      this.probe = void 0;
+      this.restoring = void 0;
+    }
+    get file() {
+      return this.current?.selectedFile;
+    }
+    get selectedFile() {
+      return this.file;
+    }
+    get hasFile() {
+      return this.clients.size > 0;
+    }
+    hasProvider(id) {
+      return this.clients.has(id);
+    }
+    fileFor(id) {
+      return this.clients.get(id)?.selectedFile;
+    }
+    async open(file, verification) {
+      if (this.probe) throw new Error("\u53E6\u4E00\u4E2A\u6570\u636E\u5E93\u6B63\u5728\u52A0\u8F7D");
+      const generation = this.generation;
+      const next = new CatalogClient(this.workerUrl, this.options);
+      this.probe = next;
+      try {
+        const manifest = await next.open(file, verification);
+        if (generation !== this.generation) throw new DOMException("\u5DF2\u53D6\u6D88\u52A0\u8F7D", "AbortError");
+        if (!["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(manifest.provider)) throw new Error("\u4E0D\u652F\u6301\u7684\u76EE\u5F55\u6765\u6E90");
+        const previous = this.clients.get(manifest.provider);
+        this.clients.set(manifest.provider, next);
+        this.current = next;
+        previous?.dispose();
+        return manifest;
+      } catch (error) {
+        next.dispose();
+        throw error;
+      } finally {
+        if (this.probe === next) this.probe = void 0;
+      }
+    }
+    async search(query, provider, limit) {
+      await this.restoring;
+      return this.clients.get(provider)?.search(query, provider, limit) ?? [];
+    }
+    async get(provider, id) {
+      await this.restoring;
+      const client = this.clients.get(provider);
+      if (!client) throw new Error("\u6B64\u6765\u6E90\u5C1A\u672A\u52A0\u8F7D\u672C\u5730\u6570\u636E\u5E93");
+      return client.get(provider, id);
+    }
+    manifest() {
+      if (!this.current) throw new Error("\u5C1A\u672A\u52A0\u8F7D\u6570\u636E\u5E93");
+      return this.current.manifest();
+    }
+    stats() {
+      if (!this.current) throw new Error("\u5C1A\u672A\u52A0\u8F7D\u6570\u636E\u5E93");
+      return this.current.stats();
+    }
+    cancel() {
+      this.generation++;
+      this.probe?.cancel();
+      for (const client of this.clients.values()) client.cancel();
+    }
+    async close() {
+      this.dispose();
+    }
+    dispose() {
+      this.generation++;
+      this.probe?.dispose();
+      for (const client of this.clients.values()) client.dispose();
+      this.clients.clear();
+      this.current = void 0;
+    }
+  };
+
+  // src/catalog-download.ts
+  async function downloadArchive(url2, name, signal, progress) {
+    if (!isSecureContext || !navigator.storage?.getDirectory) throw new Error("\u81EA\u52A8\u6784\u5EFA\u9700\u8981 HTTPS \u548C\u6D4F\u89C8\u5668\u672C\u5730\u5B58\u50A8");
+    const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("komga-catalog-download", { create: true });
+    const filename = `${crypto.randomUUID()}-${name}`;
+    const handle = await directory.getFileHandle(filename, { create: true });
+    let writable;
+    let request2, reader;
+    const cleanup = async () => {
+      await directory.removeEntry(filename).catch((error) => {
+        if (error.name !== "NotFoundError") throw error;
+      });
+    };
+    try {
+      writable = await handle.createWritable();
+      let lastProgress = 0;
+      await new Promise((resolve, reject) => {
+        let started = false, settled = false;
+        let downloaded = 0, streamDone = false, finalResponse;
+        const finish2 = (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          signal.removeEventListener("abort", abort);
+          error ? reject(error) : resolve();
+        };
+        const abort = () => {
+          finish2(new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError"));
+          request2?.abort();
+          void reader?.cancel().catch(() => {
+          });
+        };
+        const timer = setTimeout(() => {
+          finish2(new Error("\u4E0B\u8F7D\u8FDE\u63A5\u8D85\u65F6"));
+          request2?.abort();
+        }, 6e4);
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+        signal.addEventListener("abort", abort, { once: true });
+        const complete = () => {
+          if (!streamDone || !finalResponse) return;
+          if (finalResponse.status < 200 || finalResponse.status >= 300) {
+            finish2(new Error(`\u4E0B\u8F7D HTTP ${finalResponse.status}`));
+            return;
+          }
+          const total = Number(finalResponse.responseHeaders?.match(/^content-length:\s*(\d+)/im)?.[1]) || void 0;
+          if (total && downloaded !== total) {
+            finish2(new Error("\u4E0B\u8F7D\u6587\u4EF6\u957F\u5EA6\u4E0D\u7B26"));
+            return;
+          }
+          progress(downloaded, total);
+          finish2();
+        };
+        const consume = async (response) => {
+          if (started || settled) return;
+          started = true;
+          clearTimeout(timer);
+          try {
+            if (response.status && (response.status < 200 || response.status >= 300)) throw new Error(`\u4E0B\u8F7D HTTP ${response.status}`);
+            if (!response.response || typeof response.response.getReader !== "function") throw new Error("\u5F53\u524D\u811A\u672C\u7BA1\u7406\u5668\u4E0D\u652F\u6301\u6D41\u5F0F\u4E0B\u8F7D\uFF1B\u53EF\u5148\u4E0B\u8F7D\u539F\u59CB\u6570\u636E\uFF0C\u518D\u9009\u62E9\u6587\u4EF6\u6784\u5EFA");
+            const length = Number(response.responseHeaders?.match(/^content-length:\s*(\d+)/im)?.[1]);
+            const total = length > 0 ? length : void 0;
+            reader = response.response.getReader();
+            let received = 0;
+            while (true) {
+              if (signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError");
+              const { done, value } = await reader.read();
+              if (done) break;
+              for (let offset = 0; offset < value.byteLength; offset += 1024 * 1024)
+                await writable.write(value.slice(offset, offset + 1024 * 1024));
+              received += value.byteLength;
+              if (Date.now() - lastProgress > 150) {
+                progress(received, total);
+                lastProgress = Date.now();
+              }
+            }
+            if (signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError");
+            if (!received) throw new Error("\u4E0B\u8F7D\u5185\u5BB9\u4E3A\u7A7A");
+            downloaded = received;
+            streamDone = true;
+            complete();
+          } catch (error) {
+            finish2(error);
+            request2?.abort();
+          }
+        };
+        try {
+          request2 = GM_xmlhttpRequest({
+            url: url2,
+            method: "GET",
+            responseType: "stream",
+            anonymous: true,
+            fetch: true,
+            onloadstart: (r) => {
+              void consume(r);
+            },
+            onload: (r) => {
+              finalResponse = r;
+              if (!started) void consume(r);
+              complete();
+            },
+            onerror: () => finish2(new Error("\u4E0B\u8F7D\u8BF7\u6C42\u5931\u8D25")),
+            onabort: () => finish2(new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError"))
+          });
+        } catch (error) {
+          finish2(error);
+        }
+      });
+      await writable.close();
+      writable = void 0;
+      return { file: await handle.getFile(), cleanup };
+    } catch (error) {
+      request2?.abort();
+      await reader?.cancel().catch(() => {
+      });
+      await writable?.abort().catch(() => {
+      });
+      await cleanup();
+      throw error;
+    }
+  }
+
   // catalog/src/browser-builder.mjs
   function browserBuildCapability() {
-    if (!globalThis.isSecureContext) return { available: false, reason: "\u6D4F\u89C8\u5668\u6784\u5EFA\u9700\u8981\u5B89\u5168\u4E0A\u4E0B\u6587\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+    if (!globalThis.isSecureContext) return { available: false, reason: "\u5F53\u524D\u9875\u9762\u4F7F\u7528\u666E\u901A HTTP\uFF0C\u6D4F\u89C8\u5668\u4E0D\u5141\u8BB8\u521B\u5EFA\u6570\u636E\u5E93\u3002\u4F7F\u7528 HTTPS \u540E\u53EF\u81EA\u52A8\u6784\u5EFA\uFF1B\u4E5F\u53EF\u5BFC\u5165\u5DF2\u6784\u5EFA\u6570\u636E\u5E93\u3002" };
     if (!navigator.storage?.getDirectory) return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 OPFS\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
     if (typeof Worker !== "function") return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 Worker\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
     return { available: true, reason: "\u652F\u6301\u56DB\u79CD\u672C\u5730\u6765\u6E90\u6863\u6848\uFF1B\u6D4F\u89C8\u5668\u8D44\u6E90\u4E0D\u8DB3\u65F6\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
@@ -3253,7 +3460,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.generation = 0;
       this.busy = false;
     }
-    async build(file, provider, sourceVersion) {
+    async build(file, provider, sourceVersion, onProgress) {
       if (this.busy) throw new Error("\u5DF2\u6709\u6784\u5EFA\u4EFB\u52A1");
       const capability = browserBuildCapability();
       if (!capability.available) throw new Error(capability.reason);
@@ -3286,7 +3493,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
               if (data.type === "ready") {
                 const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
                 worker2.postMessage(initOptions ? { type: "build", payload } : payload);
-              } else if (data.type === "init-error") fail(new Error(data.error));
+              } else if (data.type === "progress") onProgress?.(data);
+              else if (data.type === "init-error") fail(new Error(data.error));
               else if (data.error) fail(new Error(data.error));
               else if (!settled) {
                 settled = true;
@@ -3311,7 +3519,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           if (generation !== this.generation) throw new DOMException("Build cancelled", "AbortError");
           const previous = this.completed;
           if (previous) await previous.directory.removeEntry(previous.name);
-          this.completed = { directory, handle, name: outputName };
+          this.completed = { directory, handle, name: outputName, provider, result };
           return result;
         } finally {
           worker2.terminate();
@@ -3331,6 +3539,31 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     async file() {
       if (!this.completed) throw new Error("\u6CA1\u6709\u5DF2\u5B8C\u6210\u7684\u76EE\u5F55");
       return this.completed.handle.getFile();
+    }
+    async persist() {
+      if (!this.completed) throw new Error("\u6CA1\u6709\u5DF2\u5B8C\u6210\u7684\u76EE\u5F55");
+      const saved = this.completed;
+      this.completed = void 0;
+      const index = await saved.directory.getFileHandle(`active-${saved.provider}.json`, { create: true });
+      let previous;
+      try {
+        previous = JSON.parse(await (await index.getFile()).text());
+      } catch {
+      }
+      const writable = await index.createWritable();
+      try {
+        await writable.write(JSON.stringify({ name: saved.name, ...saved.result }));
+        await writable.close();
+      } catch (error) {
+        await writable.abort().catch(() => {
+        });
+        this.completed = void 0;
+        throw error;
+      }
+      this.completed = void 0;
+      if (previous?.name !== saved.name && /^output-[\w-]+\.sqlite$/.test(previous?.name ?? ""))
+        await saved.directory.removeEntry(previous.name).catch(() => {
+        });
     }
     get ready() {
       return Boolean(this.completed);
@@ -3373,339 +3606,317 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   };
 
-  // catalog/src/analyzer.mjs
-  var SCHEMA_VERSION = 1;
-  var ANALYZER_VERSION = 1;
-
   // catalog/src/panel.mjs
   function url(value) {
     const parsed = new URL(value);
-    if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password)
-      throw new Error("\u4EC5\u652F\u6301\u65E0\u51ED\u636E\u7684 HTTP(S) \u5730\u5740");
+    if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("\u4EC5\u652F\u6301\u65E0\u51ED\u636E\u7684 HTTP(S) \u5730\u5740");
     return parsed.href;
   }
-  function validatePreparedManifest(manifest) {
-    if (!manifest || manifest.schema_version !== SCHEMA_VERSION || manifest.analyzer_version !== ANALYZER_VERSION || !Array.isArray(manifest.catalogs))
-      throw new Error("\u9884\u5236\u76EE\u5F55\u6E05\u5355\u7248\u672C\u6216\u683C\u5F0F\u9519\u8BEF");
-    return manifest.catalogs.map((item) => {
-      if (!item || !["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(item.provider) || typeof item.source_version !== "string" || typeof item.url !== "string") throw new Error("\u9884\u5236\u76EE\u5F55\u6E05\u5355\u6761\u76EE\u9519\u8BEF");
-      if (item.schema_version !== void 0 && item.schema_version !== SCHEMA_VERSION)
-        throw new Error("\u6E05\u5355\u76EE\u5F55 schema \u7248\u672C\u4E0D\u517C\u5BB9");
-      if (item.analyzer_version !== void 0 && item.analyzer_version !== ANALYZER_VERSION)
-        throw new Error("\u6E05\u5355\u76EE\u5F55 analyzer \u7248\u672C\u4E0D\u517C\u5BB9");
-      if (item.size_bytes !== void 0 && (!Number.isSafeInteger(item.size_bytes) || item.size_bytes < 1))
-        throw new Error("\u6E05\u5355\u6587\u4EF6\u5927\u5C0F\u683C\u5F0F\u9519\u8BEF");
-      if (item.sha256 !== void 0 && !/^[a-f0-9]{64}$/i.test(item.sha256))
-        throw new Error("\u6E05\u5355 SHA-256 \u683C\u5F0F\u9519\u8BEF");
-      return {
-        provider: item.provider,
-        source_version: item.source_version,
-        url: url(item.url),
-        size_bytes: item.size_bytes,
-        sha256: item.sha256?.toLowerCase(),
-        schema_version: item.schema_version,
-        analyzer_version: item.analyzer_version
-      };
-    });
+  var catalogSources = [
+    { id: "bangumi", name: "Bangumi", filename: "bangumi-source.zip" },
+    { id: "ehentai", name: "E-Hentai", filename: "e-hentai.db.zstd", url: "https://github.com/URenko/e-hentai-db/releases/download/nightly/e-hentai.db.zstd" },
+    { id: "mangabaka", name: "MangaBaka", filename: "series.sqlite.tar.gz", url: "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz" },
+    { id: "bookwalker", name: "BookWalker", filename: "bkwk-db.sqlite.zst", url: "https://static.bookwalker.com/data/bkwk-db.sqlite.zst" }
+  ];
+  async function resolveArchive(source, fetchManifest2, signal) {
+    if (source.url) return source.url;
+    if (!fetchManifest2) throw new Error("\u7F3A\u5C11\u8DE8\u57DF\u8BF7\u6C42\u6743\u9650");
+    const latest = await fetchManifest2("https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json", signal);
+    const href2 = url(latest.browser_download_url);
+    if (!href2.startsWith("https://github.com/bangumi/Archive/releases/download/")) throw new Error("\u6765\u6E90\u5730\u5740\u4E0D\u7B26");
+    return href2;
+  }
+  function el(tag, text2) {
+    const e = document.createElement(tag);
+    if (text2 !== void 0) e.textContent = text2;
+    return e;
+  }
+  function button2(text2, fn) {
+    const b = el("button", text2);
+    b.type = "button";
+    b.onclick = fn;
+    return b;
   }
   function mountCatalogPanel(container, client, options = {}) {
-    const root = document.createElement("section");
+    const root = el("section");
     root.dataset.kmCatalog = "1";
-    const spinnerStyle = document.createElement("style");
-    spinnerStyle.textContent = 'section[data-km-catalog] p[role=status]:empty::before{content:"";display:inline-block;width:12px;height:12px;border:2px solid #bbb;border-right-color:#444;border-radius:50%;animation:kmdb-spin .7s linear infinite}@keyframes kmdb-spin{to{transform:rotate(360deg)}}';
-    root.append(spinnerStyle);
-    const panelController = new AbortController();
-    const heading = document.createElement("h3");
-    heading.textContent = "\u672C\u5730\u76EE\u5F55";
-    const status2 = document.createElement("p");
-    status2.textContent = "\u9009\u62E9\u9884\u5236 SQLite";
+    const style = el("style", "section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{width:100%}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}");
+    const status2 = el("p", "\u9009\u62E9\u6765\u6E90\uFF0C\u4E0B\u8F7D\u5E76\u65B0\u5EFA\u6570\u636E\u5E93");
     status2.setAttribute("role", "status");
-    const file = document.createElement("input");
+    const progress = el("progress");
+    progress.hidden = true;
+    const cards = el("div");
+    cards.className = "catalog-sources";
+    const capability = browserBuildCapability();
+    const builder = options.builder ?? (options.buildWorkerUrl || options.buildWorkerFactory ? new BrowserCatalogBuilder(options.buildWorkerUrl, { workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions }) : void 0);
+    const canBuild = capability.available && Boolean(builder);
+    const canAuto = canBuild && Boolean(options.downloadArchive);
+    let busy = false, disposed = false, controller, activeTask;
+    const exports = /* @__PURE__ */ new Set(), states = /* @__PURE__ */ new Map(), exportButtons = /* @__PURE__ */ new Map();
+    const loadedFile = (id) => client.fileFor ? client.fileFor(id) : states.get(id)?.loaded ? client.selectedFile : void 0;
+    const refresh = () => {
+      for (const [id, state] of states) {
+        if (client.hasProvider?.(id)) state.loaded = true;
+        if (!busy) state.label.textContent = state.loaded ? "\u5DF2\u52A0\u8F7D\uFF0C\u53EF\u7528\u4E8E\u641C\u7D22" : "\u672A\u52A0\u8F7D";
+        exportButtons.get(id).disabled = busy || !loadedFile(id);
+        exportButtons.get(id).hidden = !loadedFile(id);
+      }
+      for (const control of root.querySelectorAll("button,input,select")) if (!exportButtonsHas(control) && control !== cancel) control.disabled = busy || control.dataset.needsBuild === "1" && !canBuild;
+      cancel.disabled = !busy;
+      cancel.hidden = !busy;
+    };
+    const exportButtonsHas = (control) => [...exportButtons.values()].includes(control);
+    const cancel = button2("\u53D6\u6D88\u5F53\u524D\u4EFB\u52A1", () => {
+      controller?.abort();
+      builder?.cancel();
+      client.cancel();
+    });
+    cancel.disabled = true;
+    const cancelled2 = () => {
+      if (disposed || controller?.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+    };
+    const run = (fn) => {
+      if (busy || disposed) return;
+      controller = new AbortController();
+      busy = true;
+      refresh();
+      progress.hidden = false;
+      progress.removeAttribute("value");
+      activeTask = (async () => {
+        try {
+          await fn(controller.signal);
+        } catch (error) {
+          if (!disposed) status2.textContent = error.name === "AbortError" ? "\u5DF2\u53D6\u6D88\uFF0C\u5DF2\u6709\u6570\u636E\u5E93\u4E0D\u53D8" : `\u5931\u8D25\uFF1A${error.message}`;
+        } finally {
+          busy = false;
+          progress.hidden = true;
+          if (!disposed) refresh();
+        }
+      })();
+      return activeTask;
+    };
+    const load = async (file2) => {
+      cancelled2();
+      const previous = client.selectedFile;
+      let manifest;
+      try {
+        manifest = await client.open(file2);
+      } catch (error) {
+        if (previous && !disposed && !client.hasFile) await client.open(previous);
+        throw error;
+      }
+      cancelled2();
+      if (!client.hasProvider) for (const state2 of states.values()) state2.loaded = false;
+      const state = states.get(manifest.provider);
+      if (state) state.loaded = true;
+      status2.textContent = `${manifest.provider} \xB7 \u5DF2\u52A0\u8F7D`;
+      return manifest;
+    };
+    const buildFile = async (file2, id) => {
+      if (!canBuild) throw new Error(capability.reason);
+      cancelled2();
+      status2.textContent = "\u6B63\u5728\u65B0\u5EFA\u6570\u636E\u5E93\u2026";
+      const result = await builder.build(file2, id, file2.name, (data) => {
+        status2.textContent = `${data.phase}${data.count === void 0 ? "" : ` \xB7 ${data.count} / ${data.total}`}`;
+        if (data.total > 0) {
+          progress.max = data.total;
+          progress.value = data.count;
+        } else progress.removeAttribute("value");
+      });
+      cancelled2();
+      status2.textContent = "\u6B63\u5728\u52A0\u8F7D\u6570\u636E\u5E93\u2026";
+      cancel.disabled = true;
+      const built = await builder.file();
+      await load(built);
+      if (builder.persist) {
+        try {
+          await builder.persist();
+        } catch (error) {
+          status2.textContent = `\u5DF2\u52A0\u8F7D\uFF0C\u4F46\u81EA\u52A8\u4FDD\u5B58\u5931\u8D25\uFF1A${error.message}\uFF1B\u8BF7\u5BFC\u51FA\u6570\u636E\u5E93`;
+          return;
+        }
+      }
+      status2.textContent = `${id} \xB7 \u5DF2\u6784\u5EFA\u5E76\u52A0\u8F7D ${result.count} \u6761`;
+    };
+    const save = (id) => run(async () => {
+      const file2 = loadedFile(id);
+      if (!file2) throw new Error("\u5C1A\u672A\u52A0\u8F7D\u6B64\u6765\u6E90");
+      if (typeof globalThis.showSaveFilePicker === "function") {
+        let handle;
+        try {
+          handle = await globalThis.showSaveFilePicker({ suggestedName: `${id}.sqlite` });
+        } catch (error) {
+          if (error.name === "AbortError") {
+            status2.textContent = "\u5DF2\u53D6\u6D88\u4FDD\u5B58";
+            return;
+          }
+          throw error;
+        }
+        const writable = await handle.createWritable();
+        try {
+          for (let offset = 0; offset < file2.size; offset += 1024 * 1024) {
+            cancelled2();
+            await writable.write(await file2.slice(offset, offset + 1024 * 1024).arrayBuffer());
+          }
+          cancelled2();
+          await writable.close();
+          status2.textContent = "\u6570\u636E\u5E93\u5DF2\u4FDD\u5B58";
+        } catch (error) {
+          await writable.abort();
+          throw error;
+        }
+      } else {
+        const href2 = URL.createObjectURL(file2);
+        exports.add(href2);
+        const a = el("a");
+        a.href = href2;
+        a.download = `${id}.sqlite`;
+        a.hidden = true;
+        root.append(a);
+        a.click();
+        a.remove();
+        status2.textContent = "\u5DF2\u5F00\u59CB\u5BFC\u51FA\u6570\u636E\u5E93";
+      }
+    });
+    for (const source2 of catalogSources) {
+      const card = el("div");
+      card.className = "catalog-source";
+      card.dataset.provider = source2.id;
+      const label = el("span", "\u672A\u52A0\u8F7D");
+      states.set(source2.id, { label, loaded: Boolean(client.hasProvider?.(source2.id)) });
+      const start = button2(`${source2.name} \xB7 ${canAuto ? "\u4E0B\u8F7D\u5E76\u6784\u5EFA" : "\u4E0B\u8F7D\u539F\u59CB\u6570\u636E"}`, () => run(async (signal) => {
+        status2.textContent = `\u6B63\u5728\u83B7\u53D6 ${source2.name} \u4E0B\u8F7D\u5730\u5740\u2026`;
+        const href2 = await resolveArchive(source2, options.fetchManifest, signal);
+        cancelled2();
+        if (!canAuto) {
+          if (!options.download) throw new Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
+          await options.download(href2, source2.filename, signal);
+          status2.textContent = canBuild ? "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA" : `\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\u3002${capability.reason}`;
+          return;
+        }
+        label.textContent = "\u6B63\u5728\u4E0B\u8F7D";
+        let archive2;
+        try {
+          archive2 = await options.downloadArchive(href2, source2.filename, signal, (bytes, total) => {
+            status2.textContent = `${source2.name} \xB7 \u5DF2\u4E0B\u8F7D ${(bytes / 1024 / 1024).toFixed(1)} MiB${total ? ` / ${(total / 1024 / 1024).toFixed(1)} MiB` : ""}`;
+            if (total && total >= bytes) {
+              progress.max = total;
+              progress.value = bytes;
+            } else progress.removeAttribute("value");
+          });
+        } catch (error) {
+          if (error.name !== "AbortError") fallback.hidden = false;
+          throw error;
+        }
+        try {
+          cancelled2();
+          label.textContent = "\u6B63\u5728\u6784\u5EFA";
+          await buildFile(archive2.file, source2.id);
+        } catch (error) {
+          if (error.name !== "AbortError") fallback.hidden = false;
+          throw error;
+        } finally {
+          await archive2.cleanup();
+        }
+      }));
+      start.setAttribute("aria-label", start.textContent);
+      start.textContent = canAuto ? "\u4E0B\u8F7D\u5E76\u6784\u5EFA" : "\u4E0B\u8F7D\u539F\u59CB\u6570\u636E";
+      const fallback = button2("\u4EC5\u4E0B\u8F7D\u539F\u59CB\u6570\u636E", () => run(async (signal) => {
+        const href2 = await resolveArchive(source2, options.fetchManifest, signal);
+        if (!options.download) throw new Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
+        await options.download(href2, source2.filename, signal);
+        status2.textContent = "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA";
+      }));
+      fallback.hidden = true;
+      const exportButton = button2("\u5BFC\u51FA\u6570\u636E\u5E93", () => save(source2.id));
+      exportButtons.set(source2.id, exportButton);
+      card.append(el("h4", source2.name), label, start, fallback, exportButton);
+      cards.append(card);
+    }
+    const existing = el("details");
+    existing.append(el("summary", "\u5DF2\u6709\u6587\u4EF6"));
+    const fileLabel = el("label", "\u52A0\u8F7D\u5DF2\u6784\u5EFA\u6570\u636E\u5E93"), file = el("input");
     file.type = "file";
     file.accept = ".sqlite,.db";
     file.setAttribute("aria-label", "\u672C\u5730\u6570\u636E\u5E93\u6587\u4EF6");
-    let selectionGeneration = 0;
-    let expectedCatalog;
-    const checkManifestCompatibility = (manifest, selectedFile) => {
-      if (!expectedCatalog) return;
-      if (manifest.provider !== expectedCatalog.provider || manifest.source_version !== expectedCatalog.source_version || expectedCatalog.schema_version !== void 0 && manifest.schema_version !== expectedCatalog.schema_version || expectedCatalog.analyzer_version !== void 0 && manifest.analyzer_version !== expectedCatalog.analyzer_version || expectedCatalog.size_bytes !== void 0 && selectedFile.size !== expectedCatalog.size_bytes)
-        throw new Error("\u6240\u9009\u6587\u4EF6\u4E0E\u6E05\u5355\u7248\u672C\u6216\u5927\u5C0F\u4E0D\u7B26");
-    };
-    file.addEventListener("change", async () => {
-      if (!file.files?.[0]) return;
-      const generation = ++selectionGeneration;
-      const previousFile = client.selectedFile;
-      status2.textContent = "";
-      try {
-        const selectedFile = file.files[0];
-        const m = await client.open(selectedFile, { sha256: expectedCatalog?.sha256 });
-        checkManifestCompatibility(m, selectedFile);
-        if (generation === selectionGeneration) status2.textContent = `${m.provider} \xB7 ${m.source_version}`;
-      } catch (error) {
-        if (client.selectedFile !== previousFile) {
-          try {
-            if (previousFile) await client.open(previousFile);
-            else await client.close();
-          } catch (restoreError) {
-            if (generation === selectionGeneration)
-              status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}\uFF1B\u6062\u590D\u5931\u8D25\uFF1A${restoreError.message}`;
-            return;
-          }
-        }
-        if (generation === selectionGeneration) status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}`;
-      }
-    });
-    if (client.hasFile) {
-      const generation = ++selectionGeneration;
-      status2.textContent = "";
-      void client.manifest().then((m) => {
-        if (generation === selectionGeneration) status2.textContent = `${m.provider} \xB7 ${m.source_version}`;
-      }, (error) => {
-        if (generation === selectionGeneration) status2.textContent = `\u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
-      });
-    }
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    summary.textContent = "\u4E0B\u8F7D\u4E0E\u9AD8\u7EA7\u64CD\u4F5C";
-    const explanation = document.createElement("p");
-    explanation.textContent = "\u9884\u5236\u5E93\u53EF\u76F4\u63A5\u9009\u62E9\uFF1B\u539F\u59CB\u6863\u6848\u9700\u6784\u5EFA\u3002\u63D0\u4F9B\u6821\u9A8C\u503C\u65F6\uFF0C\u6309\u5757\u6838\u9A8C SHA-256\u3002";
-    const archiveLinks = document.createElement("div");
-    const archives = [
-      ["Bangumi \xB7 \u6700\u65B0\u539F\u59CB JSONL ZIP", "https://github.com/bangumi/Archive/releases/tag/archive"],
-      ["E-Hentai \xB7 RAW SQLite Zstandard", "https://github.com/URenko/e-hentai-db/releases/download/nightly/e-hentai.db.zstd"],
-      ["MangaBaka \xB7 RAW SQLite gzip-tar", "https://api.mangabaka.org/v1/database/series.sqlite.tar.gz"],
-      ["BookWalker \xB7 RAW SQLite Zstandard", "https://static.bookwalker.com/data/bkwk-db.sqlite.zst"]
-    ];
-    for (const [label, href2] of archives) {
-      const link = document.createElement("a");
-      link.textContent = label;
-      link.href = href2;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      if (label.startsWith("Bangumi")) link.addEventListener("click", async (event) => {
-        event.preventDefault();
-        status2.textContent = "";
-        try {
-          if (!options.fetchManifest) throw new Error("\u7F3A\u5C11\u8DE8\u57DF\u8BF7\u6C42\u6743\u9650");
-          const latest = await options.fetchManifest("https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json", panelController.signal);
-          const href3 = url(latest.browser_download_url);
-          if (!href3.startsWith("https://github.com/bangumi/Archive/releases/download/")) throw new Error("\u6765\u6E90\u5730\u5740\u4E0D\u7B26");
-          await startDownload(href3, "bangumi-source.zip");
-          status2.textContent = "\u539F\u59CB\u6863\u6848\u5DF2\u4E0B\u8F7D";
-        } catch (error) {
-          status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
-        }
-      });
-      archiveLinks.append(link, document.createTextNode(" \xB7 "));
-    }
-    const address = document.createElement("input");
-    address.type = "url";
-    address.placeholder = "\u9884\u5236\u6570\u636E\u5E93\u6216\u6E05\u5355 URL";
-    address.addEventListener("input", () => {
-      expectedCatalog = void 0;
-    });
-    const download2 = document.createElement("button");
-    download2.type = "button";
-    download2.textContent = "\u4E0B\u8F7D\u6570\u636E\u5E93";
-    const cancelDownload = document.createElement("button");
-    cancelDownload.type = "button";
-    cancelDownload.textContent = "\u53D6\u6D88\u4E0B\u8F7D";
-    cancelDownload.disabled = true;
-    let downloadController;
-    const startDownload = async (href2, filename) => {
-      if (!options.download) throw new Error("\u672A\u914D\u7F6E GM_download");
-      downloadController?.abort();
-      downloadController = new AbortController();
-      cancelDownload.disabled = false;
-      try {
-        await options.download(href2, filename, downloadController.signal);
-      } finally {
-        cancelDownload.disabled = true;
-        downloadController = void 0;
+    fileLabel.append(file);
+    file.onchange = () => {
+      if (file.files?.[0]) {
+        const selected = file.files[0];
+        void run(() => load(selected));
       }
     };
-    cancelDownload.addEventListener("click", () => downloadController?.abort());
-    download2.addEventListener("click", async () => {
-      try {
-        const href2 = url(address.value);
-        status2.textContent = "";
-        await startDownload(href2, "catalog.sqlite");
-        status2.textContent = "\u4E0B\u8F7D\u5B8C\u6210\uFF0C\u8BF7\u9009\u62E9\u6587\u4EF6";
-      } catch (error) {
-        status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
-      }
-    });
-    const loadManifest = document.createElement("button");
-    loadManifest.type = "button";
-    loadManifest.textContent = "\u8BFB\u53D6\u6E05\u5355";
-    const choices = document.createElement("select");
-    choices.setAttribute("aria-label", "\u9884\u5236\u76EE\u5F55");
-    const manifestDownload = document.createElement("button");
-    manifestDownload.type = "button";
-    manifestDownload.textContent = "\u4E0B\u8F7D\u6240\u9009\u76EE\u5F55";
-    loadManifest.addEventListener("click", async () => {
-      try {
-        choices.replaceChildren();
-        if (!options.fetchManifest) throw new Error("\u672A\u914D\u7F6E\u8DE8\u57DF\u6E05\u5355\u8BFB\u53D6");
-        const catalogs = validatePreparedManifest(await options.fetchManifest(url(address.value), panelController.signal));
-        for (const item of catalogs) {
-          const opt = document.createElement("option");
-          opt.value = item.url;
-          const info = [
-            item.provider,
-            item.source_version,
-            item.size_bytes ? `${(item.size_bytes / 1024 / 1024).toFixed(1)} MiB` : "",
-            item.sha256 ? `\u6E05\u5355 SHA-256 ${item.sha256.slice(0, 12)}\u2026` : "",
-            `schema ${item.schema_version ?? SCHEMA_VERSION}`,
-            `analyzer ${item.analyzer_version ?? ANALYZER_VERSION}`
-          ].filter(Boolean).join(" \xB7 ");
-          opt.textContent = info;
-          opt.dataset.filename = `${item.provider}.sqlite`;
-          choices.append(opt);
-          opt.dataset.provider = item.provider;
-          opt.dataset.sourceVersion = item.source_version;
-          if (item.sha256 !== void 0) opt.dataset.sha256 = item.sha256;
-          if (item.size_bytes !== void 0) opt.dataset.sizeBytes = String(item.size_bytes);
-          if (item.schema_version !== void 0) opt.dataset.schemaVersion = String(item.schema_version);
-          if (item.analyzer_version !== void 0) opt.dataset.analyzerVersion = String(item.analyzer_version);
-        }
-        status2.textContent = catalogs.length ? "\u9009\u62E9\u9884\u5236\u76EE\u5F55" : "\u6E05\u5355\u6CA1\u6709\u9884\u5236\u76EE\u5F55\uFF1B\u8BF7\u4F7F\u7528 CLI \u6784\u5EFA";
-      } catch (error) {
-        status2.textContent = `\u6E05\u5355\u8BFB\u53D6\u5931\u8D25\uFF1A${error.message}`;
-      }
-    });
-    manifestDownload.addEventListener("click", async () => {
-      try {
-        if (!choices.value) throw new Error("\u6CA1\u6709\u53EF\u4E0B\u8F7D\u7684\u76EE\u5F55");
-        status2.textContent = "";
-        const selected = choices.selectedOptions[0];
-        await startDownload(url(choices.value), selected?.dataset.filename || "catalog.sqlite");
-        expectedCatalog = selected ? {
-          provider: selected.dataset.provider,
-          source_version: selected.dataset.sourceVersion,
-          sha256: selected.dataset.sha256,
-          size_bytes: selected.dataset.sizeBytes === void 0 ? void 0 : Number(selected.dataset.sizeBytes),
-          schema_version: selected.dataset.schemaVersion === void 0 ? void 0 : Number(selected.dataset.schemaVersion),
-          analyzer_version: selected.dataset.analyzerVersion === void 0 ? void 0 : Number(selected.dataset.analyzerVersion)
-        } : void 0;
-        status2.textContent = "\u4E0B\u8F7D\u5B8C\u6210\uFF0C\u8BF7\u9009\u62E9\u6587\u4EF6";
-      } catch (error) {
-        status2.textContent = `\u4E0B\u8F7D\u5931\u8D25\uFF1A${error.message}`;
-      }
-    });
-    const advanced = document.createElement("div");
-    const capability = document.createElement("p");
-    const detected = browserBuildCapability();
-    const buildConfigured = Boolean(options.buildWorkerUrl || options.buildWorkerFactory || options.builder);
-    capability.textContent = buildConfigured ? detected.reason : "\u672A\u914D\u7F6E\u6784\u5EFA Worker\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI\u3002";
-    advanced.append(capability);
-    let builder = options.builder;
-    const ownsBuilder = !builder;
-    if ((options.buildWorkerUrl || options.buildWorkerFactory || builder) && detected.available) {
-      builder ??= new BrowserCatalogBuilder(options.buildWorkerUrl, {
-        workerFactory: options.buildWorkerFactory,
-        initOptions: options.buildInitOptions
-      });
-      const source = document.createElement("select");
-      source.setAttribute("aria-label", "\u6784\u5EFA\u6765\u6E90");
-      for (const id of ["bangumi", "ehentai", "mangabaka", "bookwalker"]) {
-        const option2 = document.createElement("option");
-        option2.value = id;
-        option2.textContent = id;
-        source.append(option2);
-      }
-      const archive = document.createElement("input");
-      archive.type = "file";
-      archive.setAttribute("aria-label", "\u6765\u6E90\u6863\u6848");
-      const version = document.createElement("input");
-      version.placeholder = "\u6765\u6E90\u7248\u672C\uFF08\u53EF\u9009\uFF09";
-      const build = document.createElement("button");
-      build.type = "button";
-      build.textContent = "\u6784\u5EFA\u672C\u5730\u76EE\u5F55";
-      const cancel = document.createElement("button");
-      cancel.type = "button";
-      cancel.textContent = "\u53D6\u6D88\u6784\u5EFA\u6216\u5BFC\u51FA";
-      const exportButton = document.createElement("button");
-      exportButton.type = "button";
-      exportButton.textContent = "\u5206\u5757\u5BFC\u51FA";
-      const openButton = document.createElement("button");
-      openButton.type = "button";
-      openButton.textContent = "\u6253\u5F00\u6784\u5EFA\u7ED3\u679C";
-      build.addEventListener("click", async () => {
-        try {
-          if (!archive.files?.[0]) throw new Error("\u8BF7\u9009\u62E9\u6765\u6E90\u6863\u6848");
-          status2.textContent = "";
-          build.disabled = true;
-          const result = await builder.build(archive.files[0], source.value, version.value);
-          status2.textContent = `\u6784\u5EFA\u5B8C\u6210\uFF1A${result.provider} \xB7 ${result.count} \u6761\uFF1B\u53EF\u6253\u5F00\u6216\u5BFC\u51FA`;
-        } catch (error) {
-          status2.textContent = `\u6784\u5EFA\u5931\u8D25\uFF1A${error.message}`;
-        } finally {
-          build.disabled = false;
-        }
-      });
-      cancel.addEventListener("click", () => {
-        builder.cancel();
-        status2.textContent = "\u5DF2\u53D6\u6D88";
-      });
-      openButton.addEventListener("click", async () => {
-        try {
-          const manifest = await client.open(await builder.file());
-          status2.textContent = `${manifest.provider} \xB7 ${manifest.source_version}`;
-        } catch (error) {
-          status2.textContent = `\u6253\u5F00\u5931\u8D25\uFF1A${error.message}`;
-        }
-      });
-      exportButton.addEventListener("click", async () => {
-        try {
-          if (!builder.ready) throw new Error("\u6CA1\u6709\u5DF2\u5B8C\u6210\u7684\u76EE\u5F55");
-          if (typeof globalThis.showSaveFilePicker === "function") {
-            const handle = await globalThis.showSaveFilePicker({ suggestedName: "catalog.sqlite" });
-            status2.textContent = "";
-            await builder.exportTo(await handle.createWritable());
-            status2.textContent = "\u5BFC\u51FA\u5B8C\u6210";
-          } else {
-            const exportFile = await builder.file();
-            const objectUrl = URL.createObjectURL(exportFile);
-            exportUrls.add(objectUrl);
-            const anchor = document.createElement("a");
-            anchor.href = objectUrl;
-            anchor.download = "catalog.sqlite";
-            anchor.hidden = true;
-            root.append(anchor);
-            anchor.click();
-            anchor.remove();
-            exportedFiles.push(exportFile);
-            status2.textContent = "\u5DF2\u5F00\u59CB\u4E0B\u8F7D";
-          }
-        } catch (error) {
-          status2.textContent = `\u5BFC\u51FA\u5931\u8D25\uFF1A${error.message}`;
-        }
-      });
-      advanced.append(source, archive, version, build, cancel, openButton, exportButton);
+    const rawDetails = el("details");
+    rawDetails.append(el("summary", "\u4ECE\u5DF2\u4E0B\u8F7D\u7684\u539F\u59CB\u6570\u636E\u6784\u5EFA"));
+    const source = el("select");
+    source.setAttribute("aria-label", "\u6784\u5EFA\u6765\u6E90");
+    for (const item of catalogSources) {
+      const option2 = el("option", item.name);
+      option2.value = item.id;
+      source.append(option2);
     }
-    details.append(summary, explanation, archiveLinks, address, download2, cancelDownload, loadManifest, choices, manifestDownload, advanced);
-    root.append(heading, file, status2, details);
+    const archive = el("input");
+    archive.type = "file";
+    archive.setAttribute("aria-label", "\u6765\u6E90\u6863\u6848");
+    const build = button2("\u6784\u5EFA\u5E76\u52A0\u8F7D", () => run(async () => {
+      if (!archive.files?.[0]) throw new Error("\u8BF7\u9009\u62E9\u539F\u59CB\u6570\u636E\u6587\u4EF6");
+      await buildFile(archive.files[0], source.value);
+    }));
+    build.dataset.needsBuild = "1";
+    rawDetails.append(source, archive, build);
+    existing.append(fileLabel, rawDetails);
+    root.append(style, el("h3", "\u4E0B\u8F7D\u5E76\u5EFA\u7ACB\u672C\u5730\u6570\u636E\u5E93"), el("p", "\u9009\u62E9\u6765\u6E90\u540E\u81EA\u52A8\u4E0B\u8F7D\u3001\u6784\u5EFA\u5E76\u52A0\u8F7D\uFF0C\u65E0\u9700\u9884\u5148\u521B\u5EFA\u6587\u4EF6\u3002\u5728\u6B64\u6784\u5EFA\u7684\u5E93\u4FDD\u5B58\u5728\u5F53\u524D\u6D4F\u89C8\u5668\uFF0C\u4E5F\u53EF\u4EE5\u5BFC\u51FA\u5907\u4EFD\u3002"));
+    if (!canBuild) root.append(el("p", capability.reason));
+    root.append(cards, status2, progress, cancel, existing);
     container.append(root);
-    const exportUrls = /* @__PURE__ */ new Set();
-    const exportedFiles = [];
+    refresh();
+    const restore = async () => {
+      if (!canBuild) return;
+      let directory;
+      try {
+        directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("komga-catalog-build");
+      } catch (error) {
+        if (error.name !== "NotFoundError") status2.textContent = `\u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
+        return;
+      }
+      for (const source2 of catalogSources) {
+        if (disposed || client.hasProvider?.(source2.id)) continue;
+        try {
+          const info = JSON.parse(await (await (await directory.getFileHandle(`active-${source2.id}.json`)).getFile()).text());
+          if (info.provider !== source2.id || !/^output-[\w-]+\.sqlite$/.test(info.name)) throw new Error("\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548");
+          if (disposed) return;
+          await load(await (await directory.getFileHandle(info.name)).getFile());
+        } catch (error) {
+          if (error.name !== "NotFoundError" && !disposed) status2.textContent = `${source2.name} \u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
+        }
+      }
+      if (!disposed) refresh();
+    };
+    busy = true;
+    refresh();
+    client.restoring = restore().finally(() => {
+      client.restoring = void 0;
+      busy = false;
+      if (!disposed) refresh();
+    });
     return async () => {
-      panelController.abort();
-      downloadController?.abort();
-      if (ownsBuilder && builder) await builder.dispose();
-      else builder?.cancel();
-      for (const objectUrl of exportUrls) URL.revokeObjectURL(objectUrl);
-      exportedFiles.length = 0;
+      disposed = true;
+      controller?.abort();
+      builder?.cancel();
+      client.cancel();
+      await client.restoring;
+      await activeTask;
+      if (!options.builder) await builder?.dispose();
+      for (const href2 of exports) URL.revokeObjectURL(href2);
       root.remove();
     };
   }
   function catalogProvider(client, provider) {
-    if (!["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(provider))
-      throw new Error(`\u4E0D\u652F\u6301\u7684\u672C\u5730\u76EE\u5F55\u6765\u6E90\uFF1A${provider}`);
+    if (!["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(provider)) throw new Error(`\u4E0D\u652F\u6301\u7684\u672C\u5730\u76EE\u5F55\u6765\u6E90\uFF1A${provider}`);
     return {
       id: provider,
       capabilities: { series: provider !== "ehentai", volumes: ["bangumi", "bookwalker"].includes(provider), volumeMetadata: ["bangumi", "bookwalker"].includes(provider), gallery: provider === "ehentai", offline: true },
-      available: () => Boolean(client.file),
+      available: () => Boolean(client.restoring || (client.hasProvider ? client.hasProvider(provider) : client.file)),
       async search(query, context) {
         if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
         const abort = () => client.cancel();
@@ -3731,13 +3942,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         if (provider === "bookwalker" && /^(?:CNT|PRD)_[\w-]+$/.test(input2)) return input2;
         if (["bangumi", "mangabaka"].includes(provider) && /^\d+$/.test(input2)) return input2;
         if (provider === "ehentai" && /^[1-9]\d*:[a-f0-9]{10}$/i.test(input2)) return input2.toLowerCase();
-        const u = new URL(input2);
-        const path = u.pathname.split("/").filter(Boolean);
+        const u = new URL(input2), path = u.pathname.split("/").filter(Boolean);
         if (provider === "bangumi" && ["bgm.tv", "bangumi.tv", "chii.in"].includes(u.hostname) && path[0] === "subject" && /^\d+$/.test(path[1] ?? "")) return path[1];
         if (provider === "ehentai" && ["e-hentai.org", "exhentai.org"].includes(u.hostname) && path[0] === "g" && /^[1-9]\d*$/.test(path[1] ?? "") && /^[a-f0-9]{10}$/i.test(path[2] ?? "")) return `${path[1]}:${path[2].toLowerCase()}`;
         if (provider === "mangabaka" && ["mangabaka.org", "www.mangabaka.org"].includes(u.hostname) && ["manga", "series"].includes(path[0]) && /^\d+$/.test(path[1] ?? "")) return path[1];
-        if (provider === "bookwalker" && ["bookwalker.com", "www.bookwalker.com"].includes(u.hostname) && path[0] === "series" && /^[\w-]+$/.test(path[1] ?? ""))
-          return path[1].startsWith("CNT_") ? path[1] : `CNT_${path[1]}`;
+        if (provider === "bookwalker" && ["bookwalker.com", "www.bookwalker.com"].includes(u.hostname) && path[0] === "series" && /^[\w-]+$/.test(path[1] ?? "")) return path[1].startsWith("CNT_") ? path[1] : `CNT_${path[1]}`;
         throw new Error("\u8BE5\u6765\u6E90\u7684\u94FE\u63A5\u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u4F7F\u7528\u76EE\u5F55 ID");
       }
     };
@@ -3875,7 +4084,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       if (!assetController) throw new Error("\u79BB\u7EBF\u8D44\u6E90\u8BF7\u6C42\u5DF2\u5173\u95ED");
       return worker(name, assetController.signal);
     };
-    const client = new CatalogClient(void 0, { workerFactory: () => loadWorker("catalog-worker.js") });
+    const client = new CatalogCollection(void 0, { workerFactory: () => loadWorker("catalog-worker.js") });
     const builder = new BrowserCatalogBuilder(void 0, {
       workerFactory: () => loadWorker("catalog-build-worker.js")
     });
@@ -3888,6 +4097,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         assetController = new AbortController();
         const unmount = mountCatalogPanel(container, client, {
           download,
+          downloadArchive,
           fetchManifest,
           builder
         });
@@ -3931,13 +4141,13 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const host = document.createElement("div");
     host.id = "komga-metadata-launcher";
     host.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147482999";
-    const shadow = host.attachShadow({ mode: "open" }), button2 = document.createElement("button");
-    button2.textContent = "\u5143\u6570\u636E";
-    button2.prepend(icon("layers"));
+    const shadow = host.attachShadow({ mode: "open" }), button3 = document.createElement("button");
+    button3.textContent = "\u5143\u6570\u636E";
+    button3.prepend(icon("layers"));
     const style = document.createElement("style");
     style.textContent = "button{display:flex;align-items:center;gap:8px;font:500 13px system-ui;padding:11px 16px;cursor:pointer;border:1px solid #ffffff30;border-radius:12px;background:#4f46e5;color:#fff;box-shadow:0 6px 24px #15133d33}button:hover{background:#4338ca}button:focus-visible{outline:2px solid #a6a0ff;outline-offset:3px}svg{width:18px;height:18px}";
-    button2.addEventListener("click", launch);
-    shadow.append(style, button2);
+    button3.addEventListener("click", launch);
+    shadow.append(style, button3);
     document.body.append(host);
     return true;
   }

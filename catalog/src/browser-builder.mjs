@@ -1,5 +1,5 @@
 export function browserBuildCapability() {
-  if (!globalThis.isSecureContext) return { available: false, reason: '浏览器构建需要安全上下文；请使用原生 CLI' };
+  if (!globalThis.isSecureContext) return { available: false, reason: '当前页面使用普通 HTTP，浏览器不允许创建数据库。使用 HTTPS 后可自动构建；也可导入已构建数据库。' };
   if (!navigator.storage?.getDirectory) return { available: false, reason: '浏览器不支持 OPFS；请使用原生 CLI' };
   if (typeof Worker !== 'function') return { available: false, reason: '浏览器不支持 Worker；请使用原生 CLI' };
   return { available: true, reason: '支持四种本地来源档案；浏览器资源不足时请使用原生 CLI' };
@@ -15,7 +15,7 @@ export class BrowserCatalogBuilder {
     this.generation = 0;
     this.busy = false;
   }
-  async build(file, provider, sourceVersion) {
+  async build(file, provider, sourceVersion, onProgress) {
     if (this.busy) throw new Error('已有构建任务');
     const capability = browserBuildCapability();
     if (!capability.available) throw new Error(capability.reason);
@@ -45,7 +45,8 @@ export class BrowserCatalogBuilder {
             if (data.type === 'ready') {
               const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
               worker.postMessage(initOptions ? { type: 'build', payload } : payload);
-            } else if (data.type === 'init-error') fail(new Error(data.error));
+            } else if (data.type === 'progress') onProgress?.(data);
+            else if (data.type === 'init-error') fail(new Error(data.error));
             else if (data.error) fail(new Error(data.error));
             else if (!settled) { settled = true; resolve(data.result); }
           };
@@ -67,7 +68,7 @@ export class BrowserCatalogBuilder {
         if (generation !== this.generation) throw new DOMException('Build cancelled', 'AbortError');
         const previous = this.completed;
         if (previous) await previous.directory.removeEntry(previous.name);
-        this.completed = { directory, handle, name: outputName };
+        this.completed = { directory, handle, name: outputName, provider, result };
         return result;
       } finally {
         worker.terminate();
@@ -81,6 +82,20 @@ export class BrowserCatalogBuilder {
   async file() {
     if (!this.completed) throw new Error('没有已完成的目录');
     return this.completed.handle.getFile();
+  }
+  async persist() {
+    if (!this.completed) throw new Error('没有已完成的目录');
+    const saved = this.completed;
+    this.completed = undefined; // Already validated/loaded: retain even if saving its index fails.
+    const index = await saved.directory.getFileHandle(`active-${saved.provider}.json`, { create: true });
+    let previous;
+    try { previous = JSON.parse(await (await index.getFile()).text()); } catch { /* first commit */ }
+    const writable = await index.createWritable();
+    try { await writable.write(JSON.stringify({ name: saved.name, ...saved.result })); await writable.close(); }
+    catch (error) { await writable.abort().catch(() => {}); this.completed = undefined; throw error; }
+    this.completed = undefined; // Persisted outputs are not temporary builder-owned files.
+    if (previous?.name !== saved.name && /^output-[\w-]+\.sqlite$/.test(previous?.name ?? ''))
+      await saved.directory.removeEntry(previous.name).catch(() => {});
   }
   get ready() { return Boolean(this.completed); }
   async exportTo(writable, chunkSize = 1024 * 1024) {

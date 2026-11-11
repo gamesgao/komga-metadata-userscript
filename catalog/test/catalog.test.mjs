@@ -294,13 +294,11 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       container.id = 'panel'; document.body.append(container);
       window.unmount = mountCatalogPanel(container, window.client, { buildWorkerUrl: '/build-worker.mjs' });
     });
-    await page.locator('#panel details').evaluate(el => { el.open = true; });
-    await page.locator('#panel select').nth(1).selectOption('mangabaka');
+    await page.locator('#panel details').evaluateAll(elements => elements.forEach(el => { el.open = true; }));
+    await page.getByLabel('构建来源').selectOption('mangabaka');
     await page.locator('#panel input[type=file]').nth(1).setInputFiles(inputs.mangabaka);
-    await page.getByRole('button', { name: '构建本地目录' }).click();
-    await page.getByRole('status').filter({ hasText: '构建完成' }).waitFor();
-    await page.getByRole('button', { name: '打开构建结果' }).click();
-    await page.getByRole('status').filter({ hasText: /^mangabaka · manga\.sqlite\.tar\.gz$/ }).waitFor();
+    await page.getByRole('button', { name: '构建并加载' }).click();
+    await page.getByRole('status').filter({ hasText: /^mangabaka · 已构建并加载/ }).waitFor();
     assert.equal((await page.evaluate(() => window.client.manifest())).provider, 'mangabaka');
     await page.evaluate(() => {
       window.showSaveFilePicker = async () => {
@@ -308,8 +306,8 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
         return root.getFileHandle('panel-export.sqlite', { create: true });
       };
     });
-    await page.getByRole('button', { name: '分块导出' }).click();
-    await page.getByRole('status').filter({ hasText: /^导出完成$/ }).waitFor();
+    await page.getByRole('button', { name: '导出数据库', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: /^数据库已保存$/ }).waitFor();
     assert.equal(await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory();
       const handle = await root.getFileHandle('panel-export.sqlite');
@@ -320,9 +318,19 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     }), 'mangabaka');
     await page.evaluate(() => window.unmount());
     const examples = {
+      // Same fixture catalogs will also be opened simultaneously in the collection.
       bangumi: ['フリーレン', '1'], ehentai: ['日本語', '42:abcdef1234'],
       mangabaka: ['日本語漫画', '77'], bookwalker: ['ワンパンマン', 'CNT_1']
     };
+    await page.evaluate(async () => {
+      const { CatalogCollection } = await import('/collection.mjs');
+      const { mountCatalogPanel } = await import('/panel.mjs');
+      window.collection = new CatalogCollection('/worker.mjs');
+      window.unmount = mountCatalogPanel(document.querySelector('#panel'), window.collection, { buildWorkerUrl: '/build-worker.mjs' });
+    });
+    await page.getByRole('status').filter({ hasText: /^mangabaka · 已加载$/ }).waitFor();
+    assert.equal((await page.evaluate(() => window.collection.get('mangabaka', '77'))).id, '77');
+    await page.evaluate(() => window.unmount());
     for (const [provider, [query, id]] of Object.entries(examples)) {
       await page.locator('#file').setInputFiles(catalogs[provider]);
       const result = await page.evaluate(async ({ provider, query, id }) => {
@@ -364,7 +372,13 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
         assert.equal(volume.id, 'CNT_2');
         assert.equal(volume.volume, 1);
       }
+      await page.evaluate(() => window.collection.open(document.querySelector('#file').files[0]));
     }
+    assert.deepEqual(await page.evaluate(async () => ({
+      sources:['bangumi','ehentai','mangabaka','bookwalker'].map(p=>window.collection.hasProvider(p)),
+      ids:await Promise.all([['bangumi','1'],['ehentai','42:abcdef1234'],['mangabaka','77'],['bookwalker','CNT_1']].map(async([p,id])=>(await window.collection.get(p,id)).id))
+    })),{sources:[true,true,true,true],ids:['1','42:abcdef1234','77','CNT_1']});
+    await page.evaluate(()=>window.collection.dispose());
     await writeFile(join(dir, 'wrong.db'), 'not sqlite');
     await page.locator('#file').setInputFiles(join(dir, 'wrong.db'));
     const invalid = await page.evaluate(async () => {
@@ -430,13 +444,6 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       container.id = 'blob-panel'; document.body.append(container);
       window.blobUnmount = mountCatalogPanel(container, window.blobClient, {
         builder: window.blobBuilder,
-        fetchManifest: async (_url, signal) => {
-          if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
-          return {
-            schema_version: 1, analyzer_version: 1,
-            catalogs: [{ provider: 'mangabaka', source_version: 'wrong-version', url: 'https://downloads.example/catalog.sqlite' }]
-          };
-        },
         download: async (_url, _name, signal) => {
           if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
         }
@@ -444,20 +451,17 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       return window.blobBuilder.ready;
     });
     assert.equal(blobPanelReady, true);
-    await blobPage.locator('#blob-panel details').evaluate(element => { element.open = true; });
-    await blobPage.getByPlaceholder('预制数据库或清单 URL').fill('https://downloads.example/manifest.json');
-    await blobPage.getByRole('button', { name: '读取清单' }).click();
-    await blobPage.getByRole('status').filter({ hasText: '选择预制目录' }).waitFor();
-    await blobPage.getByRole('button', { name: '下载所选目录' }).click();
-    await blobPage.getByRole('status').filter({ hasText: '下载完成，请选择文件' }).waitFor();
+    await blobPage.locator('#blob-panel details').first().evaluate(element => { element.open = true; });
     await blobPage.locator('#blob-panel input[type=file]').first().setInputFiles(catalogs.mangabaka);
-    await blobPage.getByRole('status').filter({ hasText: '打开失败：所选文件与清单版本或大小不符' }).waitFor({ timeout: 5000 });
+    await blobPage.getByRole('status').filter({ hasText: /^mangabaka · 已加载$/ }).waitFor();
+    await blobPage.locator('#blob-panel input[type=file]').first().setInputFiles(join(dir, 'wrong.db'));
+    await blobPage.getByRole('status').filter({ hasText: /^失败/ }).waitFor({ timeout: 5000 });
     assert.equal((await blobPage.evaluate(() => window.blobClient.manifest())).source_version, 'fixture-1');
     await blobPage.evaluate(() => Object.defineProperty(window, 'showSaveFilePicker', {
       value: undefined, configurable: true
     }));
     const browserDownload = blobPage.waitForEvent('download', { timeout: 5000 }).catch(() => undefined);
-    await blobPage.getByRole('button', { name: '分块导出' }).click();
+    await blobPage.getByRole('button', { name: '导出数据库', exact: true }).click();
     const exported = await browserDownload;
     assert.ok(exported, await blobPage.getByRole('status').textContent());
     const exportedPath = join(dir, 'blob-export.sqlite');
@@ -494,7 +498,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     });
     assert.equal(insecureResult.secure, false);
     assert.equal(insecureResult.capability.available, false);
-    assert.match(insecureResult.capability.reason, /安全上下文/);
+    assert.match(insecureResult.capability.reason, /普通 HTTP/);
     assert.ok(insecureResult.hits.some(hit => hit.id === '1'));
   } finally {
     if (browser) await browser.close();

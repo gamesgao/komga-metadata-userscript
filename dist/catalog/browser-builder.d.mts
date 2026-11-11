@@ -13,7 +13,8 @@ export function browserBuildCapability(): BuildCapability;
 export class BrowserCatalogBuilder {
   constructor(workerUrl?: string | URL, options?: BuildWorkerOptions);
   readonly ready: boolean;
-  build(file: File, provider: string, sourceVersion?: string): Promise<BuildResult>;
+  build(file: File, provider: string, sourceVersion?: string, onProgress?: (data: { phase: string; count?: number; total?: number }) => void): Promise<BuildResult>;
+  persist(): Promise<void>;
   file(): Promise<File>;
   exportTo(writable: WritableTarget, chunkSize?: number): Promise<number>;
   cancel(): void;

@@ -1,5 +1,14 @@
 # Validation ledger
 
+## v0.7.0 local database workflow
+
+- PASS: 91 core tests, 21 bundled browser tests, six catalog tests (including actual browser Workers). File-input bubbling cancel preserves dialog/query state while dialog Escape still closes. Four preset downloads replace URL/manifest/checksum forms; external-file import is secondary.
+- Catalog tests exercise four generated archive formats, paged reads, invalid replacement, cancellation during reader startup, persistence across panel destruction/recreation, four simultaneously loaded providers, export, and actual insecure-origin readonly search. Download tests cover status=0 at stream start, final HTTP rejection/length mismatch and abort cleanup.
+- PASS: `acceptance/catalog_workflow.py`, real Tampermonkey plus isolated Komga, public complete BookWalker archive -> stream to OPFS -> actual WASM build (14,379 entries) -> automatic load. External full Bangumi catalog coexists; input cancel events preserve the dialog and loaded catalogs. After reload, saved BookWalker automatically restores and 葬送 returns three local matches.
+- The native workflow dispatches the browser input cancel event; it does not automate the OS file chooser's Cancel button. Full-browser builds of the other three providers are not claimed. Source HEAD responses can differ from GET (BookWalker HEAD 404/MangaBaka HEAD 403 while real GET succeeds); verification uses actual GET/download, not HEAD as proof of availability.
+- Stream integration found and fixed Tampermonkey onloadstart status=0 handling. The real-login harness now checks filled values silently and corrects extension/autofocus interference before submitting; failure screenshots redact login fields.
+- Raw artifacts, source archives, full catalogs, test account configuration and screenshots remain uncommitted under `.runtime`.
+
 ## v0.6.2 remove EH formatting controls
 
 - Regression asserts zero EH formatting sections, prefix selectors, translation switches, duplicate translation tables or attribution links in the operation UI. Fixed compact translation continues to preserve raw source records, unknown tags and named-entity prefixes; legacy prefix settings cannot select an alternate policy.

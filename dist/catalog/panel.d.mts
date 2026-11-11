@@ -6,6 +6,7 @@ export interface PreparedCatalog {
 }
 export type CatalogProviderId = 'bangumi' | 'ehentai' | 'mangabaka' | 'bookwalker';
 export interface PanelOptions {
+  downloadArchive?: (url: string, filename: string, signal: AbortSignal, progress: (bytes: number, total?: number) => void) => Promise<{ file: File; cleanup(): Promise<void> }>;
   download?: (url: string, filename: string, signal: AbortSignal) => Promise<void>;
   fetchManifest?: (url: string, signal: AbortSignal) => Promise<unknown>;
   buildWorkerUrl?: string | URL;

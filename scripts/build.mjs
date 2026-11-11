@@ -56,7 +56,7 @@ const header = `// ==UserScript==
 // @connect      mangabaka.dev
 // @connect      mangabaka.org
 // @connect      *
-// @run-at       document-idle
+${base && new URL(base).hostname === '127.0.0.1' ? '// @connect      127.0.0.1\n' : ''}// @run-at       document-idle
 // ==/UserScript==`;
 const license = await readFile('LICENSE', 'utf8');
 await writeFile(`dist/${metaFilename}`, `${header}\n`);

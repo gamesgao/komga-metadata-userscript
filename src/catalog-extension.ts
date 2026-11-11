@@ -1,4 +1,5 @@
-import { CatalogClient } from '../catalog/src/client.mjs';
+import { CatalogCollection } from '../catalog/src/collection.mjs';
+import { downloadArchive } from './catalog-download';
 import { BrowserCatalogBuilder } from '../catalog/src/browser-builder.mjs';
 import { catalogProvider, mountCatalogPanel } from '../catalog/src/panel.mjs';
 import type { CatalogExtension } from './model';
@@ -131,7 +132,7 @@ export function createCatalogExtension(): CatalogExtension {
     if (!assetController) throw new Error('离线资源请求已关闭');
     return worker(name, assetController.signal);
   };
-  const client = new CatalogClient(undefined, { workerFactory: () => loadWorker('catalog-worker.js') });
+  const client = new CatalogCollection(undefined, { workerFactory: () => loadWorker('catalog-worker.js') });
   const builder = new BrowserCatalogBuilder(undefined, {
     workerFactory: () => loadWorker('catalog-build-worker.js')
   });
@@ -143,7 +144,7 @@ export function createCatalogExtension(): CatalogExtension {
       mounted = true;
       assetController = new AbortController();
       const unmount = mountCatalogPanel(container, client, {
-        download, fetchManifest, builder
+        download, downloadArchive, fetchManifest, builder
       });
       return async () => {
         assetController?.abort();
