@@ -11,6 +11,8 @@ export interface MetadataRecord {
   status?: 'ONGOING' | 'ENDED' | 'HIATUS' | 'ABANDONED';
   ageRating?: number; releaseDate?: string; isbn?: string; volume?: number;
   tags: string[]; genres: string[]; authors: Author[]; covers: Cover[];
+  /** Explicit EH translation projection; raw source tags remain untouched. */
+  translatedTags?: string[];
   links: Link[]; books?: MetadataRecord[]; raw: unknown;
   warnings?: string[];
 }

@@ -23,7 +23,8 @@ export function languageFields(r: MetadataRecord, languages: AcceptedLanguage[])
   values.alternateTitles = titles.map(t => ({ title: t.text, label: t.language || t.type }));
   if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = undefined;
   if (r.publisher && !accepted(r.publisher, undefined, languages)) values.publisher = undefined;
-  values.tags = r.tags.filter(t => accepted(t, undefined, languages));
+  // Explicit EH Chinese-tag output is independent of title/text language selection.
+  values.tags = r.translatedTags ?? r.tags.filter(t => accepted(t, undefined, languages));
   values.genres = r.genres.filter(t => accepted(t, undefined, languages));
   values.authors = r.authors.flatMap(a => {
     const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];

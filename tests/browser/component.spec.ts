@@ -424,6 +424,37 @@ test('preview retry cannot lose a book field lock guard after an invalid edit', 
   expect(patches).toEqual([]); expect(book.metadata.tags).toEqual([]);
 });
 
+async function ehFixture(page: import('@playwright/test').Page) {
+  await install(page);
+  await page.route('https://api.e-hentai.org/api.php', route => route.fulfill({ json:{gmetadata:[{gid:1,token:'aaaaaaaaaa',title:'Japanese gallery',title_jpn:'日本語の資料',tags:['female:glasses','male:glasses','parody:test','other:unlisted']}]},headers:{'Access-Control-Allow-Origin':'*'} }));
+  await page.getByRole('button',{name:'元数据',exact:true}).click(); await page.getByText('通过链接或 ID 读取',{exact:true}).click();
+  await page.getByLabel('来源',{exact:true}).selectOption('ehentai'); await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('1:aaaaaaaaaa'); await page.getByRole('button',{name:'读取',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'ehentai · 日本語の資料'})).toBeVisible();
+  for(const field of await page.locator('.field-grid input:not([data-language])').all()) await field.setChecked(await field.getAttribute('aria-label')==='标签');
+}
+const ehDictionary={version:7,head:{sha:'fixture'},data:[{namespace:'female',data:{glasses:{name:'眼镜👓'}}},{namespace:'male',data:{glasses:{name:'眼镜👓'}}},{namespace:'parody',data:{test:{name:'作品'}}}]};
+test('EH Chinese tags: compact/preserve preview, cached dictionary, Japanese titles, actual writes and locked book',async({page})=>{
+  series.metadata.tags=['female:glasses','manual'];book.metadata.tagsLock=true;
+  await ehFixture(page);let downloads=0;
+  await page.route('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json',route=>{downloads++;return route.fulfill({json:ehDictionary,headers:{'Access-Control-Allow-Origin':'*'}})});
+  await page.getByText('接受的资料语言',{exact:true}).click();for(const box of await page.locator('.language-options input').all())await box.setChecked(await box.getAttribute('data-language')==='ja');
+  await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('heading',{name:'确认更改'})).toBeVisible();
+  expect(JSON.parse(await page.getByRole('textbox',{name:'标签写入值',exact:true}).inputValue())).toEqual(['眼镜','manual','parody:作品','other:unlisted']);
+  await page.getByRole('button',{name:'返回选项'}).click();await page.locator('.eh-tag-options summary').click();await page.getByLabel('标签前缀',{exact:true}).selectOption('preserve');
+  await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('heading',{name:'确认更改'})).toBeVisible();
+  expect(JSON.parse(await page.getByRole('textbox',{name:'标签写入值',exact:true}).inputValue())).toEqual(['female:眼镜','manual','male:眼镜','parody:作品','other:unlisted']);expect(downloads).toBe(1);
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(series.metadata.tags).toEqual(['female:眼镜','manual','male:眼镜','parody:作品','other:unlisted']);expect(book.metadata.tags).toEqual([]);
+});
+test('EH missing dictionary blocks all writes; opt-out restores raw tags without downloading',async({page})=>{
+  await ehFixture(page);let downloads=0;await page.route('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json',route=>{downloads++;return route.fulfill({status:502,body:'bad',headers:{'Access-Control-Allow-Origin':'*'}})});
+  await page.getByRole('button',{name:'生成预览'}).click();await expect(page.locator('.status[role=status]')).toContainText('中文标签词库不可用');
+  expect(patches).toEqual([]);await expect(page.getByRole('button',{name:'应用',exact:true})).toBeDisabled();
+  await page.locator('.eh-tag-options summary').click();await page.getByLabel('将 EH 标签译为中文并写入',{exact:true}).uncheck();
+  await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('heading',{name:'确认更改'})).toBeVisible();expect(downloads).toBe(1);
+  for(const box of await page.getByRole('textbox',{name:'标签写入值',exact:true}).all()) expect(JSON.parse(await box.inputValue())).toContain('female:glasses');
+});
+
 test('same-provider multi-select and per-column preview single/merge semantics', async ({ page }) => {
   series.metadata.summaryLock = false; series.metadata.summary = '第一简介'; book.metadata.summaryLock = false;
   await install(page);

@@ -6,17 +6,19 @@ import { Writer } from './writer';
 import { Panel } from './ui';
 import { createCatalogExtension } from './catalog-extension';
 import { icon } from './ui-style';
+import { EhTagTranslation } from './eh-tag-translation';
 declare function GM_registerMenuCommand(name: string, action: () => void): unknown;
 function activate(): boolean {
   const deployment = detectKomga(document, location);
   if (!deployment) return false;
   const transport = new GMTransport(), registry = createRegistry(transport), client = new KomgaClient(deployment);
   const writer = new Writer(client, transport);
+  const translation = new EhTagTranslation(transport);
   const catalog = createCatalogExtension();
   const launch = () => {
     if (!detectKomga(document, location)) return;
     if (document.getElementById('komga-metadata-panel')) return;
-    new Panel(registry, client, writer).mount(catalog);
+    new Panel(registry, client, writer, translation).mount(catalog);
   };
   window.addEventListener('pagehide', () => {
     void Promise.resolve(catalog.dispose()).catch(error => console.error('Catalog cleanup failed', error));

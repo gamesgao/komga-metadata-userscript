@@ -1,5 +1,12 @@
 # Validation ledger
 
+## v0.6.0 EH Chinese tags
+
+- PASS: 88 core tests and 19 actual-bundle browser tests. Added compact/full-prefix semantics, no cross-namespace fallback or tag filtering, raw-record preservation, Japanese-only text selection plus Chinese tags, current English-key replacement without deleting manual tags, persistent/expired cache, malformed/failed download fallback, cancellation and prototype-key handling.
+- Browser fixture acceptance: preview both prefix policies, one cached download, real fixture HTTP PATCH/readback, locked book preserved; missing dictionary blocks all writes and explicit opt-out restores raw tags without another download.
+- PASS real Tampermonkey + isolated Komga: `acceptance/eh_translation.py` independently fetches the official public EHT dictionary and public EH Non-H gallery 373840 metadata. Actual script translates online metadata and an existing full local EH SQLite record; both One-shot metadata targets match the preview on GET and undo restores original English/manual tags. Source title remains unchanged and Japanese-only language selection does not discard Chinese tags. No mocked provider/dictionary responses in this native acceptance.
+- Actual examples include `parody:东方project`, `character:火焰猫燐`, `character:古明地觉`, `language:日语`. Dictionary names without a Chinese variant remain as supplied, not invented translations. Komga normalizes tag casing. Native screenshots/reports stay ignored under `.runtime/acceptance/eh-translation/`.
+
 ## v0.5.0 field composition / language selection / One-shot shared cover
 
 - PASS: 82 core tests, 17 actual-bundle browser tests, 6 release tests, 5 catalog tests, both typechecks. Tests cover same-provider multi-select, same-value defaults still offering alternative sources, explicit array replacement versus union, per-target field choices, text composition, incompatible scalar types, accepted-language persistence and withdrawn registry entries.

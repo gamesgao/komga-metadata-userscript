@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.5.0
+// @version      0.6.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -117,11 +117,11 @@ SOFTWARE.
 
   // src/transport.ts
   var storage = {
-    get(key, fallback) {
-      return GM_getValue(key, fallback);
+    get(key2, fallback) {
+      return GM_getValue(key2, fallback);
     },
-    set(key, value) {
-      GM_setValue(key, value);
+    set(key2, value) {
+      GM_setValue(key2, value);
     }
   };
   function safeUrl(input2) {
@@ -934,14 +934,14 @@ SOFTWARE.
       if (this.id === "yenpress") {
         try {
           const source = await this.t.request({ url: `${this.base}/search` }, c.signal);
-          const key = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
-          if (!key) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
+          const key2 = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
+          if (!key2) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
           const x = await json(
             this.t,
             "https://enterprise-search.yenpress.com/api/as/v1/engines/yenpress/search.json",
             c.signal,
             { query: q, filters: { all: [{ type: "series" }] }, page: { size: 20, current: 1 } },
-            { Authorization: `Bearer ${key}` }
+            { Authorization: `Bearer ${key2}` }
           );
           return Promise.all(arr(x.results).map(async (v) => {
             const row = obj(v), url2 = required(obj(row.url).raw), id = await this.resolveLink(url2);
@@ -2001,7 +2001,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     values.alternateTitles = titles2.map((t) => ({ title: t.text, label: t.language || t.type }));
     if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = void 0;
     if (r.publisher && !accepted(r.publisher, void 0, languages)) values.publisher = void 0;
-    values.tags = r.tags.filter((t) => accepted(t, void 0, languages));
+    values.tags = r.translatedTags ?? r.tags.filter((t) => accepted(t, void 0, languages));
     values.genres = r.genres.filter((t) => accepted(t, void 0, languages));
     values.authors = r.authors.flatMap((a) => {
       const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];
@@ -2064,6 +2064,99 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     return { record: { ...records[0], covers: covers.map((c) => c.cover) }, values, used, options, covers };
   }
 
+  // src/eh-tag-translation.ts
+  var dictionaryUrl = "https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json";
+  var dictionaryKey = "eh-tag-dictionary-v1";
+  var ttl = 24 * 60 * 60 * 1e3;
+  var compactNamespaces = /* @__PURE__ */ new Set(["female", "male", "mixed", "location", "other", "tag"]);
+  var key = (s) => s.trim().toLowerCase();
+  function object(v) {
+    return Boolean(v && typeof v === "object" && !Array.isArray(v));
+  }
+  function parseDictionary(text2) {
+    if (text2.length > 32 * 1024 * 1024) throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u8FC7\u5927");
+    let db;
+    try {
+      db = JSON.parse(text2);
+    } catch {
+      throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u4E0D\u662F\u6709\u6548 JSON");
+    }
+    if (!object(db) || !Array.isArray(db.data)) throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u7ED3\u6784\u4E0D\u7B26");
+    const names = /* @__PURE__ */ Object.create(null);
+    for (const group of db.data) {
+      if (!object(group) || typeof group.namespace !== "string" || !object(group.data)) throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u5206\u533A\u4E0D\u7B26");
+      const ns = key(group.namespace), entries = /* @__PURE__ */ Object.create(null);
+      for (const [tag, info] of Object.entries(group.data)) {
+        if (object(info) && typeof info.name === "string" && info.name.trim()) entries[key(tag)] = info.name.trim();
+      }
+      if (ns && Object.keys(entries).length) names[ns] = entries;
+    }
+    if (!Object.keys(names).length) throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u4E3A\u7A7A");
+    const head = object(db.head) ? db.head : {};
+    return { names, revision: typeof head.sha === "string" ? head.sha : `schema-${String(db.version ?? "unknown")}` };
+  }
+  function validCache(v) {
+    return object(v) && v.format === 1 && typeof v.checkedAt === "number" && Number.isFinite(v.checkedAt) && typeof v.revision === "string" && object(v.names) && Object.keys(v.names).length > 0 && Object.values(v.names).every((g) => object(g) && Object.values(g).every((n) => typeof n === "string" && n.trim()));
+  }
+  var EhTagTranslation = class {
+    constructor(transport, store = storage, now = Date.now) {
+      this.transport = transport;
+      this.store = store;
+      this.now = now;
+    }
+    cache;
+    async load(signal) {
+      cancelled(signal);
+      if (!this.cache) {
+        const saved = this.store.get(dictionaryKey, void 0);
+        if (validCache(saved)) this.cache = saved;
+      }
+      if (this.cache && this.now() - this.cache.checkedAt >= 0 && this.now() - this.cache.checkedAt < ttl) return { revision: this.cache.revision };
+      try {
+        const response = await this.transport.request({ url: dictionaryUrl }, signal);
+        cancelled(signal);
+        if (response.status < 200 || response.status >= 300) throw new MetadataError("http", `\u6807\u7B7E\u8BCD\u5E93 HTTP ${response.status}`);
+        const parsed = parseDictionary(response.text), next = { format: 1, checkedAt: this.now(), ...parsed };
+        cancelled(signal);
+        this.cache = next;
+        try {
+          this.store.set(dictionaryKey, next);
+        } catch {
+          return { revision: next.revision, warning: "\u8BCD\u5E93\u672A\u80FD\u6301\u4E45\u7F13\u5B58\uFF0C\u672C\u6B21\u4ECD\u53EF\u7FFB\u8BD1" };
+        }
+        return { revision: next.revision };
+      } catch (error) {
+        cancelled(signal);
+        if (this.cache) return { revision: this.cache.revision, warning: "\u8BCD\u5E93\u66F4\u65B0\u5931\u8D25\uFF0C\u7EE7\u7EED\u4F7F\u7528\u5DF2\u6709\u7F13\u5B58" };
+        throw new MetadataError("unavailable", `\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u4E0D\u53EF\u7528\uFF1A${error instanceof Error ? error.message : String(error)}\uFF1B\u53EF\u91CD\u8BD5\u6216\u5173\u95ED EH \u6807\u7B7E\u7FFB\u8BD1`);
+      }
+    }
+    project(record2, style) {
+      const replacements = /* @__PURE__ */ new Map();
+      if (record2.provider !== "ehentai") return { record: record2, replacements, matched: 0 };
+      if (!this.cache) throw new MetadataError("unavailable", "\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u5C1A\u672A\u52A0\u8F7D");
+      let matched = 0;
+      const translatedTags = record2.tags.map((raw) => {
+        const split = raw.indexOf(":");
+        if (split < 1) return raw;
+        const ns = key(raw.slice(0, split)), tag = key(raw.slice(split + 1));
+        const group = Object.hasOwn(this.cache.names, ns) ? this.cache.names[ns] : void 0;
+        const name = group && Object.hasOwn(group, tag) ? group[tag] : void 0;
+        if (!name) return raw;
+        const text2 = compactNamespaces.has(ns) ? name.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "").trim() : name;
+        if (!text2) return raw;
+        const translated = style === "compact" && compactNamespaces.has(ns) ? text2 : `${ns}:${text2}`;
+        replacements.set(key(raw), key(translated));
+        matched++;
+        return translated;
+      });
+      return { record: { ...record2, translatedTags }, replacements, matched };
+    }
+  };
+  function translateExisting(values, replacements) {
+    return values.map((v) => typeof v === "string" ? replacements.get(key(v)) ?? v : v);
+  }
+
   // src/ui.ts
   var labels = { title: "\u6807\u9898\uFF08\u9ED8\u8BA4\u4E0D\u6539\uFF09", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
   function element(tag, text2) {
@@ -2119,10 +2212,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     return value;
   }
   var Panel = class {
-    constructor(registry, client, writer) {
+    constructor(registry, client, writer, translation) {
       this.registry = registry;
       this.client = client;
       this.writer = writer;
+      this.translation = translation;
       if (this.settings.sourceMode !== void 0 || this.settings.offlineSources !== void 0) {
         if (this.settings.sourceMode === "offline" && this.settings.offlineSources) this.settings.sources = this.settings.offlineSources;
         delete this.settings.sourceMode;
@@ -2260,6 +2354,34 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         i.onchange = () => this.invalidate();
       }
       choices.append(fieldGrid);
+      const tagOptions = element("details");
+      tagOptions.className = "eh-tag-options";
+      tagOptions.append(element("summary", "EH \u4E2D\u6587\u6807\u7B7E"));
+      const translate = input("\u5C06 EH \u6807\u7B7E\u8BD1\u4E3A\u4E2D\u6587\u5E76\u5199\u5165", tagOptions, "checkbox");
+      translate.checked = this.settings.ehTagTranslation !== false;
+      translate.parentElement.className = "check-label";
+      const prefixLabel = element("label", "\u6807\u7B7E\u524D\u7F00"), prefixes = element("select");
+      prefixes.setAttribute("aria-label", "\u6807\u7B7E\u524D\u7F00");
+      option(prefixes, "compact", "\u7B80\u6D01\uFF1A\u53BB\u6389\u63CF\u8FF0\u7C7B\u524D\u7F00");
+      option(prefixes, "preserve", "\u4FDD\u7559\u5168\u90E8\u524D\u7F00");
+      prefixes.value = this.settings.ehTagPrefixes ?? "compact";
+      prefixLabel.append(prefixes);
+      const credit = element("a", "EhTagTranslation \xB7 CC BY-NC-SA 3.0");
+      credit.href = "https://github.com/EhTagTranslation/Database";
+      credit.target = "_blank";
+      credit.rel = "noopener noreferrer";
+      tagOptions.append(prefixLabel, element("p", "\u4EC5 EH \u6765\u6E90\uFF1B\u4E0E\u8D44\u6599\u8BED\u8A00\u9009\u62E9\u72EC\u7ACB\u3002\u672A\u547D\u4E2D\u4FDD\u7559\u539F\u6587\uFF0C\u4E0D\u5220\u6807\u7B7E\u3002"), credit);
+      choices.append(tagOptions);
+      translate.onchange = () => {
+        this.settings.ehTagTranslation = translate.checked;
+        storage.set("settings-v1", this.settings);
+        this.invalidate();
+      };
+      prefixes.onchange = () => {
+        this.settings.ehTagPrefixes = prefixes.value;
+        storage.set("settings-v1", this.settings);
+        this.invalidate();
+      };
       this.propagate = input("\u5C06\u4F5C\u8005\u540C\u6B65\u5230\u7CFB\u5217\u5185\u6240\u6709\u4E66\u7C4D", choices, "checkbox");
       this.propagate.checked = false;
       this.propagate.parentElement.className = "check-label";
@@ -2369,6 +2491,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     selected;
     selections = [];
     merged;
+    tagReplacements = /* @__PURE__ */ new Map();
     sameWork = false;
     plan;
     seriesId;
@@ -2431,6 +2554,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.applyButton.disabled = this.busy || this.finishing || !this.plan || !this.plan.cover && !this.preview.querySelector("input[data-edit][data-field]:checked");
     }
     invalidate() {
+      this.tagReplacements.clear();
       for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
       this.previewUrls.clear();
       this.plan = void 0;
@@ -2614,8 +2738,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.sameWork = false;
       this.renderSelection();
     }
-    removeSelection(key) {
-      this.selections = this.selections.filter((s) => sourceKey(s.record) !== key);
+    removeSelection(key2) {
+      this.selections = this.selections.filter((s) => sourceKey(s.record) !== key2);
       this.sameWork = false;
       this.renderSelection();
     }
@@ -2695,6 +2819,24 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       if (!this.selected || !this.seriesId) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
       if (this.selections.length > 1 && !this.sameWork) throw new MetadataError("verification", "\u8BF7\u5148\u786E\u8BA4\u9009\u4E2D\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C");
       if (currentSeries(location, document) !== this.seriesId) throw new MetadataError("conflict", "\u9875\u9762\u7CFB\u5217\u53D8\u5316\uFF0C\u8BF7\u5173\u95ED\u540E\u91CD\u65B0\u542F\u52A8");
+      let tagNote = "";
+      if (this.settings.ehTagTranslation !== false && this.fields.get("tags")?.checked && this.selections.some((s) => s.record.provider === "ehentai")) {
+        this.status.textContent = "\u6B63\u5728\u51C6\u5907\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u2026";
+        const loaded = await this.translation.load(this.signal);
+        let matched = 0, total = 0;
+        const records = this.selections.map(({ record: record2 }) => {
+          const projected = this.translation.project(record2, this.settings.ehTagPrefixes ?? "compact");
+          if (record2.provider === "ehentai") total += record2.tags.length;
+          matched += projected.matched;
+          for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
+          return projected.record;
+        });
+        this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages);
+        this.selected = this.merged.record;
+        tagNote = `EH \u4E2D\u6587\u6807\u7B7E\uFF1A${matched}/${total} \u547D\u4E2D\uFF1B\u672A\u547D\u4E2D\u4FDD\u7559\u539F\u6587\u3002${loaded.warning ?? ""}`;
+        this.status.textContent = "";
+      } else this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
+      this.selected = this.merged.record;
       this.state = await this.client.state(this.seriesId, this.signal);
       const [kind, id] = this.coverTarget.value.split(":");
       const plan = buildPlan(this.state, this.selected, {
@@ -2719,6 +2861,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       back.prepend(icon("back"));
       previewHead.append(element("h3", "\u786E\u8BA4\u66F4\u6539"), back);
       this.preview.append(previewHead);
+      if (tagNote) {
+        this.preview.append(element("p", tagNote));
+        const translations = element("details");
+        translations.className = "tag-translations";
+        translations.append(element("summary", "\u67E5\u770B\u6807\u7B7E\u7FFB\u8BD1\u5BF9\u7167"));
+        for (const [raw, translated] of this.tagReplacements) translations.append(element("div", `${raw} \u2192 ${translated}`));
+        this.preview.append(translations);
+      }
       if (plan.cover) {
         try {
           await this.coverPreview(plan.cover);
@@ -2774,7 +2924,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     fieldComposer(row, field, value, before, textarea, enabled, caption) {
       const entries = [...this.merged?.options[field] ?? []];
-      if (before !== void 0 && before !== null && before !== "" && (!Array.isArray(before) || before.length)) entries.unshift({ key: "current", provider: "\u73B0\u6709", label: "Komga \u5F53\u524D\u503C", value: before });
+      const existing = field === "tags" && Array.isArray(before) ? translateExisting(before, this.tagReplacements) : before;
+      if (existing !== void 0 && existing !== null && existing !== "" && (!Array.isArray(existing) || existing.length)) entries.unshift({ key: "current", provider: "\u73B0\u6709", label: this.tagReplacements.size && field === "tags" ? "Komga \u5F53\u524D\u503C\uFF08\u5339\u914D\u7684 EH \u6807\u7B7E\u5DF2\u7FFB\u8BD1\uFF09" : "Komga \u5F53\u524D\u503C", value: existing });
       if (!entries.length) return;
       const controls = element("div");
       controls.className = "field-compose";
@@ -3798,11 +3949,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     if (!deployment) return false;
     const transport = new GMTransport(), registry = createRegistry(transport), client = new KomgaClient(deployment);
     const writer = new Writer(client, transport);
+    const translation = new EhTagTranslation(transport);
     const catalog = createCatalogExtension();
     const launch = () => {
       if (!detectKomga(document, location)) return;
       if (document.getElementById("komga-metadata-panel")) return;
-      new Panel(registry, client, writer).mount(catalog);
+      new Panel(registry, client, writer, translation).mount(catalog);
     };
     window.addEventListener("pagehide", () => {
       void Promise.resolve(catalog.dispose()).catch((error) => console.error("Catalog cleanup failed", error));
