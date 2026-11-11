@@ -11,7 +11,7 @@ import { allLanguages, languageLabels, wantsChineseTags, languagePreferences } f
 import { EhTagTranslation, translateExisting } from './eh-tag-translation';
 interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[]; languagePriority?: AcceptedLanguage[] }
 interface SavedUndo { seriesId: string; result: Result }
-const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
+const labels: Record<Field, string> = { title: '标题', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag); if (text !== undefined) e.textContent = text; return e;
 }

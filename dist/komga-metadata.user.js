@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.9.0
+// @version      0.9.1
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -1827,7 +1827,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px
 .footer{display:flex;align-items:center;gap:10px;padding:14px 24px;border-top:1px solid var(--line);background:var(--bg);flex-shrink:0}.status{flex:1;min-width:0;font-size:12px;color:var(--muted);margin:0;max-height:90px;overflow:auto}.status[data-state=error]{color:var(--danger)}.status[data-state=busy]::before{content:'';display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite;vertical-align:middle}.status[data-state=success]{color:var(--positive);font-size:0}.status[data-state=success]::before{content:'\u2713';font-size:22px}.footer-actions{display:flex;gap:8px;align-items:center}.cancel-action[hidden]{display:none}
 .preview:empty{display:none}.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}.preview-head h3{font-size:18px;margin:0}.target-heading{font-size:12px;color:var(--muted);margin:20px 0 10px}.row{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:14px;margin:10px 0}.row>label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}.diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}.diff-caption{font-size:10px;color:var(--muted);margin-bottom:5px}.diff pre{margin:0;padding:10px;background:var(--surface);border-radius:7px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:180px;overflow:auto}.diff textarea{display:block;width:100%;min-height:92px;resize:vertical;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.row:has(input[data-field]:not(:checked)){opacity:.55}
 .settings-card{max-width:660px;margin:0 auto}.settings-card>summary{font-size:15px;color:var(--text);font-weight:600}.settings-card>label:has(input[type=password]){display:grid;gap:5px;font-size:12px;margin:14px 0;color:var(--muted)}.settings-card input[type=password]{width:100%;color:var(--text)}.settings-card>label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px;margin:18px 0}
-section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
+section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
 .cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
 .search-progress{margin-top:16px;display:grid;gap:7px;font-size:12px;color:var(--muted)}.search-progress progress{width:100%;height:7px;border:0;border-radius:4px;overflow:hidden;accent-color:var(--accent)}.search-progress progress::-webkit-progress-bar{background:var(--line)}.search-progress progress::-webkit-progress-value{background:var(--accent)}.result-group[data-state=error] .result-count{color:var(--danger)}.selected-source{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}.selected-source>span{flex:1;min-width:0;overflow-wrap:anywhere}.selected-source button{padding:4px 7px;font-size:11px}.merge-rules{border-top:1px solid var(--line);margin:12px 0;padding-top:4px}.merge-rules>p{font-size:12px;color:var(--muted)}.merge-rules .field-label{grid-template-columns:90px minmax(0,1fr);align-items:center}
 .field-compose{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:10px 0}.field-source-picks{grid-column:1/-1}.field-source-picks label{display:flex;align-items:flex-start;gap:8px;margin-top:8px;overflow-wrap:anywhere;font-size:12px;line-height:1.5}.field-source-picks input{flex-shrink:0}.language-options p{font-size:12px;color:var(--muted);line-height:1.6}.language-list{display:grid;gap:6px;margin:12px 0}.language-row{display:flex;align-items:center;gap:6px}.language-row label{flex:1;display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.language-row button{padding:4px 10px;min-height:30px}
@@ -2179,7 +2179,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   }
 
   // src/ui.ts
-  var labels = { title: "\u6807\u9898\uFF08\u9ED8\u8BA4\u4E0D\u6539\uFF09", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
+  var labels = { title: "\u6807\u9898", summary: "\u7B80\u4ECB", publisher: "\u51FA\u7248\u793E", language: "\u8BED\u8A00", status: "\u72B6\u6001", ageRating: "\u5E74\u9F84", tags: "\u6807\u7B7E", genres: "\u7C7B\u578B", links: "\u94FE\u63A5", alternateTitles: "\u522B\u540D", authors: "\u4F5C\u8005", releaseDate: "\u53D1\u884C\u65E5", isbn: "ISBN" };
   function element(tag, text2) {
     const e = document.createElement(tag);
     if (text2 !== void 0) e.textContent = text2;
@@ -4019,8 +4019,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const root = el("section");
     root.dataset.kmCatalog = "1";
     const style = el("style", "section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{display:block;width:100%;height:10px;min-height:10px;border:0;border-radius:5px;overflow:hidden;appearance:none;accent-color:var(--accent,#4f46e5)}section[data-km-catalog] progress::-webkit-progress-bar{background:var(--line,#e4e7ed)}section[data-km-catalog] progress::-webkit-progress-value{background:var(--accent,#4f46e5)}section[data-km-catalog] progress:not([value])::-webkit-progress-bar{background:repeating-linear-gradient(110deg,var(--line,#e4e7ed) 0 12px,var(--accent,#4f46e5) 12px 24px);background-size:48px 100%;animation:catalog-working 1.4s linear infinite}@keyframes catalog-working{to{background-position:48px 0}}@media(prefers-reduced-motion:reduce){section[data-km-catalog] progress:not([value])::-webkit-progress-bar{animation:none}}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}");
-    const status2 = el("p");
-    status2.setAttribute("role", "status");
     const cards = el("div");
     cards.className = "catalog-sources";
     const capability = browserBuildCapability();
@@ -4072,7 +4070,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     };
     const say = (s, text2, count, total) => {
       s.label.textContent = text2;
-      status2.textContent = `${s.id} \xB7 ${text2}`;
       s.bar.setAttribute("aria-label", `${s.name} \u5F53\u524D\u9636\u6BB5\u8FDB\u5EA6`);
       s.bar.setAttribute("aria-valuetext", text2);
       if (total > 0) {
@@ -4125,7 +4122,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         s.loaded = true;
         if (!s.active && !s.archive) s.label.textContent = "\u5DF2\u52A0\u8F7D\uFF0C\u53EF\u7528\u4E8E\u641C\u7D22";
       }
-      status2.textContent = `${manifest.provider} \xB7 \u5DF2\u52A0\u8F7D`;
       return manifest;
     }, signal);
     const buildFile = async (s, selected, signal) => {
@@ -4221,6 +4217,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     for (const item of catalogSources) {
       const s = { ...item, active: false, loaded: Boolean(client.hasProvider?.(item.id)), label: el("span", "\u672A\u52A0\u8F7D"), bar: el("progress") };
       states.set(item.id, s);
+      s.label.setAttribute("role", "status");
       const card = el("div");
       card.className = "catalog-source";
       card.dataset.provider = item.id;
@@ -4297,13 +4294,19 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     file.accept = ".sqlite,.db";
     file.setAttribute("aria-label", "\u672C\u5730\u6570\u636E\u5E93\u6587\u4EF6");
     fileLabel.append(file);
+    const importError = el("p");
+    importError.setAttribute("role", "alert");
+    importError.hidden = true;
     file.onchange = () => {
       if (!file.files?.[0] || importedBusy || restoring) return;
       const selected = file.files[0];
+      importError.hidden = true;
+      importError.textContent = "";
       importedBusy = true;
       update();
       const task = load(selected).catch((e) => {
-        status2.textContent = `\u5931\u8D25\uFF1A${e.message}`;
+        importError.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${e.message}`;
+        importError.hidden = false;
       }).finally(() => {
         importedBusy = false;
         activeTasks.delete(task);
@@ -4332,10 +4335,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       });
     });
     rawDetails.append(source, archive, build);
-    existing.append(fileLabel, rawDetails);
+    existing.append(fileLabel, importError, rawDetails);
     root.append(style, el("h3", "\u672C\u5730\u6570\u636E\u5E93"));
     if (!canBuild) root.append(el("p", capability.reason));
-    root.append(cards, status2, storageText, button2("\u5237\u65B0\u5B58\u50A8\u7528\u91CF", () => {
+    root.append(cards, storageText, button2("\u5237\u65B0\u5B58\u50A8\u7528\u91CF", () => {
       void updateStorage();
     }), existing);
     container.append(root);

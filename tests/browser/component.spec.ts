@@ -199,13 +199,15 @@ test('catalog UI: four preset downloads on HTTP, completion/error/cancel, no URL
   await page.evaluate(() => { Object.defineProperty(window,'isSecureContext',{value:false,configurable:true}); Object.defineProperty(window,'webkitRequestFileSystem',{value:undefined,configurable:true}); });
   await page.route('https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json',route=>route.fulfill({json:{browser_download_url:'https://github.com/bangumi/Archive/releases/download/archive/source.zip'},headers:{'Access-Control-Allow-Origin':'*'}}));
   await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('tab',{name:'本地数据库'}).click();
-  const area=page.locator('section[data-km-catalog]'),status=area.locator('[role=status]');
+  const area=page.locator('section[data-km-catalog]'),status=area.locator('[data-provider=bookwalker] [role=status]');
+  await expect(area.locator(':scope > [role=status]')).toHaveCount(0);
+  await expect(area.locator('.catalog-source [role=status]')).toHaveCount(4);
   await expect(area.getByPlaceholder('预制数据库或清单 URL')).toHaveCount(0);
   await expect(area.getByLabel('本地数据库文件')).not.toBeVisible();
   await expect(area.getByText(/当前浏览器不支持本地构建存储/)).toBeVisible();
   for(const name of ['Bangumi','E-Hentai','MangaBaka','BookWalker']) {
     await area.getByRole('button',{name:name+' · 下载原始数据',exact:true}).click();
-    await expect(status).toContainText('原始数据已下载');
+    await expect(area.locator('.catalog-source').filter({has:page.getByRole('heading',{name,exact:true})}).getByRole('status')).toContainText('原始数据已下载');
   }
   await page.evaluate(()=>{(window as unknown as {fixtureDownloadMode:string}).fixtureDownloadMode='error'});
   await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await expect(status).toContainText('fixture failure');
@@ -540,12 +542,12 @@ test('accepted languages select real English/romaji title variants and persist w
   await page.getByText('通过链接或 ID 读取',{exact:true}).click(); await page.getByRole('combobox',{name:'来源',exact:true}).selectOption('anilist');
   await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('2'); await page.getByRole('button',{name:'读取',exact:true}).click();
   await expect(page.locator('.candidate[data-key="anilist:2"][aria-pressed=true]')).toBeVisible();
-  await page.getByRole('checkbox',{name:'标题（默认不改）',exact:true}).check(); await page.getByRole('button',{name:'生成预览'}).click();
-  for (const t of await page.getByRole('textbox',{name:'标题（默认不改）写入值',exact:true}).all()) await expect(t).toHaveValue('English title');
+  await page.getByRole('checkbox',{name:'标题',exact:true}).check(); await page.getByRole('button',{name:'生成预览'}).click();
+  for (const t of await page.getByRole('textbox',{name:'标题写入值',exact:true}).all()) await expect(t).toHaveValue('English title');
   await page.getByRole('button',{name:'返回选项'}).click();
   for (const i of await page.locator('.language-options input').all()) await i.setChecked(await i.getAttribute('data-language') === 'romaji');
   await page.getByRole('button',{name:'生成预览'}).click();
-  for (const t of await page.getByRole('textbox',{name:'标题（默认不改）写入值',exact:true}).all()) await expect(t).toHaveValue('Nihongo no Sakuhin');
+  for (const t of await page.getByRole('textbox',{name:'标题写入值',exact:true}).all()) await expect(t).toHaveValue('Nihongo no Sakuhin');
   await page.getByRole('button',{name:'应用',exact:true}).click(); await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
   expect(series.metadata.title).toBe('Nihongo no Sakuhin');expect(book.metadata.title).toBe('Nihongo no Sakuhin');
   await expect(page.locator('#komga-metadata-panel')).toHaveCount(0); await page.getByRole('button',{name:'元数据',exact:true}).click();

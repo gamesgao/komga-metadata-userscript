@@ -39,7 +39,8 @@ def run():
    if insecure:assert report['environment']=={'secure':False,'opfs':'undefined','legacy':'function'},report['environment']
    panel=page.locator('#komga-metadata-panel');panel.get_by_role('tab',name='本地数据库',exact=True).click()
    expect(panel.get_by_placeholder('预制数据库或清单 URL')).to_have_count(0)
-   status=panel.locator('section[data-km-catalog] [role=status]')
+   status=panel.locator('section[data-km-catalog] [data-provider=bookwalker] [role=status]')
+   expect(panel.locator('section[data-km-catalog] > [role=status]')).to_have_count(0)
    # The browser input cancel event must not be interpreted as dialog cancellation.
    for field in panel.locator('input[type=file]').all():field.dispatch_event('cancel',{'bubbles':True})
    expect(panel.locator('dialog')).to_be_visible()
@@ -72,7 +73,7 @@ def run():
     if tasks and not hidden_build and '建立检索索引' in text:
      hide_until_progress(page,panel,status);hidden_build=True;report['download_and_build_continue_with_popup_hidden']=True
     if text!=previous and time.monotonic()-last>10:print(text,flush=True);last=time.monotonic();previous=text
-    if text.startswith('bookwalker · 已构建并加载'):break
+    if text.startswith('已构建并加载'):break
     if '失败' in text or '不支持' in text or '超时' in text:raise AssertionError(text)
     page.wait_for_timeout(500)
    else:raise AssertionError('full browser build timed out: '+status.inner_text())
@@ -84,7 +85,7 @@ def run():
     expect(panel.locator('[data-provider=bookwalker]').get_by_role('button',name='清除原始档案',exact=True)).to_be_hidden()
    # Separate existing file can coexist with the browser-built provider.
    panel.get_by_label('本地数据库文件',exact=True).set_input_files(str(h.RUNTIME/'catalogs'/'bangumi.sqlite'))
-   expect(status).to_contain_text('bangumi ·',timeout=90000)
+   expect(panel.locator('[data-provider=bangumi] [role=status]')).to_contain_text('已加载',timeout=90000)
    for provider in ['bangumi','bookwalker']:
     expect(panel.locator(f'.catalog-source[data-provider={provider}]')).to_contain_text(re.compile('已(?:构建并)?加载'))
    for field in panel.locator('input[type=file]').all():field.dispatch_event('cancel',{'bubbles':True})

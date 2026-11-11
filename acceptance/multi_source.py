@@ -47,7 +47,7 @@ def run():
    h.open_product_panel(page);panel=page.locator('#komga-metadata-panel')
    catalog=h.RUNTIME/'catalogs'/'bangumi.sqlite';assert catalog.is_file(),'Existing full Bangumi catalog missing'
    panel.get_by_role('tab',name='本地数据库',exact=True).click();panel.get_by_label('本地数据库文件',exact=True).set_input_files(str(catalog))
-   expect(panel.locator('section[data-km-catalog] [role=status]')).to_contain_text('bangumi ·',timeout=90000)
+   expect(panel.locator('section[data-km-catalog] [data-provider=bangumi] [role=status]')).to_contain_text('已加载',timeout=90000)
    panel.get_by_role('tab',name='元数据',exact=True).click();sources({'bangumi'});search('葬送のフリーレン')
    expect(panel.get_by_label('来源模式')).to_have_count(0)
    bg=panel.locator('.result-group[data-provider=bangumi]');expect(bg.locator('.result-count')).to_contain_text('本地 ·')

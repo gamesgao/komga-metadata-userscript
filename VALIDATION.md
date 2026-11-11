@@ -1,5 +1,10 @@
 # Validation ledger
 
+## v0.9.1 provider-local status only
+
+- 22 bundled browser tests, eight catalog tests, six release tests and root typecheck pass. Controlled concurrent callbacks assert different source labels retain their own values and no content outside the cards changes; no shared status node exists even hidden. Invalid import errors remain local to the file input.
+- Development native Tampermonkey at actual insecure HTTP origin: simultaneous real Bangumi/BookWalker downloads update their own cards, closing/reopening does not recreate a shared line, cancellation stays in each card, invalid SQLite import shows a local error and a valid EH catalog retry clears it. Screenshot and raw report: ignored `.runtime/acceptance/catalog-status/`. This UI-only patch does not change builder/data/merge rules; no new full-dataset build claim.
+
 ## v0.9.0 ordered language fallback, lean UI and measurable catalog progress
 
 - PASS: 96 core tests, 22 bundled browser tests, eight catalog tests, six release tests and both typechecks. Tests cover legacy unknown-to-other migration, cross-source per-field fallback, explicit override, per-author variants, language ordering persistence/boundary buttons, card deselection, independent source-popup navigation, title-only failed-image tooltips, real download totals arriving after stream start or via concurrent HEAD, and visible determinate download bars.

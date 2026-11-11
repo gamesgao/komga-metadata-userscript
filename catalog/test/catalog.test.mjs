@@ -298,7 +298,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     await page.getByLabel('构建来源').selectOption('mangabaka');
     await page.locator('#panel input[type=file]').nth(1).setInputFiles(inputs.mangabaka);
     await page.getByRole('button', { name: '构建并加载' }).click();
-    await page.getByRole('status').filter({ hasText: /^mangabaka · 已构建并加载/ }).waitFor();
+    await page.locator('[data-provider=mangabaka] [role=status]').filter({ hasText: /^已构建并加载/ }).waitFor();
     assert.equal((await page.evaluate(() => window.client.manifest())).provider, 'mangabaka');
     await page.evaluate(() => {
       window.showSaveFilePicker = async () => {
@@ -328,7 +328,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       window.collection = new CatalogCollection('/worker.mjs');
       window.unmount = mountCatalogPanel(document.querySelector('#panel'), window.collection, { buildWorkerUrl: '/build-worker.mjs' });
     });
-    await page.getByRole('status').filter({ hasText: /^mangabaka · 已加载$/ }).waitFor();
+    await page.locator('[data-provider=mangabaka] [role=status]').filter({ hasText: /^已加载/ }).waitFor();
     assert.equal((await page.evaluate(() => window.collection.get('mangabaka', '77'))).id, '77');
     await page.evaluate(() => window.unmount());
     for (const [provider, [query, id]] of Object.entries(examples)) {
@@ -453,9 +453,9 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     assert.equal(blobPanelReady, true);
     await blobPage.locator('#blob-panel details').first().evaluate(element => { element.open = true; });
     await blobPage.locator('#blob-panel input[type=file]').first().setInputFiles(catalogs.mangabaka);
-    await blobPage.getByRole('status').filter({ hasText: /^mangabaka · 已加载$/ }).waitFor();
+    await blobPage.locator('[data-provider=mangabaka] [role=status]').filter({ hasText: /^已加载/ }).waitFor();
     await blobPage.locator('#blob-panel input[type=file]').first().setInputFiles(join(dir, 'wrong.db'));
-    await blobPage.getByRole('status').filter({ hasText: /^失败/ }).waitFor({ timeout: 5000 });
+    await blobPage.locator('#blob-panel details [role=alert]').filter({ hasText: /^加载失败/ }).waitFor({ timeout: 5000 });
     assert.equal((await blobPage.evaluate(() => window.blobClient.manifest())).source_version, 'fixture-1');
     await blobPage.evaluate(() => Object.defineProperty(window, 'showSaveFilePicker', {
       value: undefined, configurable: true
@@ -463,7 +463,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     const browserDownload = blobPage.waitForEvent('download', { timeout: 5000 }).catch(() => undefined);
     await blobPage.getByRole('button', { name: '导出数据库', exact: true }).click();
     const exported = await browserDownload;
-    assert.ok(exported, await blobPage.getByRole('status').textContent());
+    assert.ok(exported, await blobPage.locator('[data-provider=mangabaka] [role=status]').textContent());
     const exportedPath = join(dir, 'blob-export.sqlite');
     await exported.saveAs(exportedPath);
     await blobPage.locator('#file').setInputFiles(exportedPath);
@@ -583,6 +583,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
         try{if(args[1]==='bangumi'){window.markFirstBuild();await new Promise(r=>window.releaseBuild=r);throw Error('injected build failure');}return await original(...args);}finally{s.activeBuilds--;}};
       window.taskHost=document.createElement('div');document.body.append(window.taskHost);
       const downloadArchive=async(url,name,signal,progress)=>{
+        window.reportDownload??={};window.reportDownload[name]=progress;
         progress(3,10);
         const s=window.taskStats;s.downloads++;s.peakDownloads=Math.max(s.peakDownloads,++s.activeDownloads);
         if(!window.downloadReady)await new Promise(r=>window.downloadWaiters.push(r));
@@ -600,6 +601,19 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     const downloadBar=insecure.locator('[data-provider=bangumi] progress');
     assert.equal(await downloadBar.evaluate(e=>e.value),3);assert.equal(await downloadBar.evaluate(e=>e.max),10);
     assert.ok((await downloadBar.boundingBox()).height>=8);
+    assert.equal(await insecure.locator('section[data-km-catalog] > [role=status]').count(),0);
+    assert.equal(await insecure.locator('.catalog-source [role=status]').count(),4);
+    const isolated=await insecure.evaluate(()=>{
+      const root=document.querySelector('section[data-km-catalog]');
+      const outside=()=>[...root.children].filter(e=>!e.matches('.catalog-sources')).map(e=>e.textContent);
+      const before=outside();
+      window.reportDownload['bangumi-source.zip'](1048576,10485760);
+      window.reportDownload['e-hentai.db.zstd'](2097152,10485760);
+      window.reportDownload['bangumi-source.zip'](3145728,10485760);
+      return {before,after:outside(),labels:[...root.querySelectorAll('.catalog-source [role=status]')].map(e=>e.textContent)};
+    });
+    assert.deepEqual(isolated.after,isolated.before);
+    assert.equal(isolated.labels[0],'已下载 3.0 MiB / 10.0 MiB');assert.equal(isolated.labels[1],'已下载 2.0 MiB / 10.0 MiB');
     await insecure.evaluate(()=>{window.taskHost.remove();window.downloadReady=true;window.downloadWaiters.forEach(r=>r())});
     await insecure.waitForFunction(async()=>window.taskStats.downloads===4&&window.releaseBuild&&Boolean(await window.taskCache.get('bookwalker')));
     await insecure.evaluate(()=>document.body.append(window.taskHost));

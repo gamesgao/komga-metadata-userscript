@@ -7,7 +7,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import e2e as h
 
-FIELDS={'title':'标题（默认不改）','summary':'简介','publisher':'出版社','language':'语言','status':'状态','ageRating':'年龄','tags':'标签','genres':'类型','links':'链接','alternateTitles':'别名','releaseDate':'发行日','isbn':'ISBN','authors':'作者'}
+FIELDS={'title':'标题','summary':'简介','publisher':'出版社','language':'语言','status':'状态','ageRating':'年龄','tags':'标签','genres':'类型','links':'链接','alternateTitles':'别名','releaseDate':'发行日','isbn':'ISBN','authors':'作者'}
 
 
 def api(page,path,method='GET',body=None):

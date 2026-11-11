@@ -40,7 +40,7 @@ def run():
     priority(order)
     if key=='english':page.screenshot(path=str(output/'language-priority-options.png'))
     flows.preview(panel)
-    values=panel.get_by_role('textbox',name='标题（默认不改）写入值',exact=True)
+    values=panel.get_by_role('textbox',name='标题写入值',exact=True)
     expect(values).to_have_count(2)
     for box in values.all():expect(box).to_have_value(reference[key])
     report['checks'].append({'priority':order,'actual_existing_title':reference[key],'both_metadata_targets':True})

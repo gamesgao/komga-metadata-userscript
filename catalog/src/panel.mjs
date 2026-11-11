@@ -38,7 +38,7 @@ function button(text, fn) { const b = el('button', text); b.type = 'button'; b.o
 export function mountCatalogPanel(container, client, options = {}) {
   const root = el('section'); root.dataset.kmCatalog = '1';
   const style = el('style', 'section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{display:block;width:100%;height:10px;min-height:10px;border:0;border-radius:5px;overflow:hidden;appearance:none;accent-color:var(--accent,#4f46e5)}section[data-km-catalog] progress::-webkit-progress-bar{background:var(--line,#e4e7ed)}section[data-km-catalog] progress::-webkit-progress-value{background:var(--accent,#4f46e5)}section[data-km-catalog] progress:not([value])::-webkit-progress-bar{background:repeating-linear-gradient(110deg,var(--line,#e4e7ed) 0 12px,var(--accent,#4f46e5) 12px 24px);background-size:48px 100%;animation:catalog-working 1.4s linear infinite}@keyframes catalog-working{to{background-position:48px 0}}@media(prefers-reduced-motion:reduce){section[data-km-catalog] progress:not([value])::-webkit-progress-bar{animation:none}}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}');
-  const status = el('p'); status.setAttribute('role','status');
+
   const cards = el('div'); cards.className = 'catalog-sources';
   const capability = browserBuildCapability();
   const builder = options.builder ?? (options.buildWorkerUrl || options.buildWorkerFactory ? new BrowserCatalogBuilder(options.buildWorkerUrl, { workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions }) : undefined);
@@ -75,7 +75,7 @@ export function mountCatalogPanel(container, client, options = {}) {
     build.disabled = restoring || !canBuild || Boolean(states.get(source.value)?.active);
   };
   const say = (s, text, count, total) => {
-    s.label.textContent = text; status.textContent = `${s.id} · ${text}`;
+    s.label.textContent = text;
     s.bar.setAttribute('aria-label', `${s.name} 当前阶段进度`); s.bar.setAttribute('aria-valuetext', text);
     if (total > 0) { s.bar.max = total; s.bar.value = count; } else s.bar.removeAttribute('value');
   };
@@ -100,7 +100,7 @@ export function mountCatalogPanel(container, client, options = {}) {
     catch (e) { if (previous && !disposed && !client.hasFile) await client.open(previous); throw e; }
     if (!client.hasProvider) for (const s of states.values()) s.loaded = false;
     const s = states.get(manifest.provider); if (s) { s.loaded = true; if (!s.active && !s.archive) s.label.textContent = '已加载，可用于搜索'; }
-    status.textContent = `${manifest.provider} · 已加载`;
+
     return manifest;
   }, signal);
   const buildFile = async (s, selected, signal) => {
@@ -153,6 +153,7 @@ export function mountCatalogPanel(container, client, options = {}) {
   });
   for (const item of catalogSources) {
     const s = { ...item, active:false, loaded:Boolean(client.hasProvider?.(item.id)), label:el('span','未加载'), bar:el('progress') }; states.set(item.id,s);
+    s.label.setAttribute('role','status');
     const card=el('div'); card.className='catalog-source'; card.dataset.provider=item.id;
     s.start=button('',()=>run(item.id,async (s,signal)=>{
       if (s.archive) { await buildFile(s,s.archive.file,signal); return; }
@@ -183,20 +184,21 @@ export function mountCatalogPanel(container, client, options = {}) {
   }
   const existing=el('details');existing.append(el('summary','已有文件'));
   const fileLabel=el('label','加载已构建数据库'),file=el('input');file.type='file';file.accept='.sqlite,.db';file.setAttribute('aria-label','本地数据库文件');fileLabel.append(file);
+  const importError=el('p');importError.setAttribute('role','alert');importError.hidden=true;
   file.onchange=()=>{
     if(!file.files?.[0]||importedBusy||restoring)return;
-    const selected=file.files[0];importedBusy=true;update();
-    const task=load(selected).catch(e=>{status.textContent=`失败：${e.message}`;}).finally(()=>{importedBusy=false;activeTasks.delete(task);if(!disposed)update();});activeTasks.add(task);
+    const selected=file.files[0];importError.hidden=true;importError.textContent='';importedBusy=true;update();
+    const task=load(selected).catch(e=>{importError.textContent=`加载失败：${e.message}`;importError.hidden=false;}).finally(()=>{importedBusy=false;activeTasks.delete(task);if(!disposed)update();});activeTasks.add(task);
   };
   const rawDetails=el('details');rawDetails.append(el('summary','从已下载的原始数据构建'));
   const source=el('select');source.setAttribute('aria-label','构建来源');
   for(const item of catalogSources){const o=el('option',item.name);o.value=item.id;source.append(o);}source.onchange=update;
   const archive=el('input');archive.type='file';archive.setAttribute('aria-label','来源档案');
   const build=button('构建并加载',()=>{const selected=archive.files?.[0];return run(source.value,async(s,signal)=>{if(!selected)throw Error('请选择原始数据文件');await buildFile(s,selected,signal);});});
-  rawDetails.append(source,archive,build);existing.append(fileLabel,rawDetails);
+  rawDetails.append(source,archive,build);existing.append(fileLabel,importError,rawDetails);
   root.append(style,el('h3','本地数据库'));
   if(!canBuild)root.append(el('p',capability.reason));
-  root.append(cards,status,storageText,button('刷新存储用量',()=>{void updateStorage();}),existing);container.append(root);update();
+  root.append(cards,storageText,button('刷新存储用量',()=>{void updateStorage();}),existing);container.append(root);update();
   const restore=async()=>{
     if(!canBuild)return;
     for(const item of catalogSources){

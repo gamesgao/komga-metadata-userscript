@@ -36,7 +36,7 @@ def run():
    catalog=h.RUNTIME/'catalogs'/'bookwalker.sqlite'
    if catalog.is_file():
     page.get_by_label('本地数据库文件',exact=True).set_input_files(str(catalog))
-    expect(page.locator('section[data-km-catalog] [role=status]')).to_contain_text('bookwalker ·',timeout=90000)
+    expect(page.locator('section[data-km-catalog] [data-provider=bookwalker] [role=status]')).to_contain_text('已加载',timeout=90000)
     report['checks'].append('Existing full local BookWalker catalog opened through actual GM-loaded reader; no database built')
    page.get_by_text('下载与高级操作',exact=True).click();capture('light-database.png')
    page.get_by_role('tab',name='元数据',exact=True).click()

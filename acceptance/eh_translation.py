@@ -31,7 +31,7 @@ def run():
     h.open_product_panel(page);panel=page.locator('#komga-metadata-panel')
     if route=='offline':
      panel.get_by_role('tab',name='本地数据库',exact=True).click();panel.get_by_label('本地数据库文件',exact=True).set_input_files(str(h.RUNTIME/'catalogs'/'ehentai.sqlite'))
-     expect(panel.locator('section[data-km-catalog] [role=status]')).to_contain_text('ehentai ·',timeout=90000);panel.get_by_role('tab',name='元数据',exact=True).click()
+     expect(panel.locator('section[data-km-catalog] [data-provider=ehentai] [role=status]')).to_contain_text('已加载',timeout=90000);panel.get_by_role('tab',name='元数据',exact=True).click()
     panel.get_by_text('接受的资料语言',exact=True).click()
     for box in panel.locator('.language-options input').all():box.set_checked(box.get_attribute('data-language') in languages)
     panel.get_by_text('通过链接或 ID 读取',exact=True).click();panel.get_by_label('来源',exact=True).select_option('ehentai');panel.get_by_role('textbox',name='来源链接或 ID').fill('373840:dd4812711c');panel.get_by_role('button',name='读取',exact=True).click()
