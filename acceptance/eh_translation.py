@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Actual public EHT + public Non-H EH metadata + real-manager Komga write/undo."""
-import hashlib,json
+import hashlib,json,sqlite3
 from playwright.sync_api import sync_playwright,expect
 import e2e as h
 import real_flows as flows
@@ -17,6 +17,8 @@ def run():
    dictionary=res.json();names={g['namespace']:g['data'] for g in dictionary['data']};report['dictionary_revision']=dictionary['head'].get('sha')
    res=ctx.request.post('https://api.e-hentai.org/api.php',data={'method':'gdata','gidlist':[[373840,'dd4812711c']],'namespace':1});assert res.ok
    source=res.json()['gmetadata'][0];assert source['category']=='Non-H' and not source['expunged']
+   with sqlite3.connect((h.RUNTIME/'catalogs'/'ehentai.sqlite').resolve().as_uri()+'?mode=ro',uri=True) as db:
+    offline_source=json.loads(db.execute('SELECT record FROM entries WHERE provider=? AND source_id=?',('ehentai','373840:dd4812711c')).fetchone()[0])
    def translated(raw):
     ns,sep,key=raw.partition(':');name=names.get(ns,{}).get(key,{}).get('name') if sep else None
     # This chosen Non-H gallery uses named-entity/language namespaces only.
@@ -24,29 +26,32 @@ def run():
    assert translated('parody:touhou project')!='parody:touhou project'
    h.import_userscript(ctx,h.extension_id_from(ctx));page=ctx.new_page();page.goto(h.BASE_URL+'/series/'+sid);h.login_if_needed(page,h.read_json(h.CONFIG))
    originals={(k,i):flows.metadata(page,k,i) for k,i in [('series',sid),('books',bid)]}
-   for route in ['online','offline']:
+   for route,languages in [('online',['en']),('online',['zh','ja']),('offline',['en']),('offline',['zh','ja'])]:
     for k,i in originals:flows.patch_metadata(page,k,i,{'tags':['parody:touhou project','手动保留'],'tagsLock':False})
     h.open_product_panel(page);panel=page.locator('#komga-metadata-panel')
     if route=='offline':
      panel.get_by_role('tab',name='本地数据库',exact=True).click();panel.get_by_label('本地数据库文件',exact=True).set_input_files(str(h.RUNTIME/'catalogs'/'ehentai.sqlite'))
      expect(panel.locator('section[data-km-catalog] [role=status]')).to_contain_text('ehentai ·',timeout=90000);panel.get_by_role('tab',name='元数据',exact=True).click()
     panel.get_by_text('接受的资料语言',exact=True).click()
-    for box in panel.locator('.language-options input').all():box.set_checked(box.get_attribute('data-language')=='ja')
+    for box in panel.locator('.language-options input').all():box.set_checked(box.get_attribute('data-language') in languages)
     panel.get_by_text('通过链接或 ID 读取',exact=True).click();panel.get_by_label('来源',exact=True).select_option('ehentai');panel.get_by_role('textbox',name='来源链接或 ID').fill('373840:dd4812711c');panel.get_by_role('button',name='读取',exact=True).click()
     expect(panel.locator('.selected-source')).to_contain_text('ehentai',timeout=90000)
     if route=='offline':expect(panel.locator('.selected-source')).to_contain_text('本地')
     flows.select_fields(panel,{'tags'});flows.preview(panel)
     values=panel.get_by_role('textbox',name='标签写入值',exact=True);expect(values).to_have_count(2)
-    expected=json.loads(values.first.input_value());assert translated('parody:touhou project') in expected and 'parody:touhou project' not in expected and '手动保留' in expected
-    if route=='online':assert set(expected)==set(map(translated,source['tags']))|{'手动保留'}
+    expected=json.loads(values.first.input_value())
+    raw_tags=(source if route=='online' else offline_source)['tags']
+    assert set(expected)==set(map(translated,raw_tags) if 'zh' in languages else raw_tags)|{'手动保留'}
     for box in values.all():assert json.loads(box.input_value())==expected
-    panel.locator('.tag-translations summary').click();page.screenshot(path=str(output/(route+'-preview.png')))
+    expect(panel.get_by_text('查看标签翻译对照',exact=True)).to_have_count(0)
+    expect(panel.get_by_label('将 EH 标签译为中文并写入',exact=True)).to_have_count(0)
+    page.screenshot(path=str(output/(route+('-zh' if 'zh' in languages else '-en')+'-preview.png')))
     flows.wait_action(page,'应用')
     for (k,i),before in originals.items():
      after=flows.metadata(page,k,i);assert set(after['tags'])==set(expected);assert after['title']==before['title']
     h.open_product_panel(page);flows.wait_action(page,'撤销最近写入')
     for k,i in originals:assert set(flows.metadata(page,k,i)['tags'])=={'parody:touhou project','手动保留'}
-    report['checks'].append({'source':route,'real_translated_tags':expected,'both_one_shot_targets_written_and_restored':True,'raw_duplicate_removed':True,'manual_tag_retained':True,'japanese_only_acceptance':True})
+    report['checks'].append({'source':route,'accepted_languages':languages,'actual_tags':expected,'both_one_shot_targets_written_and_restored':True,'manual_tag_retained':True,'language_controls_translation':True})
    report['status']='PASS'
   finally:
    if page:

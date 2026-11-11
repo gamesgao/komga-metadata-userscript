@@ -1,6 +1,7 @@
 import type { AcceptedLanguage, MetadataRecord, Title } from './model';
 import { mappedFields, normalizeWriteFields } from './plan';
 export const allLanguages: AcceptedLanguage[] = ['en', 'ja', 'zh', 'romaji', 'unknown', 'other'];
+export function wantsChineseTags(languages: AcceptedLanguage[]): boolean { return languages.includes('zh'); }
 export const languageLabels: Record<AcceptedLanguage, string> = { en: '英文 EN', ja: '日文 JP', zh: '中文 ZH / CH', romaji: '罗马字 Romaji', unknown: '未标注', other: '其他语言' };
 export function languageOf(text: string, explicit?: string): AcceptedLanguage {
   const code = explicit?.trim().toLowerCase().replace(/_/g, '-');
@@ -23,8 +24,11 @@ export function languageFields(r: MetadataRecord, languages: AcceptedLanguage[])
   values.alternateTitles = titles.map(t => ({ title: t.text, label: t.language || t.type }));
   if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = undefined;
   if (r.publisher && !accepted(r.publisher, undefined, languages)) values.publisher = undefined;
-  // Explicit EH Chinese-tag output is independent of title/text language selection.
-  values.tags = r.translatedTags ?? r.tags.filter(t => accepted(t, undefined, languages));
+  // EH tags are taxonomy keys, not prose: without a Chinese preference retain
+  // the source keys (including English-only and Japanese-only selections).
+  values.tags = r.provider === 'ehentai'
+    ? (wantsChineseTags(languages) ? r.translatedTags ?? r.tags : r.tags)
+    : r.tags.filter(t => accepted(t, undefined, languages));
   values.genres = r.genres.filter(t => accepted(t, undefined, languages));
   values.authors = r.authors.flatMap(a => {
     const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];

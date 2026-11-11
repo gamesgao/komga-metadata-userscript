@@ -49,7 +49,7 @@ export class EhTagTranslation {
     } catch (error) {
       cancelled(signal);
       if (this.cache) return { revision: this.cache.revision, warning: '词库更新失败，继续使用已有缓存' };
-      throw new MetadataError('unavailable', `中文标签词库不可用：${error instanceof Error ? error.message : String(error)}；可重试或关闭 EH 标签翻译`);
+      throw new MetadataError('unavailable', `中文标签词库不可用：${error instanceof Error ? error.message : String(error)}；可重试，或在资料语言中取消勾选中文`);
     }
   }
   project(record: MetadataRecord, style: PrefixStyle): { record: MetadataRecord; replacements: Map<string, string>; matched: number } {

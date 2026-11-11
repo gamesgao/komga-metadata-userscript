@@ -7,9 +7,9 @@ import { panelStyle, icon } from './ui-style';
 import { Thumbnails } from './thumbnails';
 import { searchPreferred } from './search';
 import { mergeRecords, sourceKey, canMergeField, combineField, type Merged } from './merge';
-import { allLanguages, languageLabels } from './languages';
+import { allLanguages, languageLabels, wantsChineseTags } from './languages';
 import { EhTagTranslation, translateExisting, type PrefixStyle } from './eh-tag-translation';
-interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[]; ehTagTranslation?: boolean; ehTagPrefixes?: PrefixStyle }
+interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[]; ehTagPrefixes?: PrefixStyle }
 interface SavedUndo { seriesId: string; result: Result }
 const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -165,7 +165,7 @@ export class Panel {
         storage.set('settings-v1', this.settings); this.renderSelection();
       };
     }
-    languages.append(languageChecks, element('p', '筛选已有的标题、简介、作者等文本，不自动翻译。纯汉字、拉丁字母等无法可靠判断时归入「未标注」。搜索词与作品原始语言不受此选项更改。'));
+    languages.append(languageChecks, element('p', '筛选已有的标题、简介、作者等文本；无法可靠判断时归入「未标注」。勾选中文时，EH 标签按词库翻译；否则保留原始标签。搜索词与作品原始语言不变。'));
     directDetails.append(directRow); searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
     const choices = element('div'); choices.className = 'card';
     this.detail.className = 'selected-record'; choices.append(this.detail, element('h3', '写入选项'));
@@ -182,13 +182,11 @@ export class Panel {
       i.onchange = () => this.invalidate();
     }
     choices.append(fieldGrid);
-    const tagOptions = element('details'); tagOptions.className = 'eh-tag-options'; tagOptions.append(element('summary', 'EH 中文标签'));
-    const translate = input('将 EH 标签译为中文并写入', tagOptions, 'checkbox'); translate.checked = this.settings.ehTagTranslation !== false; translate.parentElement!.className = 'check-label';
+    const tagOptions = element('details'); tagOptions.className = 'eh-tag-options'; tagOptions.append(element('summary', 'EH 标签格式'));
     const prefixLabel = element('label', '标签前缀'), prefixes = element('select'); prefixes.setAttribute('aria-label', '标签前缀');
     option(prefixes, 'compact', '简洁：去掉描述类前缀'); option(prefixes, 'preserve', '保留全部前缀'); prefixes.value = this.settings.ehTagPrefixes ?? 'compact'; prefixLabel.append(prefixes);
     const credit = element('a', 'EhTagTranslation · CC BY-NC-SA 3.0'); credit.href = 'https://github.com/EhTagTranslation/Database'; credit.target = '_blank'; credit.rel = 'noopener noreferrer';
-    tagOptions.append(prefixLabel, element('p', '仅 EH 来源；与资料语言选择独立。未命中保留原文，不删标签。'), credit); choices.append(tagOptions);
-    translate.onchange = () => { this.settings.ehTagTranslation = translate.checked; storage.set('settings-v1', this.settings); this.invalidate(); };
+    tagOptions.append(prefixLabel, credit); choices.append(tagOptions);
     prefixes.onchange = () => { this.settings.ehTagPrefixes = prefixes.value as PrefixStyle; storage.set('settings-v1', this.settings); this.invalidate(); };
     this.propagate = input('将作者同步到系列内所有书籍', choices, 'checkbox'); this.propagate.checked = false;
     this.propagate.parentElement!.className = 'check-label';
@@ -445,20 +443,17 @@ export class Panel {
     if (!this.selected || !this.seriesId) throw new MetadataError('verification', '先选择候选');
     if (this.selections.length > 1 && !this.sameWork) throw new MetadataError('verification', '请先确认选中条目是同一作品／同一卷和版本');
     if (currentSeries(location, document) !== this.seriesId) throw new MetadataError('conflict', '页面系列变化，请关闭后重新启动');
-    let tagNote = '';
-    if (this.settings.ehTagTranslation !== false && this.fields.get('tags')?.checked && this.selections.some(s => s.record.provider === 'ehentai')) {
+    let translationWarning: string | undefined;
+    if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get('tags')?.checked && this.selections.some(s => s.record.provider === 'ehentai' && s.record.tags.length)) {
       this.status.textContent = '正在准备中文标签词库…';
       const loaded = await this.translation.load(this.signal);
-      let matched = 0, total = 0;
       const records = this.selections.map(({ record }) => {
         const projected = this.translation.project(record, this.settings.ehTagPrefixes ?? 'compact');
-        if (record.provider === 'ehentai') total += record.tags.length;
-        matched += projected.matched;
         for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
         return projected.record;
       });
       this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages); this.selected = this.merged.record;
-      tagNote = `EH 中文标签：${matched}/${total} 命中；未命中保留原文。${loaded.warning ?? ''}`;
+      translationWarning = loaded.warning;
       this.status.textContent = '';
     } else this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
     this.selected = this.merged.record;
@@ -477,12 +472,7 @@ export class Panel {
     const back = button('返回选项', () => { if (!this.busy && !this.finishing) { this.invalidate(); this.viewport.scrollTop = 0; } });
     back.className = 'ghost'; back.prepend(icon('back'));
     previewHead.append(element('h3', '确认更改'), back); this.preview.append(previewHead);
-    if (tagNote) {
-      this.preview.append(element('p', tagNote));
-      const translations = element('details'); translations.className = 'tag-translations'; translations.append(element('summary', '查看标签翻译对照'));
-      for (const [raw, translated] of this.tagReplacements) translations.append(element('div', `${raw} → ${translated}`));
-      this.preview.append(translations);
-    }
+    if (translationWarning) this.preview.append(element('p', translationWarning));
     if (plan.cover) {
       try { await this.coverPreview(plan.cover); }
       catch (error) { this.invalidate(); throw error; }

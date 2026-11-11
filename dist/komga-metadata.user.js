@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.6.0
+// @version      0.6.1
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -1979,6 +1979,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
 
   // src/languages.ts
   var allLanguages = ["en", "ja", "zh", "romaji", "unknown", "other"];
+  function wantsChineseTags(languages) {
+    return languages.includes("zh");
+  }
   var languageLabels = { en: "\u82F1\u6587 EN", ja: "\u65E5\u6587 JP", zh: "\u4E2D\u6587 ZH / CH", romaji: "\u7F57\u9A6C\u5B57 Romaji", unknown: "\u672A\u6807\u6CE8", other: "\u5176\u4ED6\u8BED\u8A00" };
   function languageOf(text2, explicit) {
     const code = explicit?.trim().toLowerCase().replace(/_/g, "-");
@@ -2001,7 +2004,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     values.alternateTitles = titles2.map((t) => ({ title: t.text, label: t.language || t.type }));
     if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = void 0;
     if (r.publisher && !accepted(r.publisher, void 0, languages)) values.publisher = void 0;
-    values.tags = r.translatedTags ?? r.tags.filter((t) => accepted(t, void 0, languages));
+    values.tags = r.provider === "ehentai" ? wantsChineseTags(languages) ? r.translatedTags ?? r.tags : r.tags : r.tags.filter((t) => accepted(t, void 0, languages));
     values.genres = r.genres.filter((t) => accepted(t, void 0, languages));
     values.authors = r.authors.flatMap((a) => {
       const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];
@@ -2128,7 +2131,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       } catch (error) {
         cancelled(signal);
         if (this.cache) return { revision: this.cache.revision, warning: "\u8BCD\u5E93\u66F4\u65B0\u5931\u8D25\uFF0C\u7EE7\u7EED\u4F7F\u7528\u5DF2\u6709\u7F13\u5B58" };
-        throw new MetadataError("unavailable", `\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u4E0D\u53EF\u7528\uFF1A${error instanceof Error ? error.message : String(error)}\uFF1B\u53EF\u91CD\u8BD5\u6216\u5173\u95ED EH \u6807\u7B7E\u7FFB\u8BD1`);
+        throw new MetadataError("unavailable", `\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u4E0D\u53EF\u7528\uFF1A${error instanceof Error ? error.message : String(error)}\uFF1B\u53EF\u91CD\u8BD5\uFF0C\u6216\u5728\u8D44\u6599\u8BED\u8A00\u4E2D\u53D6\u6D88\u52FE\u9009\u4E2D\u6587`);
       }
     }
     project(record2, style) {
@@ -2325,7 +2328,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           this.renderSelection();
         };
       }
-      languages.append(languageChecks, element("p", "\u7B5B\u9009\u5DF2\u6709\u7684\u6807\u9898\u3001\u7B80\u4ECB\u3001\u4F5C\u8005\u7B49\u6587\u672C\uFF0C\u4E0D\u81EA\u52A8\u7FFB\u8BD1\u3002\u7EAF\u6C49\u5B57\u3001\u62C9\u4E01\u5B57\u6BCD\u7B49\u65E0\u6CD5\u53EF\u9760\u5224\u65AD\u65F6\u5F52\u5165\u300C\u672A\u6807\u6CE8\u300D\u3002\u641C\u7D22\u8BCD\u4E0E\u4F5C\u54C1\u539F\u59CB\u8BED\u8A00\u4E0D\u53D7\u6B64\u9009\u9879\u66F4\u6539\u3002"));
+      languages.append(languageChecks, element("p", "\u7B5B\u9009\u5DF2\u6709\u7684\u6807\u9898\u3001\u7B80\u4ECB\u3001\u4F5C\u8005\u7B49\u6587\u672C\uFF1B\u65E0\u6CD5\u53EF\u9760\u5224\u65AD\u65F6\u5F52\u5165\u300C\u672A\u6807\u6CE8\u300D\u3002\u52FE\u9009\u4E2D\u6587\u65F6\uFF0CEH \u6807\u7B7E\u6309\u8BCD\u5E93\u7FFB\u8BD1\uFF1B\u5426\u5219\u4FDD\u7559\u539F\u59CB\u6807\u7B7E\u3002\u641C\u7D22\u8BCD\u4E0E\u4F5C\u54C1\u539F\u59CB\u8BED\u8A00\u4E0D\u53D8\u3002"));
       directDetails.append(directRow);
       searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
       const choices = element("div");
@@ -2356,10 +2359,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       choices.append(fieldGrid);
       const tagOptions = element("details");
       tagOptions.className = "eh-tag-options";
-      tagOptions.append(element("summary", "EH \u4E2D\u6587\u6807\u7B7E"));
-      const translate = input("\u5C06 EH \u6807\u7B7E\u8BD1\u4E3A\u4E2D\u6587\u5E76\u5199\u5165", tagOptions, "checkbox");
-      translate.checked = this.settings.ehTagTranslation !== false;
-      translate.parentElement.className = "check-label";
+      tagOptions.append(element("summary", "EH \u6807\u7B7E\u683C\u5F0F"));
       const prefixLabel = element("label", "\u6807\u7B7E\u524D\u7F00"), prefixes = element("select");
       prefixes.setAttribute("aria-label", "\u6807\u7B7E\u524D\u7F00");
       option(prefixes, "compact", "\u7B80\u6D01\uFF1A\u53BB\u6389\u63CF\u8FF0\u7C7B\u524D\u7F00");
@@ -2370,13 +2370,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       credit.href = "https://github.com/EhTagTranslation/Database";
       credit.target = "_blank";
       credit.rel = "noopener noreferrer";
-      tagOptions.append(prefixLabel, element("p", "\u4EC5 EH \u6765\u6E90\uFF1B\u4E0E\u8D44\u6599\u8BED\u8A00\u9009\u62E9\u72EC\u7ACB\u3002\u672A\u547D\u4E2D\u4FDD\u7559\u539F\u6587\uFF0C\u4E0D\u5220\u6807\u7B7E\u3002"), credit);
+      tagOptions.append(prefixLabel, credit);
       choices.append(tagOptions);
-      translate.onchange = () => {
-        this.settings.ehTagTranslation = translate.checked;
-        storage.set("settings-v1", this.settings);
-        this.invalidate();
-      };
       prefixes.onchange = () => {
         this.settings.ehTagPrefixes = prefixes.value;
         storage.set("settings-v1", this.settings);
@@ -2819,21 +2814,18 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       if (!this.selected || !this.seriesId) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
       if (this.selections.length > 1 && !this.sameWork) throw new MetadataError("verification", "\u8BF7\u5148\u786E\u8BA4\u9009\u4E2D\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C");
       if (currentSeries(location, document) !== this.seriesId) throw new MetadataError("conflict", "\u9875\u9762\u7CFB\u5217\u53D8\u5316\uFF0C\u8BF7\u5173\u95ED\u540E\u91CD\u65B0\u542F\u52A8");
-      let tagNote = "";
-      if (this.settings.ehTagTranslation !== false && this.fields.get("tags")?.checked && this.selections.some((s) => s.record.provider === "ehentai")) {
+      let translationWarning;
+      if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get("tags")?.checked && this.selections.some((s) => s.record.provider === "ehentai" && s.record.tags.length)) {
         this.status.textContent = "\u6B63\u5728\u51C6\u5907\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u2026";
         const loaded = await this.translation.load(this.signal);
-        let matched = 0, total = 0;
         const records = this.selections.map(({ record: record2 }) => {
           const projected = this.translation.project(record2, this.settings.ehTagPrefixes ?? "compact");
-          if (record2.provider === "ehentai") total += record2.tags.length;
-          matched += projected.matched;
           for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
           return projected.record;
         });
         this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages);
         this.selected = this.merged.record;
-        tagNote = `EH \u4E2D\u6587\u6807\u7B7E\uFF1A${matched}/${total} \u547D\u4E2D\uFF1B\u672A\u547D\u4E2D\u4FDD\u7559\u539F\u6587\u3002${loaded.warning ?? ""}`;
+        translationWarning = loaded.warning;
         this.status.textContent = "";
       } else this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
       this.selected = this.merged.record;
@@ -2861,14 +2853,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       back.prepend(icon("back"));
       previewHead.append(element("h3", "\u786E\u8BA4\u66F4\u6539"), back);
       this.preview.append(previewHead);
-      if (tagNote) {
-        this.preview.append(element("p", tagNote));
-        const translations = element("details");
-        translations.className = "tag-translations";
-        translations.append(element("summary", "\u67E5\u770B\u6807\u7B7E\u7FFB\u8BD1\u5BF9\u7167"));
-        for (const [raw, translated] of this.tagReplacements) translations.append(element("div", `${raw} \u2192 ${translated}`));
-        this.preview.append(translations);
-      }
+      if (translationWarning) this.preview.append(element("p", translationWarning));
       if (plan.cover) {
         try {
           await this.coverPreview(plan.cover);

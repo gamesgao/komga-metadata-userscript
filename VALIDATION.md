@@ -1,5 +1,12 @@
 # Validation ledger
 
+## v0.6.1 language-driven EH translation
+
+- PASS: 88 core tests, 20 actual-bundle browser tests. Chinese membership controls translation, including mixed Chinese/Japanese and Chinese/English. English/Japanese-only keep raw EH keys rather than filtering them away as unknown-language text.
+- Browser verifies no dictionary request for English/Japanese-only, Chinese on/off rebuilds previews without stale translated values, no separate switch/hit-count/translation table, and a dictionary failure can be resolved by deselecting Chinese without another download. Locks, current-value handling and undo invariants unchanged.
+- PASS: real-manager `acceptance/eh_translation.py` independently checks official dictionary and online/local Non-H metadata against actual previews. Four cases (online/offline × English-only/Chinese+Japanese) write both One-shot metadata targets, GET readback matches expected raw/Chinese values, undo restores original English/manual tags, titles stay unchanged.
+- v0.6.0 notes below describe its historical independent switch, which v0.6.1 replaces.
+
 ## v0.6.0 EH Chinese tags
 
 - PASS: 88 core tests and 19 actual-bundle browser tests. Added compact/full-prefix semantics, no cross-namespace fallback or tag filtering, raw-record preservation, Japanese-only text selection plus Chinese tags, current English-key replacement without deleting manual tags, persistent/expired cache, malformed/failed download fallback, cancellation and prototype-key handling.
