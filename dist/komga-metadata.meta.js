@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.7.1
+// @version      0.8.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js

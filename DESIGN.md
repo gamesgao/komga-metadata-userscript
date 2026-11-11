@@ -1,5 +1,16 @@
 # Design
 
+## Catalog task ownership (v0.8.0)
+
+The page-level catalog extension owns a retained task view and its assets. Closing a metadata
+dialog detaches that view; reopening reattaches it without recreating jobs. Page disposal
+tears down readers/builders. Independent provider states share bounded download (2), build (1)
+and reader-publication (1) queues. Aborting a queued source never calls the active builder's
+cancel method. Complete raw downloads are indexed in origin storage before building; they
+survive failure/cancel/reload and are retired only after the output is saved. This is a
+complete-download checkpoint, not byte-level download or intermediate SQLite resume.
+Browser-managed storage usage/quota and confirmed per-provider cleanup are part of the view.
+
 ## Scope
 Desktop browsers first. Standalone userscript, no custom runtime backend. Modules: transport, online providers, normalized records, Komga client/writer, field/lock-aware merge/preview, catalog worker, optional catalog build/export, UI and task state. Existing Komga remains the data server. Never access user's NAS during development.
 

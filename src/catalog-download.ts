@@ -59,7 +59,7 @@ export async function downloadArchive(url: string, name: string, signal: AbortSi
       } catch (error) { finish(error); }
     });
     await writable.close(); writable = undefined;
-    return { file: await handle.getFile(), cleanup };
+    return { file: await handle.getFile(), storageName: filename, cleanup };
   } catch (error) {
     request?.abort(); await reader?.cancel().catch(() => {}); await writable?.abort().catch(() => {}); await cleanup(); throw error;
   }

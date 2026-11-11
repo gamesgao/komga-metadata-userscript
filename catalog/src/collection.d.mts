@@ -6,6 +6,8 @@ export class CatalogCollection {
  readonly selectedFile?: File;
  hasProvider(id: string): boolean;
  fileFor(id: string): File | undefined;
+ remove(id: string): void;
+ cancelQueries(): void;
  restoring?: Promise<void>;
  open(file: File, verification?: {sha256?: string}): Promise<CatalogManifest>;
  search(query: string, provider?: ProviderId, limit?: number): Promise<Candidate[]>;

@@ -1,5 +1,13 @@
 # Validation ledger
 
+## v0.8.0 independent catalog tasks and complete-archive checkpoints
+
+- Component coverage: 91 core tests, 21 bundled browser tests, eight catalog tests and six release tests. The insecure-origin catalog case submits all four formats, observes two concurrent downloads and only one build, detaches the view while work proceeds, cancels another queued source without affecting the active build, injects a build failure, reloads and resumes from a complete archive with zero downloader calls. Actual WASM builds/readers and filesystem storage are used; source downloads in this scheduling fixture are controlled fixtures.
+- Save-index failure injection verifies that the old reader/file remains usable, the complete raw archive survives, and a retry succeeds. Provider-scoped raw cleanup retains its database; database removal unloads only that provider, and measured owned storage decreases.
+- Native task-mode acceptance: `KOMGA_ACCEPTANCE_HTTP=1 KOMGA_ACCEPTANCE_TASKS=1 KOMGA_ACCEPTANCE_ARTIFACT=... python acceptance/catalog_workflow.py`. Real Tampermonkey/full public BookWalker data exercises download/build while the popup is hidden, cancellation, refresh, continuation without a new download step, full 14,379-entry build, final archive cleanup, completed-catalog restore and local search. Repeat on the published script before reporting delivery; exact artifact SHA/result/screenshots remain in ignored `.runtime/acceptance/catalog-workflow-http/`.
+- The first native run exposed cancellation during asynchronous Worker/WASM loading: cancellation was only checked before the factory await. The builder now checks after the await and terminates the newly created Worker without running it; a delayed-factory regression verifies this. A subsequent full build completed; an old label assertion (`已加载` versus `已构建并加载`) was updated to check both successful states.
+- No byte-range resume, partial SQLite/import/index checkpoint, automatic restart after reload, background execution after the tab closes, or multi-tab scheduler claim. The other three sources have generated-archive scheduling/build coverage, not new full upstream browser-build claims. No user NAS is contacted.
+
 ## v0.7.1 ordinary-HTTP catalog construction
 
 - PASS: typechecks, 91 core tests, 21 bundled browser tests, six catalog tests and six release tests. The no-storage fallback test now disables both OPFS availability and the legacy API, rather than assuming all HTTP is unsupported.

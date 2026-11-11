@@ -210,7 +210,7 @@ test('catalog UI: four preset downloads on HTTP, completion/error/cancel, no URL
   await page.evaluate(()=>{(window as unknown as {fixtureDownloadMode:string}).fixtureDownloadMode='error'});
   await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await expect(status).toContainText('fixture failure');
   await page.evaluate(()=>{(window as unknown as {fixtureDownloadMode:string}).fixtureDownloadMode='hold'});
-  await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await area.getByRole('button',{name:'取消当前任务'}).click();await expect(status).toContainText('已取消');
+  await area.getByRole('button',{name:'BookWalker · 下载原始数据',exact:true}).click();await area.getByRole('button',{name:'取消任务',exact:true}).click();await expect(status).toContainText('已取消');
 });
 test('file picker cancellation bubbles without closing dialog or losing input; dialog Escape still closes',async({page})=>{
   await install(page);await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('textbox',{name:'搜索词'}).fill('keep this query');

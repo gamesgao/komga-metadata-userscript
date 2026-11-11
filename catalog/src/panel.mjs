@@ -1,6 +1,8 @@
 import { SCHEMA_VERSION, ANALYZER_VERSION } from './analyzer.mjs';
 import { BrowserCatalogBuilder, browserBuildCapability } from './browser-builder.mjs';
 import { catalogDirectory } from './storage.mjs';
+import { TaskQueue } from './task-queue.mjs';
+import { ArchiveCache, removeSavedCatalog, storageUsage } from './archive-cache.mjs';
 function url(value) {
   const parsed = new URL(value);
   if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('仅支持无凭据的 HTTP(S) 地址');
@@ -37,156 +39,183 @@ export function mountCatalogPanel(container, client, options = {}) {
   const root = el('section'); root.dataset.kmCatalog = '1';
   const style = el('style', 'section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{width:100%}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}');
   const status = el('p', '选择来源，下载并新建数据库'); status.setAttribute('role','status');
-  const progress = el('progress'); progress.hidden = true;
   const cards = el('div'); cards.className = 'catalog-sources';
   const capability = browserBuildCapability();
   const builder = options.builder ?? (options.buildWorkerUrl || options.buildWorkerFactory ? new BrowserCatalogBuilder(options.buildWorkerUrl, { workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions }) : undefined);
-  const canBuild = capability.available && Boolean(builder);
-  const canAuto = canBuild && Boolean(options.downloadArchive);
-  let busy = false, disposed = false, controller, activeTask;
-  const exports = new Set(), states = new Map(), exportButtons = new Map();
+  const canBuild = capability.available && Boolean(builder), canAuto = canBuild && Boolean(options.downloadArchive);
+  const downloads = new TaskQueue(2), builds = new TaskQueue(1), loads = new TaskQueue(1);
+  const cache = options.archiveCache ?? new ArchiveCache();
+  const exports = new Set(), states = new Map(), activeTasks = new Set();
+  let disposed = false, restoring = true, importedBusy = false;
+  const size = value => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
   const loadedFile = id => client.fileFor ? client.fileFor(id) : (states.get(id)?.loaded ? client.selectedFile : undefined);
-  const refresh = () => {
-    for (const [id, state] of states) {
-      if (client.hasProvider?.(id)) state.loaded = true;
-      if (!busy) state.label.textContent = state.loaded ? '已加载，可用于搜索' : '未加载';
-      exportButtons.get(id).disabled = busy || !loadedFile(id);
-      exportButtons.get(id).hidden = !loadedFile(id);
+  const check = signal => { if (disposed || signal?.aborted) throw new DOMException('已取消','AbortError'); };
+  const storageText = el('p', '正在读取存储用量…'); storageText.dataset.storage = '1';
+  const updateStorage = async () => {
+    if (!capability.available) { storageText.textContent = '此浏览器无法读取本地构建存储用量'; return; }
+    try {
+      const info = await (options.storageUsage ?? storageUsage)();
+      if (!disposed) storageText.textContent = `本工具文件约 ${size(info.owned)} · ${Number.isFinite(info.usage) && Number.isFinite(info.quota) ? `本站点已用 ${size(info.usage)} / 浏览器配额 ${size(info.quota)}（估算）` : '浏览器未提供配额'}`;
+    } catch (e) { if (!disposed) storageText.textContent = `暂时无法读取存储用量：${e.message}`; }
+  };
+  const update = () => {
+    for (const [id, s] of states) {
+      const ready = Boolean(s.archive), loaded = Boolean(loadedFile(id));
+      const action = ready ? '继续构建' : canAuto ? '下载并构建' : '下载原始数据';
+      s.start.textContent = action; s.start.setAttribute('aria-label', `${s.name} · ${action}`);
+      s.start.disabled = restoring || s.active;
+      s.fallback.disabled = restoring || s.active;
+      s.cancel.hidden = !s.active; s.cancel.disabled = s.committing;
+      s.clearRaw.hidden = !ready; s.clearRaw.disabled = restoring || s.active;
+      s.clearDb.hidden = !loaded; s.clearDb.disabled = restoring || s.active || importedBusy;
+      s.exportButton.hidden = !loaded; s.exportButton.disabled = restoring || s.active;
+      s.bar.hidden = !s.active;
     }
-    for (const control of root.querySelectorAll('button,input,select')) if (!exportButtonsHas(control) && control !== cancel) control.disabled = busy || (control.dataset.needsBuild === '1' && !canBuild);
-    cancel.disabled = !busy;
-    cancel.hidden = !busy;
+    file.disabled = restoring || importedBusy || [...states.values()].some(s => s.active);
+    build.disabled = restoring || !canBuild || Boolean(states.get(source.value)?.active);
   };
-  const exportButtonsHas = control => [...exportButtons.values()].includes(control);
-  const cancel = button('取消当前任务', () => { controller?.abort(); builder?.cancel(); client.cancel(); }); cancel.disabled = true;
-  const cancelled = () => { if (disposed || controller?.signal.aborted) throw new DOMException('已取消','AbortError'); };
-  const run = fn => {
-    if (busy || disposed) return;
-    controller = new AbortController(); busy = true; refresh(); progress.hidden = false; progress.removeAttribute('value');
-    activeTask = (async () => {
-      try { await fn(controller.signal); }
-      catch (error) { if (!disposed) status.textContent = error.name === 'AbortError' ? '已取消，已有数据库不变' : `失败：${error.message}`; }
-      finally { busy = false; progress.hidden = true; if (!disposed) refresh(); }
-    })();
-    return activeTask;
+  const say = (s, text, count, total) => {
+    s.label.textContent = text; status.textContent = `${s.id} · ${text}`;
+    if (total > 0) { s.bar.max = total; s.bar.value = count; } else s.bar.removeAttribute('value');
   };
-  const load = async file => {
-    cancelled();
-    const previous = client.selectedFile;
+  const run = (id, work) => {
+    const s = states.get(id); if (restoring || disposed || s.active) return;
+    s.active = true; s.committing = false; s.fallback.hidden = true; s.controller = new AbortController(); update();
+    const promise = Promise.resolve().then(async () => {
+      try { await work(s, s.controller.signal); }
+      catch (e) {
+        if (!disposed) {
+          say(s, e.name === 'AbortError' ? `已取消，已有数据库不变${s.archive ? '；完整档案已保留，可继续构建' : ''}` : `失败：${e.message}${s.archive ? '；完整档案已保留，可重试构建' : ''}`);
+          s.fallback.hidden = e.name === 'AbortError';
+        }
+      } finally { s.active = false; s.committing = false; activeTasks.delete(promise); if (!disposed) { update(); void updateStorage(); } }
+    });
+    activeTasks.add(promise); return promise;
+  };
+  const load = (selected, signal) => loads.run(async () => {
+    check(signal); const previous = client.selectedFile;
     let manifest;
-    try { manifest = await client.open(file); }
-    catch (error) { if (previous && !disposed && !client.hasFile) await client.open(previous); throw error; }
-    cancelled();
-    if (!client.hasProvider) for (const state of states.values()) state.loaded = false;
-    const state = states.get(manifest.provider); if (state) state.loaded = true;
+    try { manifest = await client.open(selected); }
+    catch (e) { if (previous && !disposed && !client.hasFile) await client.open(previous); throw e; }
+    if (!client.hasProvider) for (const s of states.values()) s.loaded = false;
+    const s = states.get(manifest.provider); if (s) { s.loaded = true; if (!s.active && !s.archive) s.label.textContent = '已加载，可用于搜索'; }
     status.textContent = `${manifest.provider} · 已加载`;
     return manifest;
-  };
-  const buildFile = async (file, id) => {
+  }, signal);
+  const buildFile = async (s, selected, signal) => {
     if (!canBuild) throw new Error(capability.reason);
-    cancelled(); status.textContent = '正在新建数据库…';
-    const result = await builder.build(file, id, file.name, data => {
-      status.textContent = `${data.phase}${data.count === undefined ? '' : ` · ${data.count} / ${data.total}`}`;
-      if (data.total > 0) { progress.max = data.total; progress.value = data.count; } else progress.removeAttribute('value');
-    });
-    cancelled(); status.textContent = '正在加载数据库…';
-    cancel.disabled = true; // Commit point: do not present a cancellable completed build.
-    const built = await builder.file(); await load(built);
-    // The builder validates SQLite before this point. Only activate a complete output.
-    if (builder.persist) {
-      try { await builder.persist(); }
-      catch (error) { status.textContent = `已加载，但自动保存失败：${error.message}；请导出数据库`; return; }
-    }
-    status.textContent = `${id} · 已构建并加载 ${result.count} 条`;
+    say(s, '等待构建（一次一个，降低内存占用）');
+    await builds.run(async () => {
+      check(signal); say(s, '正在新建数据库…');
+      const abort = () => builder.cancel(); signal.addEventListener('abort', abort, { once:true });
+      try {
+        const result = await builder.build(selected, s.id, selected.name, data => say(s, `${data.phase}${data.count === undefined ? '' : ` · ${data.count} / ${data.total}`}`, data.count, data.total));
+        check(signal); s.committing = true; update(); say(s, '正在加载数据库…');
+        const previous = loadedFile(s.id);
+        const built = await builder.file(); await load(built);
+        if (builder.persist) {
+          try { await builder.persist(); }
+          catch (e) {
+            if (builder.completed) {
+              // Do not leave a reader referencing scratch output that the next provider's
+              // build would delete. A failed index write preserves the previous saved file.
+              if (previous) await load(previous);
+              else if (client.remove) client.remove(s.id);
+              else { await client.close(); s.loaded = false; }
+              await builder.dispose(); throw e;
+            }
+            // Index was committed; only old-file cleanup failed. The new reader is valid.
+            say(s, `已构建并加载 ${result.count} 条；旧文件清理失败：${e.message}`); return;
+          }
+        }
+        if (s.archive) {
+          try { await cache.discard(s.id); s.archive = undefined; }
+          catch(e) { say(s, `已构建并加载 ${result.count} 条；原始档案清理失败：${e.message}`); return; }
+        }
+        say(s, `已构建并加载 ${result.count} 条`);
+      } finally { signal.removeEventListener('abort', abort); }
+    }, signal);
   };
-  const save = id => run(async () => {
-    const file = loadedFile(id); if (!file) throw new Error('尚未加载此来源');
+  const save = id => run(id, async (s, signal) => {
+    const selected = loadedFile(id); if (!selected) throw new Error('尚未加载此来源');
     if (typeof globalThis.showSaveFilePicker === 'function') {
       let handle;
       try { handle = await globalThis.showSaveFilePicker({ suggestedName: `${id}.sqlite` }); }
-      catch (error) { if (error.name === 'AbortError') { status.textContent = '已取消保存'; return; } throw error; }
-      const writable = await handle.createWritable();
-      try {
-        for (let offset = 0; offset < file.size; offset += 1024 * 1024) { cancelled(); await writable.write(await file.slice(offset, offset + 1024 * 1024).arrayBuffer()); }
-        cancelled(); await writable.close(); status.textContent = '数据库已保存';
-      } catch (error) { await writable.abort(); throw error; }
+      catch (e) { if (e.name === 'AbortError') { say(s, '已取消保存'); return; } throw e; }
+      const out = await handle.createWritable();
+      try { for (let at=0; at<selected.size; at+=1024*1024) { check(signal); await out.write(await selected.slice(at,at+1024*1024).arrayBuffer()); } check(signal); await out.close(); say(s,'数据库已保存'); }
+      catch (e) { await out.abort(); throw e; }
     } else {
-      const href = URL.createObjectURL(file); exports.add(href);
-      const a = el('a'); a.href = href; a.download = `${id}.sqlite`; a.hidden = true; root.append(a); a.click(); a.remove();
-      status.textContent = '已开始导出数据库';
+      const href = URL.createObjectURL(selected); exports.add(href);
+      const a = el('a'); a.href=href; a.download=`${id}.sqlite`; a.hidden=true; root.append(a); a.click(); a.remove(); say(s,'已开始导出数据库');
     }
   });
-  for (const source of catalogSources) {
-    const card = el('div'); card.className = 'catalog-source'; card.dataset.provider = source.id;
-    const label = el('span', '未加载'); states.set(source.id, { label, loaded: Boolean(client.hasProvider?.(source.id)) });
-    const start = button(`${source.name} · ${canAuto ? '下载并构建' : '下载原始数据'}`, () => run(async signal => {
-      status.textContent = `正在获取 ${source.name} 下载地址…`;
-      const href = await resolveArchive(source, options.fetchManifest, signal); cancelled();
-      if (!canAuto) {
-        if (!options.download) throw new Error('缺少下载权限');
-        await options.download(href, source.filename, signal);
-        status.textContent = canBuild ? '原始数据已下载，请在「已有文件」中选择它来构建' : `原始数据已下载。${capability.reason}`;
-        return;
-      }
-      label.textContent = '正在下载';
-      let archive;
-      try { archive = await options.downloadArchive(href, source.filename, signal, (bytes, total) => {
-        status.textContent = `${source.name} · 已下载 ${(bytes/1024/1024).toFixed(1)} MiB${total ? ` / ${(total/1024/1024).toFixed(1)} MiB` : ''}`;
-        if (total && total >= bytes) { progress.max = total; progress.value = bytes; } else progress.removeAttribute('value');
-      }); } catch (error) { if (error.name !== 'AbortError') fallback.hidden = false; throw error; }
-      try { cancelled(); label.textContent = '正在构建'; await buildFile(archive.file, source.id); }
-      catch (error) { if (error.name !== 'AbortError') fallback.hidden = false; throw error; }
-      finally { await archive.cleanup(); }
+  for (const item of catalogSources) {
+    const s = { ...item, active:false, loaded:Boolean(client.hasProvider?.(item.id)), label:el('span','未加载'), bar:el('progress') }; states.set(item.id,s);
+    const card=el('div'); card.className='catalog-source'; card.dataset.provider=item.id;
+    s.start=button('',()=>run(item.id,async (s,signal)=>{
+      if (s.archive) { await buildFile(s,s.archive.file,signal); return; }
+      say(s,'等待下载');
+      await downloads.run(async()=>{
+        check(signal); say(s,'正在获取下载地址…');
+        const href=await resolveArchive(item,options.fetchManifest,signal); check(signal);
+        if (!canAuto) {
+          if (!options.download) throw new Error('缺少下载权限');
+          await options.download(href,item.filename,signal); say(s,canBuild?'原始数据已下载，请在「已有文件」中选择它来构建':`原始数据已下载。${capability.reason}`);return;
+        }
+        const archive=await options.downloadArchive(href,item.filename,signal,(bytes,total)=>say(s,`已下载 ${size(bytes)}${total?` / ${size(total)}`:''}`,bytes,total));
+        // Commit a complete archive before reacting to cancellation. No partial data is resumable.
+        try { s.archive=await cache.save(item.id,archive,href); }
+        catch(e) { await archive.cleanup(); throw e; }
+        say(s,'完整档案已保存'); void updateStorage();
+      },signal);
+      if(canAuto) { check(signal); await buildFile(s,s.archive.file,signal); }
     }));
-    start.setAttribute('aria-label', start.textContent);
-    start.textContent = canAuto ? '下载并构建' : '下载原始数据';
-    const fallback = button('仅下载原始数据', () => run(async signal => {
-      const href = await resolveArchive(source, options.fetchManifest, signal);
-      if (!options.download) throw new Error('缺少下载权限');
-      await options.download(href, source.filename, signal);
-      status.textContent = '原始数据已下载，请在「已有文件」中选择它来构建';
-    })); fallback.hidden = true;
-    const exportButton = button('导出数据库', () => save(source.id)); exportButtons.set(source.id, exportButton);
-    card.append(el('h4', source.name), label, start, fallback, exportButton); cards.append(card);
+    s.cancel=button('取消任务',()=>{ if(!s.committing)s.controller?.abort(); });
+    s.fallback=button('仅下载原始数据',()=>run(item.id,async(s,signal)=>{
+      await downloads.run(async()=>{ const href=await resolveArchive(item,options.fetchManifest,signal);check(signal);if(!options.download)throw Error('缺少下载权限');await options.download(href,item.filename,signal);say(s,'原始数据已下载，请在「已有文件」中选择它来构建'); },signal);
+    }));s.fallback.hidden=true;
+    s.exportButton=button('导出数据库',()=>save(item.id));
+    s.clearRaw=button('清除原始档案',()=>{ if(confirm(`清除 ${item.name} 已下载的原始档案？已有数据库不变。`)) void run(item.id,async s=>{await cache.discard(item.id);s.archive=undefined;say(s,'已清除原始档案，已有数据库不变');}); });
+    s.clearDb=button('移除数据库',()=>{ if(confirm(`移除浏览器中的 ${item.name} 数据库？不会修改 Komga 元数据或外部文件。`)) void run(item.id,async(s,signal)=>{await loads.run(async()=>{await removeSavedCatalog(item.id);client.remove?.(item.id);s.loaded=false;},signal);say(s,'已移除浏览器数据库');}); });
+    card.append(el('h4',item.name),s.label,s.bar,s.start,s.cancel,s.fallback,s.exportButton,s.clearRaw,s.clearDb);cards.append(card);
   }
-  const existing = el('details'); existing.append(el('summary', '已有文件'));
-  const fileLabel = el('label', '加载已构建数据库'), file = el('input'); file.type = 'file'; file.accept = '.sqlite,.db'; file.setAttribute('aria-label','本地数据库文件'); fileLabel.append(file);
-  file.onchange = () => { if (file.files?.[0]) { const selected = file.files[0]; void run(() => load(selected)); } };
-  const rawDetails = el('details'); rawDetails.append(el('summary','从已下载的原始数据构建'));
-  const source = el('select'); source.setAttribute('aria-label','构建来源');
-  for (const item of catalogSources) { const option = el('option', item.name); option.value = item.id; source.append(option); }
-  const archive = el('input'); archive.type = 'file'; archive.setAttribute('aria-label','来源档案');
-  const build = button('构建并加载', () => run(async () => { if (!archive.files?.[0]) throw new Error('请选择原始数据文件'); await buildFile(archive.files[0], source.value); }));
-  build.dataset.needsBuild = '1';
-  rawDetails.append(source, archive, build); existing.append(fileLabel, rawDetails);
-  root.append(style, el('h3','下载并建立本地数据库'), el('p','选择来源后自动下载、构建并加载，无需预先创建文件。在此构建的库保存在当前浏览器，也可以导出备份。'));
-  if (!canBuild) root.append(el('p', capability.reason));
-  root.append(cards,status,progress,cancel,existing); container.append(root); refresh();
-  // Restore persisted build outputs. Manual imports retain their File within this page.
-  const restore = async () => {
-    if (!canBuild) return;
-    let directory;
-    try { directory = await catalogDirectory('komga-catalog-build', false); }
-    catch (error) { if (error.name !== 'NotFoundError') status.textContent = `恢复失败：${error.message}`; return; }
-    for (const source of catalogSources) {
-      if (disposed || client.hasProvider?.(source.id)) continue;
-      try {
-        const info = JSON.parse(await (await (await directory.getFileHandle(`active-${source.id}.json`)).getFile()).text());
-        if (info.provider !== source.id || !/^output-[\w-]+\.sqlite$/.test(info.name)) throw new Error('保存记录无效');
-        if (disposed) return;
-        await load(await (await directory.getFileHandle(info.name)).getFile());
-      } catch (error) { if (error.name !== 'NotFoundError' && !disposed) status.textContent = `${source.name} 恢复失败：${error.message}`; }
-    }
-    if (!disposed) refresh();
+  const existing=el('details');existing.append(el('summary','已有文件'));
+  const fileLabel=el('label','加载已构建数据库'),file=el('input');file.type='file';file.accept='.sqlite,.db';file.setAttribute('aria-label','本地数据库文件');fileLabel.append(file);
+  file.onchange=()=>{
+    if(!file.files?.[0]||importedBusy||restoring)return;
+    const selected=file.files[0];importedBusy=true;update();
+    const task=load(selected).catch(e=>{status.textContent=`失败：${e.message}`;}).finally(()=>{importedBusy=false;activeTasks.delete(task);if(!disposed)update();});activeTasks.add(task);
   };
-  busy = true; refresh();
-  client.restoring = restore().finally(() => { client.restoring = undefined; busy = false; if (!disposed) refresh(); });
-  return async () => {
-    disposed = true; controller?.abort(); builder?.cancel(); client.cancel();
-    await client.restoring; await activeTask;
-    if (!options.builder) await builder?.dispose();
-    for (const href of exports) URL.revokeObjectURL(href);
-    root.remove();
+  const rawDetails=el('details');rawDetails.append(el('summary','从已下载的原始数据构建'));
+  const source=el('select');source.setAttribute('aria-label','构建来源');
+  for(const item of catalogSources){const o=el('option',item.name);o.value=item.id;source.append(o);}source.onchange=update;
+  const archive=el('input');archive.type='file';archive.setAttribute('aria-label','来源档案');
+  const build=button('构建并加载',()=>{const selected=archive.files?.[0];return run(source.value,async(s,signal)=>{if(!selected)throw Error('请选择原始数据文件');await buildFile(s,selected,signal);});});
+  rawDetails.append(source,archive,build);existing.append(fileLabel,rawDetails);
+  root.append(style,el('h3','下载并建立本地数据库'),el('p','关闭弹窗后任务继续。最多同时下载两个来源，构建逐个排队。完整下载的档案会保留到构建成功；刷新后可继续构建，但不保留下载到一半或构建到一半的进度。'));
+  if(!canBuild)root.append(el('p',capability.reason));
+  root.append(cards,status,storageText,button('刷新存储用量',()=>{void updateStorage();}),existing);container.append(root);update();
+  const restore=async()=>{
+    if(!canBuild)return;
+    for(const item of catalogSources){
+      if(disposed)return;const s=states.get(item.id);
+      try {s.archive=await cache.get(item.id);if(s.archive)s.label.textContent=`完整档案 ${size(s.archive.file.size)}，可继续构建`;} catch(e){say(s,`档案恢复失败：${e.message}`);}
+      if(client.hasProvider?.(item.id))continue;
+      try {
+        const directory=await catalogDirectory('komga-catalog-build',false);
+        const info=JSON.parse(await(await(await directory.getFileHandle(`active-${item.id}.json`)).getFile()).text());
+        if(info.provider!==item.id||!/^output-[\w-]+\.sqlite$/.test(info.name))throw Error('保存记录无效');
+        check();await load(await(await directory.getFileHandle(info.name)).getFile());
+        if(!s.archive)s.label.textContent='已加载，可用于搜索';
+      }catch(e){if(e.name!=='NotFoundError'&&!disposed)say(s,`恢复失败：${e.message}`);}
+    }
+  };
+  client.restoring=restore().finally(()=>{client.restoring=undefined;restoring=false;if(!disposed){update();void updateStorage();}});
+  return async()=>{
+    disposed=true;for(const s of states.values())if(!s.committing)s.controller?.abort();
+    client.cancel();await client.restoring;await Promise.allSettled([...activeTasks]);
+    if(!options.builder)await builder?.dispose();for(const href of exports)URL.revokeObjectURL(href);root.remove();
   };
 }
 export function catalogProvider(client, provider) {
@@ -196,12 +225,12 @@ export function catalogProvider(client, provider) {
     available: () => Boolean(client.restoring || (client.hasProvider ? client.hasProvider(provider) : client.file)),
     async search(query, context) {
       if (context.signal.aborted) throw new DOMException('已取消','AbortError');
-      const abort = () => client.cancel(); context.signal.addEventListener('abort',abort,{once:true});
+      const abort = () => client.cancelQueries ? client.cancelQueries() : client.cancel(); context.signal.addEventListener('abort',abort,{once:true});
       try { return await client.search(query,provider); } finally { context.signal.removeEventListener('abort',abort); }
     },
     async get(id, context) {
       if (context.signal.aborted) throw new DOMException('已取消','AbortError');
-      const abort = () => client.cancel(); context.signal.addEventListener('abort',abort,{once:true});
+      const abort = () => client.cancelQueries ? client.cancelQueries() : client.cancel(); context.signal.addEventListener('abort',abort,{once:true});
       try { return await client.get(provider,id); } finally { context.signal.removeEventListener('abort',abort); }
     },
     async resolveLink(input, context) {

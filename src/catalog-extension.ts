@@ -127,7 +127,7 @@ function fetchManifest(url: string, signal: AbortSignal): Promise<unknown> {
 }
 
 export function createCatalogExtension(): CatalogExtension {
-  let assetController: AbortController | undefined;
+  const assetController = new AbortController();
   const loadWorker = (name: string) => {
     if (!assetController) throw new Error('离线资源请求已关闭');
     return worker(name, assetController.signal);
@@ -137,23 +137,24 @@ export function createCatalogExtension(): CatalogExtension {
     workerFactory: () => loadWorker('catalog-build-worker.js')
   });
   let mounted = false;
+  let panel: HTMLElement | undefined;
+  let destroyPanel: (() => void | Promise<void>) | undefined;
   return {
     providers: providers.map(provider => catalogProvider(client, provider)),
     mount(container) {
       if (mounted) throw new Error('离线目录面板已挂载');
       mounted = true;
-      assetController = new AbortController();
-      const unmount = mountCatalogPanel(container, client, {
-        download, downloadArchive, fetchManifest, builder
-      });
-      return async () => {
-        assetController?.abort();
-        try { await unmount(); }
-        finally { assetController = undefined; mounted = false; client.cancel(); }
-      };
+      if (!panel) {
+        panel = document.createElement('div');
+        destroyPanel = mountCatalogPanel(panel, client, { download, downloadArchive, fetchManifest, builder });
+      }
+      container.append(panel);
+      // The page owns the tasks. Closing a popup only detaches their view.
+      return () => { panel?.remove(); mounted = false; };
     },
     async dispose() {
       assetController?.abort();
+      await destroyPanel?.();
       client.dispose();
       await builder.dispose();
       mounted = false;

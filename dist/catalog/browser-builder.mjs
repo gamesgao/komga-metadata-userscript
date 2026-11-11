@@ -33,6 +33,8 @@ export class BrowserCatalogBuilder {
       const worker = created?.worker ?? created;
       const initOptions = created?.initOptions ?? this.initOptions;
       if (!worker || typeof worker.postMessage !== 'function') throw new Error('Build worker factory returned no Worker');
+      // Cancellation can arrive while the GM factory is still fetching Worker/WASM.
+      if (generation !== this.generation) { worker.terminate(); throw new DOMException('Build cancelled', 'AbortError'); }
       const task = { worker, directory, sourceName, outputName, reject: undefined };
       this.current = task;
       try {

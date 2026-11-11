@@ -307,7 +307,7 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       };
     });
     await page.getByRole('button', { name: '导出数据库', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: /^数据库已保存$/ }).waitFor();
+    await page.getByRole('status').filter({ hasText: /数据库已保存$/ }).waitFor();
     assert.equal(await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory();
       const handle = await root.getFileHandle('panel-export.sqlite');
@@ -539,6 +539,16 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       try{return await new Promise((ok,no)=>{w.onmessage=e=>ok(e.data);w.onerror=e=>no(Error(e.message))});}finally{w.terminate();URL.revokeObjectURL(url)}
     });
     assert.deepEqual(sparse,{size:8193,count:8193,first:0,last:7});
+    const startupCancel=await insecure.evaluate(async()=>{
+      const {BrowserCatalogBuilder}=await import('/browser-builder.mjs');
+      let entered,release,posts=0,terminated=0;
+      const ready=new Promise(r=>entered=r);
+      const builder=new BrowserCatalogBuilder(undefined,{workerFactory:()=>{entered();return new Promise(r=>release=r)}});
+      const pending=builder.build(new File(['x'],'source.zip'),'bangumi').catch(e=>e.name);
+      await ready;builder.cancel();release({postMessage(){posts++},terminate(){terminated++}});
+      return {error:await pending,posts,terminated,busy:builder.busy};
+    });
+    assert.deepEqual(startupCancel,{error:'AbortError',posts:0,terminated:1,busy:false});
     await insecure.reload();
     const restored = await insecure.evaluate(async()=>{
       const { CatalogCollection }=await import('/collection.mjs');
@@ -555,6 +565,76 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     const exportedDb=new DatabaseSync(exportPath,{readOnly:true});
     try {assert.equal(exportedDb.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.equal(exportedDb.prepare('SELECT provider FROM entries LIMIT 1').get().provider,'bookwalker');}finally{exportedDb.close()}
     await insecure.evaluate(async()=>{await window.httpCatalog.unmount();window.httpCatalog.client.dispose()});
+    // Submit all sources. Downloads overlap, builds are bounded, and detaching the view
+    // does not cancel work. Completed downloads survive failure/cancel and a real reload.
+    for (const [id,input] of Object.entries(inputs)) {
+      await insecure.locator('#file').setInputFiles(input);
+      await insecure.evaluate(id=>{window.rawFiles??={};window.rawFiles[id]=document.querySelector('#file').files[0];},id);
+    }
+    await insecure.evaluate(async()=>{
+      const {mountCatalogPanel}=await import('/panel.mjs');const {CatalogCollection}=await import('/collection.mjs');
+      const {BrowserCatalogBuilder}=await import('/browser-builder.mjs');const {ArchiveCache}=await import('/archive-cache.mjs');
+      const {catalogDirectory,uniqueId}=await import('/storage.mjs');
+      window.taskClient=new CatalogCollection('/worker.mjs');window.taskCache=new ArchiveCache();
+      const builder=new BrowserCatalogBuilder('/build-worker.mjs'),original=builder.build.bind(builder);
+      window.taskStats={downloads:0,activeDownloads:0,peakDownloads:0,builds:[],activeBuilds:0,peakBuilds:0};window.downloadWaiters=[];
+      window.firstBuildStarted=new Promise(r=>window.markFirstBuild=r);
+      builder.build=async(...args)=>{const s=window.taskStats;s.builds.push(args[1]);s.peakBuilds=Math.max(s.peakBuilds,++s.activeBuilds);
+        try{if(args[1]==='bangumi'){window.markFirstBuild();await new Promise(r=>window.releaseBuild=r);throw Error('injected build failure');}return await original(...args);}finally{s.activeBuilds--;}};
+      window.taskHost=document.createElement('div');document.body.append(window.taskHost);
+      const downloadArchive=async(url,name,signal)=>{
+        const s=window.taskStats;s.downloads++;s.peakDownloads=Math.max(s.peakDownloads,++s.activeDownloads);
+        if(!window.downloadReady)await new Promise(r=>window.downloadWaiters.push(r));
+        const id=name.includes('bangumi')?'bangumi':name.includes('e-hentai')?'ehentai':name.includes('series.sqlite')?'mangabaka':'bookwalker';
+        if(id!=='bangumi')await window.firstBuildStarted;
+        const directory=await catalogDirectory('komga-catalog-download');const storageName=uniqueId()+'-'+name;
+        const handle=await directory.getFileHandle(storageName,{create:true}),out=await handle.createWritable();await out.write(window.rawFiles[id]);await out.close();s.activeDownloads--;
+        return {file:await handle.getFile(),storageName,cleanup:()=>directory.removeEntry(storageName)};
+      };
+      window.taskUnmount=mountCatalogPanel(window.taskHost,window.taskClient,{builder,downloadArchive,fetchManifest:async()=>({browser_download_url:'https://github.com/bangumi/Archive/releases/download/fixture/test.zip'})});
+      await window.taskClient.restoring;
+    });
+    for(const name of ['Bangumi','E-Hentai','MangaBaka','BookWalker']) await insecure.getByRole('button',{name:name+' · 下载并构建',exact:true}).click();
+    await insecure.waitForFunction(()=>window.taskStats.downloads===2);
+    await insecure.evaluate(()=>{window.taskHost.remove();window.downloadReady=true;window.downloadWaiters.forEach(r=>r())});
+    await insecure.waitForFunction(async()=>window.taskStats.downloads===4&&window.releaseBuild&&Boolean(await window.taskCache.get('bookwalker')));
+    await insecure.evaluate(()=>document.body.append(window.taskHost));
+    await insecure.locator('[data-provider=ehentai]').getByRole('button',{name:'取消任务',exact:true}).click();
+    await insecure.evaluate(()=>window.releaseBuild());
+    await insecure.locator('[data-provider=bookwalker]').getByText(/已构建并加载/).waitFor();
+    await insecure.locator('[data-provider=mangabaka]').getByText(/已构建并加载/).waitFor();
+    assert.deepEqual(await insecure.evaluate(()=>window.taskStats.builds.slice().sort()),['bangumi','bookwalker','mangabaka']);
+    assert.deepEqual(await insecure.evaluate(()=>[window.taskStats.peakDownloads,window.taskStats.peakBuilds]),[2,1]);
+    assert.deepEqual(await insecure.evaluate(async()=>Promise.all(['bangumi','ehentai','mangabaka','bookwalker'].map(async id=>Boolean(await window.taskCache.get(id))))),[true,true,false,false]);
+    await insecure.reload();
+    await insecure.evaluate(async()=>{
+      const {mountCatalogPanel}=await import('/panel.mjs');const {CatalogCollection}=await import('/collection.mjs');const {ArchiveCache}=await import('/archive-cache.mjs');
+      window.taskClient=new CatalogCollection('/worker.mjs');window.taskCache=new ArchiveCache();window.unexpectedDownloads=0;
+      const {BrowserCatalogBuilder}=await import('/browser-builder.mjs');const builder=new BrowserCatalogBuilder('/build-worker.mjs'),persist=builder.persist.bind(builder);
+      builder.persist=async()=>{if(!window.failedPersist){window.failedPersist=true;throw Error('fixture save failure')}return persist()};
+      window.taskUnmount=mountCatalogPanel(document.body,window.taskClient,{builder,downloadArchive:async()=>{window.unexpectedDownloads++;throw Error('must reuse complete archive')}});
+      await window.taskClient.restoring;window.previousBangumi=window.taskClient.fileFor('bangumi').name;
+    });
+    await insecure.getByRole('button',{name:'Bangumi · 继续构建',exact:true}).click();
+    await insecure.locator('[data-provider=bangumi]').getByText(/fixture save failure/).waitFor();
+    assert.equal(await insecure.evaluate(()=>window.taskClient.fileFor('bangumi').name===window.previousBangumi),true);
+    assert.equal(await insecure.evaluate(async()=>(await window.taskClient.fileFor('bangumi').slice(0,15).text())), 'SQLite format 3');
+    assert.equal(await insecure.evaluate(async()=>Boolean(await window.taskCache.get('bangumi'))),true);
+    await insecure.getByRole('button',{name:'Bangumi · 继续构建',exact:true}).click();
+    await insecure.locator('[data-provider=bangumi]').getByText(/已构建并加载/).waitFor();
+    assert.equal(await insecure.evaluate(()=>window.unexpectedDownloads),0);
+    assert.equal(await insecure.evaluate(async()=>Boolean(await window.taskCache.get('bangumi'))),false);
+    const beforeClear=await insecure.evaluate(async()=>(await(await import('/archive-cache.mjs')).storageUsage()).owned);
+    insecure.on('dialog',dialog=>dialog.accept());
+    await insecure.locator('[data-provider=ehentai]').getByRole('button',{name:'清除原始档案',exact:true}).click();
+    await insecure.locator('[data-provider=ehentai]').getByText('已清除原始档案，已有数据库不变',{exact:true}).waitFor();
+    assert.equal(await insecure.evaluate(()=>window.taskClient.hasProvider('ehentai')),true);
+    await insecure.locator('[data-provider=bookwalker]').getByRole('button',{name:'移除数据库',exact:true}).click();
+    await insecure.locator('[data-provider=bookwalker]').getByText('已移除浏览器数据库',{exact:true}).waitFor();
+    assert.equal(await insecure.evaluate(()=>window.taskClient.hasProvider('bookwalker')),false);
+    const afterClear=await insecure.evaluate(async()=>(await(await import('/archive-cache.mjs')).storageUsage()).owned);
+    assert.ok(afterClear<beforeClear);assert.ok((await insecure.locator('[data-storage]').textContent()).includes('配额'));
+    await insecure.evaluate(async()=>{await window.taskUnmount();window.taskClient.dispose()});
   } finally {
     if (browser) await browser.close();
     if (http) await new Promise(ok => http.close(ok));

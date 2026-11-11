@@ -7,6 +7,7 @@ export class CatalogCollection {
   get hasFile() { return this.clients.size > 0; }
   hasProvider(id) { return this.clients.has(id); }
   fileFor(id) { return this.clients.get(id)?.selectedFile; }
+  remove(id) { const client = this.clients.get(id); client?.dispose(); this.clients.delete(id); if (this.current === client) this.current = this.clients.values().next().value; }
   async open(file, verification) {
     if (this.probe) throw new Error('另一个数据库正在加载');
     const generation = this.generation;
@@ -26,6 +27,7 @@ export class CatalogCollection {
   manifest() { if (!this.current) throw new Error('尚未加载数据库'); return this.current.manifest(); }
   stats() { if (!this.current) throw new Error('尚未加载数据库'); return this.current.stats(); }
   cancel() { this.generation++; this.probe?.cancel(); for (const client of this.clients.values()) client.cancel(); }
+  cancelQueries() { for (const client of this.clients.values()) client.cancel(); }
   async close() { this.dispose(); }
   dispose() { this.generation++; this.probe?.dispose(); for (const client of this.clients.values()) client.dispose(); this.clients.clear(); this.current = undefined; }
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.7.1
+// @version      0.8.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -106,8 +106,8 @@ SOFTWARE.
     list() {
       return [...this.providers.values()];
     }
-    async search(ids, query, context) {
-      return Promise.all(ids.map(async (id) => {
+    async search(ids2, query, context) {
+      return Promise.all(ids2.map(async (id) => {
         try {
           return { id, candidates: await this.get(id).search(query, context) };
         } catch (error) {
@@ -339,8 +339,8 @@ SOFTWARE.
     const route = location2.hash.startsWith("#/") ? location2.hash.slice(1) : location2.pathname;
     const match = route.match(/\/(?:series|oneshot)\/([a-zA-Z0-9_-]+)(?:\/|$)/);
     if (match) return match[1];
-    const ids = new Set([...doc?.querySelectorAll('main img[src*="/api/v1/series/"], [role="main"] img[src*="/api/v1/series/"]') ?? []].map((image2) => image2.getAttribute("src")?.match(/\/api\/v1\/series\/([a-zA-Z0-9_-]+)\/thumbnail/)?.[1]).filter(Boolean));
-    return ids.size === 1 ? [...ids][0] : void 0;
+    const ids2 = new Set([...doc?.querySelectorAll('main img[src*="/api/v1/series/"], [role="main"] img[src*="/api/v1/series/"]') ?? []].map((image2) => image2.getAttribute("src")?.match(/\/api\/v1\/series\/([a-zA-Z0-9_-]+)\/thumbnail/)?.[1]).filter(Boolean));
+    return ids2.size === 1 ? [...ids2][0] : void 0;
   }
   function detectKomga(doc, location2) {
     const brand = /(?:^|[\s|–-])komga(?:$|[\s|–-])/i.test(doc.title) || doc.querySelector('meta[name="application-name"]')?.getAttribute("content")?.toLowerCase() === "komga";
@@ -1596,9 +1596,9 @@ SOFTWARE.
     if (typeof createImageBitmap === "function") {
       try {
         const bitmap = await createImageBitmap(blob);
-        const valid = bitmap.width > 0 && bitmap.height > 0;
+        const valid2 = bitmap.width > 0 && bitmap.height > 0;
         bitmap.close();
-        if (!valid) throw new Error("zero dimensions");
+        if (!valid2) throw new Error("zero dimensions");
       } catch {
         throw new MetadataError("verification", "\u5C01\u9762\u65E0\u6CD5\u89E3\u7801");
       }
@@ -2323,10 +2323,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const languageChecks = element("div");
       languageChecks.className = "field-grid";
       for (const language of allLanguages) {
-        const check = input(languageLabels[language], languageChecks, "checkbox");
-        check.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
-        check.dataset.language = language;
-        check.onchange = () => {
+        const check2 = input(languageLabels[language], languageChecks, "checkbox");
+        check2.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
+        check2.dataset.language = language;
+        check2.onchange = () => {
           this.settings.acceptedLanguages = [...languageChecks.querySelectorAll("input:checked")].map((i) => i.dataset.language);
           storage.set("settings-v1", this.settings);
           this.renderSelection();
@@ -2603,14 +2603,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     async search() {
       this.clearSearch();
       this.saveSourceChecks();
-      const ids = this.sourceIds();
-      if (!this.query.value.trim() || !ids.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
+      const ids2 = this.sourceIds();
+      if (!this.query.value.trim() || !ids2.length) throw new MetadataError("verification", "\u8F93\u5165\u641C\u7D22\u8BCD\u5E76\u9009\u62E9\u6765\u6E90");
       const query = this.query.value.trim(), context = this.context();
       const thumbnails = this.thumbnails = new Thumbnails(this.viewport, (url2, signal) => this.writer.image(url2, signal));
       context.signal.addEventListener("abort", () => thumbnails.dispose(), { once: true });
       const imageContext = { ...context, signal: thumbnails.signal };
       const bar = element("progress"), progressLabel = element("span");
-      bar.max = ids.length;
+      bar.max = ids2.length;
       bar.value = 0;
       bar.setAttribute("aria-label", "\u641C\u7D22\u8FDB\u5EA6");
       this.searchProgress.replaceChildren(progressLabel, bar);
@@ -2619,10 +2619,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       let completed = 0, failed = 0;
       const progress = () => {
         bar.value = completed;
-        progressLabel.textContent = `\u5DF2\u7ED3\u675F ${completed} / ${ids.length} \u4E2A\u6765\u6E90`;
+        progressLabel.textContent = `\u5DF2\u7ED3\u675F ${completed} / ${ids2.length} \u4E2A\u6765\u6E90`;
       };
       progress();
-      await Promise.all(ids.map(async (id) => {
+      await Promise.all(ids2.map(async (id) => {
         const group = element("details");
         group.className = "result-group";
         group.dataset.provider = id;
@@ -2744,12 +2744,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         row.className = "selected-source";
         const name = element("span", `${r.provider}${provider.capabilities.offline ? " \xB7 \u672C\u5730" : ""} \xB7 ${nativeTitle(r)}`);
         name.title = r.url;
-        const remove = button("\u79FB\u9664", () => {
+        const remove2 = button("\u79FB\u9664", () => {
           if (!this.busy) this.removeSelection(sourceKey(r));
         });
-        remove.className = "ghost";
-        remove.setAttribute("aria-label", `\u79FB\u9664 ${r.provider}`);
-        row.append(name, remove);
+        remove2.className = "ghost";
+        remove2.setAttribute("aria-label", `\u79FB\u9664 ${r.provider}`);
+        row.append(name, remove2);
         this.detail.append(row);
       }
       const states = { ONGOING: "\u8FDE\u8F7D\u4E2D", ENDED: "\u5DF2\u5B8C\u7ED3", HIATUS: "\u6682\u505C\u8FDE\u8F7D", ABANDONED: "\u5DF2\u505C\u6B62\u8FDE\u8F7D" };
@@ -2758,11 +2758,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.detail.append(meta2);
       if (this.selections.length > 1) {
         this.detail.append(element("p", "\u5728\u9884\u89C8\u4E2D\u9010\u5B57\u6BB5\u9009\u62E9\u300C\u5355\u9009\u300D\u6216\u300C\u5408\u5E76\u300D\u3002"));
-        const confirm = input("\u8FD9\u4E9B\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C", this.detail, "checkbox");
-        confirm.parentElement.className = "check-label";
-        confirm.checked = this.sameWork;
-        confirm.onchange = () => {
-          this.sameWork = confirm.checked;
+        const confirm2 = input("\u8FD9\u4E9B\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C", this.detail, "checkbox");
+        confirm2.parentElement.className = "check-label";
+        confirm2.checked = this.sameWork;
+        confirm2.onchange = () => {
+          this.sameWork = confirm2.checked;
           this.invalidate();
         };
       }
@@ -2855,10 +2855,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         for (const [field, value] of Object.entries(edit.after)) {
           const row = element("div");
           row.className = "row";
-          const check = input(labels[field], row, "checkbox");
-          check.checked = true;
-          check.dataset.edit = String(index);
-          check.dataset.field = field;
+          const check2 = input(labels[field], row, "checkbox");
+          check2.checked = true;
+          check2.dataset.edit = String(index);
+          check2.dataset.field = field;
           const diff = element("div");
           diff.className = "diff";
           const old = element("div"), updated = element("div");
@@ -2874,7 +2874,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           next.dataset.field = field;
           next.title = next.dataset.format === "text" ? "\u53EF\u76F4\u63A5\u7F16\u8F91\u6587\u672C" : "JSON \u683C\u5F0F";
           next.setAttribute("aria-label", `${labels[field]}\u5199\u5165\u503C`);
-          this.fieldComposer(row, field, value, before, next, check, afterLabel);
+          this.fieldComposer(row, field, value, before, next, check2, afterLabel);
           updated.append(afterLabel, next);
           diff.append(old, updated);
           row.append(diff);
@@ -3262,6 +3262,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     fileFor(id) {
       return this.clients.get(id)?.selectedFile;
     }
+    remove(id) {
+      const client = this.clients.get(id);
+      client?.dispose();
+      this.clients.delete(id);
+      if (this.current === client) this.current = this.clients.values().next().value;
+    }
     async open(file, verification) {
       if (this.probe) throw new Error("\u53E6\u4E00\u4E2A\u6570\u636E\u5E93\u6B63\u5728\u52A0\u8F7D");
       const generation = this.generation;
@@ -3306,6 +3312,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.probe?.cancel();
       for (const client of this.clients.values()) client.cancel();
     }
+    cancelQueries() {
+      for (const client of this.clients.values()) client.cancel();
+    }
     async close() {
       this.dispose();
     }
@@ -3343,6 +3352,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     constructor(entry) {
       this.entry = entry;
     }
+    async *entries() {
+      const reader = this.entry.createReader();
+      while (true) {
+        const entries = await invoke(reader, "readEntries");
+        if (!entries.length) return;
+        for (const entry of entries) if (entry.isFile) yield [entry.name, new LegacyFile(entry)];
+      }
+    }
     async getFileHandle(name, options = {}) {
       if (!name || name.includes("/") || name.includes("\\")) throw new Error("Invalid catalog filename");
       return new LegacyFile(await invoke(this.entry, "getFile", name, { create: Boolean(options.create) }));
@@ -3368,6 +3385,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   var LegacyFile = class {
     constructor(entry) {
       this.entry = entry;
+      this.kind = "file";
     }
     getFile() {
       return invoke(this.entry, "file");
@@ -3580,7 +3598,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       });
       await writable.close();
       writable = void 0;
-      return { file: await handle.getFile(), cleanup };
+      return { file: await handle.getFile(), storageName: filename, cleanup };
     } catch (error) {
       request2?.abort();
       await reader?.cancel().catch(() => {
@@ -3625,6 +3643,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         const worker2 = created?.worker ?? created;
         const initOptions = created?.initOptions ?? this.initOptions;
         if (!worker2 || typeof worker2.postMessage !== "function") throw new Error("Build worker factory returned no Worker");
+        if (generation !== this.generation) {
+          worker2.terminate();
+          throw new DOMException("Build cancelled", "AbortError");
+        }
         const task = { worker: worker2, directory, sourceName, outputName, reject: void 0 };
         this.current = task;
         try {
@@ -3754,6 +3776,148 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   };
 
+  // catalog/src/task-queue.mjs
+  var TaskQueue = class {
+    constructor(limit = 1) {
+      this.limit = limit;
+      this.active = 0;
+      this.waiting = [];
+    }
+    run(work, signal) {
+      return new Promise((resolve, reject) => {
+        const task = { work, signal, resolve, reject, started: false };
+        task.abort = () => {
+          if (task.started) return;
+          this.waiting = this.waiting.filter((item) => item !== task);
+          signal?.removeEventListener("abort", task.abort);
+          reject(new DOMException("\u5DF2\u53D6\u6D88", "AbortError"));
+        };
+        if (signal?.aborted) {
+          task.abort();
+          return;
+        }
+        signal?.addEventListener("abort", task.abort, { once: true });
+        this.waiting.push(task);
+        this.pump();
+      });
+    }
+    pump() {
+      while (this.active < this.limit && this.waiting.length) {
+        const task = this.waiting.shift();
+        task.started = true;
+        this.active++;
+        task.signal?.removeEventListener("abort", task.abort);
+        Promise.resolve().then(() => {
+          if (task.signal?.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+          return task.work();
+        }).then(task.resolve, task.reject).finally(() => {
+          this.active--;
+          this.pump();
+        });
+      }
+    }
+  };
+
+  // catalog/src/archive-cache.mjs
+  var ids = ["bangumi", "ehentai", "mangabaka", "bookwalker"];
+  function check(id) {
+    if (!ids.includes(id)) throw new Error("\u4E0D\u652F\u6301\u7684\u6765\u6E90");
+  }
+  async function read(directory, name) {
+    return JSON.parse(await (await (await directory.getFileHandle(name)).getFile()).text());
+  }
+  async function remove(directory, name) {
+    await directory.removeEntry(name).catch((e) => {
+      if (e.name !== "NotFoundError") throw e;
+    });
+  }
+  function valid(info) {
+    return info?.version === 1 && typeof info.name === "string" && /^[a-f0-9-]+-[^/\\]+$/.test(info.name) && Number.isSafeInteger(info.bytes) && info.bytes > 0;
+  }
+  var ArchiveCache = class {
+    async get(id) {
+      check(id);
+      try {
+        const directory = await catalogDirectory("komga-catalog-download", false);
+        const info = await read(directory, `ready-${id}.json`);
+        if (!valid(info)) throw new Error("\u539F\u59CB\u6863\u6848\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548");
+        const file = await (await directory.getFileHandle(info.name)).getFile();
+        if (file.size !== info.bytes) throw new Error("\u539F\u59CB\u6863\u6848\u5927\u5C0F\u4E0D\u7B26\uFF0C\u8BF7\u6E05\u9664\u540E\u91CD\u65B0\u4E0B\u8F7D");
+        return { file, storageName: info.name, savedAt: info.savedAt };
+      } catch (e) {
+        if (e.name === "NotFoundError") return void 0;
+        throw e;
+      }
+    }
+    async save(id, archive, url2) {
+      check(id);
+      const directory = await catalogDirectory("komga-catalog-download");
+      const info = { version: 1, name: archive.storageName, bytes: archive.file.size, savedAt: Date.now(), url: url2 };
+      if (!valid(info)) throw new Error("\u539F\u59CB\u6863\u6848\u4E0D\u80FD\u6301\u4E45\u4FDD\u5B58");
+      let previous;
+      try {
+        previous = await read(directory, `ready-${id}.json`);
+      } catch (e) {
+        if (e.name !== "NotFoundError" && !(e instanceof SyntaxError)) throw e;
+      }
+      const out = await (await directory.getFileHandle(`ready-${id}.json`, { create: true })).createWritable();
+      try {
+        await out.write(JSON.stringify(info));
+        await out.close();
+      } catch (e) {
+        await out.abort().catch(() => {
+        });
+        throw e;
+      }
+      if (valid(previous) && previous.name !== info.name) await remove(directory, previous.name).catch(() => {
+      });
+      return { ...archive, savedAt: info.savedAt };
+    }
+    async discard(id) {
+      check(id);
+      let directory, info;
+      try {
+        directory = await catalogDirectory("komga-catalog-download", false);
+        info = await read(directory, `ready-${id}.json`);
+      } catch (e) {
+        if (e.name === "NotFoundError") return;
+        throw e;
+      }
+      if (!valid(info)) throw new Error("\u539F\u59CB\u6863\u6848\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548\uFF0C\u672A\u5220\u9664\u4EFB\u4F55\u6863\u6848");
+      await remove(directory, info.name);
+      await remove(directory, `ready-${id}.json`);
+    }
+  };
+  async function removeSavedCatalog(id) {
+    check(id);
+    try {
+      const directory = await catalogDirectory("komga-catalog-build", false);
+      const info = await read(directory, `active-${id}.json`);
+      if (info.provider !== id || !/^output-[\w-]+\.sqlite$/.test(info.name)) throw new Error("\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548");
+      await remove(directory, `active-${id}.json`);
+      await remove(directory, info.name);
+    } catch (e) {
+      if (e.name !== "NotFoundError") throw e;
+    }
+  }
+  async function storageUsage() {
+    let usage, quota, owned = 0;
+    if (storageBackend() === "legacy" && navigator.webkitTemporaryStorage?.queryUsageAndQuota) {
+      ({ usage, quota } = await new Promise((ok, no) => navigator.webkitTemporaryStorage.queryUsageAndQuota((usage2, quota2) => ok({ usage: usage2, quota: quota2 }), no)));
+    } else if (navigator.storage?.estimate) ({ usage, quota } = await navigator.storage.estimate());
+    for (const name of ["komga-catalog-build", "komga-catalog-download"]) {
+      try {
+        const directory = await catalogDirectory(name, false);
+        for await (const [, handle] of directory.entries()) {
+          if (handle.kind === "file") owned += (await handle.getFile()).size;
+        }
+      } catch (e) {
+        if (e.name !== "NotFoundError") throw e;
+      }
+    }
+    return { owned, usage, quota };
+  }
+
   // catalog/src/panel.mjs
   function url(value) {
     const parsed = new URL(value);
@@ -3791,130 +3955,190 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const style = el("style", "section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{width:100%}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}");
     const status2 = el("p", "\u9009\u62E9\u6765\u6E90\uFF0C\u4E0B\u8F7D\u5E76\u65B0\u5EFA\u6570\u636E\u5E93");
     status2.setAttribute("role", "status");
-    const progress = el("progress");
-    progress.hidden = true;
     const cards = el("div");
     cards.className = "catalog-sources";
     const capability = browserBuildCapability();
     const builder = options.builder ?? (options.buildWorkerUrl || options.buildWorkerFactory ? new BrowserCatalogBuilder(options.buildWorkerUrl, { workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions }) : void 0);
-    const canBuild = capability.available && Boolean(builder);
-    const canAuto = canBuild && Boolean(options.downloadArchive);
-    let busy = false, disposed = false, controller, activeTask;
-    const exports = /* @__PURE__ */ new Set(), states = /* @__PURE__ */ new Map(), exportButtons = /* @__PURE__ */ new Map();
+    const canBuild = capability.available && Boolean(builder), canAuto = canBuild && Boolean(options.downloadArchive);
+    const downloads = new TaskQueue(2), builds = new TaskQueue(1), loads = new TaskQueue(1);
+    const cache = options.archiveCache ?? new ArchiveCache();
+    const exports = /* @__PURE__ */ new Set(), states = /* @__PURE__ */ new Map(), activeTasks = /* @__PURE__ */ new Set();
+    let disposed = false, restoring = true, importedBusy = false;
+    const size = (value) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
     const loadedFile = (id) => client.fileFor ? client.fileFor(id) : states.get(id)?.loaded ? client.selectedFile : void 0;
-    const refresh = () => {
-      for (const [id, state] of states) {
-        if (client.hasProvider?.(id)) state.loaded = true;
-        if (!busy) state.label.textContent = state.loaded ? "\u5DF2\u52A0\u8F7D\uFF0C\u53EF\u7528\u4E8E\u641C\u7D22" : "\u672A\u52A0\u8F7D";
-        exportButtons.get(id).disabled = busy || !loadedFile(id);
-        exportButtons.get(id).hidden = !loadedFile(id);
+    const check2 = (signal) => {
+      if (disposed || signal?.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+    };
+    const storageText = el("p", "\u6B63\u5728\u8BFB\u53D6\u5B58\u50A8\u7528\u91CF\u2026");
+    storageText.dataset.storage = "1";
+    const updateStorage = async () => {
+      if (!capability.available) {
+        storageText.textContent = "\u6B64\u6D4F\u89C8\u5668\u65E0\u6CD5\u8BFB\u53D6\u672C\u5730\u6784\u5EFA\u5B58\u50A8\u7528\u91CF";
+        return;
       }
-      for (const control of root.querySelectorAll("button,input,select")) if (!exportButtonsHas(control) && control !== cancel) control.disabled = busy || control.dataset.needsBuild === "1" && !canBuild;
-      cancel.disabled = !busy;
-      cancel.hidden = !busy;
+      try {
+        const info = await (options.storageUsage ?? storageUsage)();
+        if (!disposed) storageText.textContent = `\u672C\u5DE5\u5177\u6587\u4EF6\u7EA6 ${size(info.owned)} \xB7 ${Number.isFinite(info.usage) && Number.isFinite(info.quota) ? `\u672C\u7AD9\u70B9\u5DF2\u7528 ${size(info.usage)} / \u6D4F\u89C8\u5668\u914D\u989D ${size(info.quota)}\uFF08\u4F30\u7B97\uFF09` : "\u6D4F\u89C8\u5668\u672A\u63D0\u4F9B\u914D\u989D"}`;
+      } catch (e) {
+        if (!disposed) storageText.textContent = `\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u5B58\u50A8\u7528\u91CF\uFF1A${e.message}`;
+      }
     };
-    const exportButtonsHas = (control) => [...exportButtons.values()].includes(control);
-    const cancel = button2("\u53D6\u6D88\u5F53\u524D\u4EFB\u52A1", () => {
-      controller?.abort();
-      builder?.cancel();
-      client.cancel();
-    });
-    cancel.disabled = true;
-    const cancelled2 = () => {
-      if (disposed || controller?.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
+    const update = () => {
+      for (const [id, s] of states) {
+        const ready = Boolean(s.archive), loaded = Boolean(loadedFile(id));
+        const action = ready ? "\u7EE7\u7EED\u6784\u5EFA" : canAuto ? "\u4E0B\u8F7D\u5E76\u6784\u5EFA" : "\u4E0B\u8F7D\u539F\u59CB\u6570\u636E";
+        s.start.textContent = action;
+        s.start.setAttribute("aria-label", `${s.name} \xB7 ${action}`);
+        s.start.disabled = restoring || s.active;
+        s.fallback.disabled = restoring || s.active;
+        s.cancel.hidden = !s.active;
+        s.cancel.disabled = s.committing;
+        s.clearRaw.hidden = !ready;
+        s.clearRaw.disabled = restoring || s.active;
+        s.clearDb.hidden = !loaded;
+        s.clearDb.disabled = restoring || s.active || importedBusy;
+        s.exportButton.hidden = !loaded;
+        s.exportButton.disabled = restoring || s.active;
+        s.bar.hidden = !s.active;
+      }
+      file.disabled = restoring || importedBusy || [...states.values()].some((s) => s.active);
+      build.disabled = restoring || !canBuild || Boolean(states.get(source.value)?.active);
     };
-    const run = (fn) => {
-      if (busy || disposed) return;
-      controller = new AbortController();
-      busy = true;
-      refresh();
-      progress.hidden = false;
-      progress.removeAttribute("value");
-      activeTask = (async () => {
+    const say = (s, text2, count, total) => {
+      s.label.textContent = text2;
+      status2.textContent = `${s.id} \xB7 ${text2}`;
+      if (total > 0) {
+        s.bar.max = total;
+        s.bar.value = count;
+      } else s.bar.removeAttribute("value");
+    };
+    const run = (id, work) => {
+      const s = states.get(id);
+      if (restoring || disposed || s.active) return;
+      s.active = true;
+      s.committing = false;
+      s.fallback.hidden = true;
+      s.controller = new AbortController();
+      update();
+      const promise = Promise.resolve().then(async () => {
         try {
-          await fn(controller.signal);
-        } catch (error) {
-          if (!disposed) status2.textContent = error.name === "AbortError" ? "\u5DF2\u53D6\u6D88\uFF0C\u5DF2\u6709\u6570\u636E\u5E93\u4E0D\u53D8" : `\u5931\u8D25\uFF1A${error.message}`;
+          await work(s, s.controller.signal);
+        } catch (e) {
+          if (!disposed) {
+            say(s, e.name === "AbortError" ? `\u5DF2\u53D6\u6D88\uFF0C\u5DF2\u6709\u6570\u636E\u5E93\u4E0D\u53D8${s.archive ? "\uFF1B\u5B8C\u6574\u6863\u6848\u5DF2\u4FDD\u7559\uFF0C\u53EF\u7EE7\u7EED\u6784\u5EFA" : ""}` : `\u5931\u8D25\uFF1A${e.message}${s.archive ? "\uFF1B\u5B8C\u6574\u6863\u6848\u5DF2\u4FDD\u7559\uFF0C\u53EF\u91CD\u8BD5\u6784\u5EFA" : ""}`);
+            s.fallback.hidden = e.name === "AbortError";
+          }
         } finally {
-          busy = false;
-          progress.hidden = true;
-          if (!disposed) refresh();
+          s.active = false;
+          s.committing = false;
+          activeTasks.delete(promise);
+          if (!disposed) {
+            update();
+            void updateStorage();
+          }
         }
-      })();
-      return activeTask;
+      });
+      activeTasks.add(promise);
+      return promise;
     };
-    const load = async (file2) => {
-      cancelled2();
+    const load = (selected, signal) => loads.run(async () => {
+      check2(signal);
       const previous = client.selectedFile;
       let manifest;
       try {
-        manifest = await client.open(file2);
-      } catch (error) {
+        manifest = await client.open(selected);
+      } catch (e) {
         if (previous && !disposed && !client.hasFile) await client.open(previous);
-        throw error;
+        throw e;
       }
-      cancelled2();
-      if (!client.hasProvider) for (const state2 of states.values()) state2.loaded = false;
-      const state = states.get(manifest.provider);
-      if (state) state.loaded = true;
+      if (!client.hasProvider) for (const s2 of states.values()) s2.loaded = false;
+      const s = states.get(manifest.provider);
+      if (s) {
+        s.loaded = true;
+        if (!s.active && !s.archive) s.label.textContent = "\u5DF2\u52A0\u8F7D\uFF0C\u53EF\u7528\u4E8E\u641C\u7D22";
+      }
       status2.textContent = `${manifest.provider} \xB7 \u5DF2\u52A0\u8F7D`;
       return manifest;
-    };
-    const buildFile = async (file2, id) => {
+    }, signal);
+    const buildFile = async (s, selected, signal) => {
       if (!canBuild) throw new Error(capability.reason);
-      cancelled2();
-      status2.textContent = "\u6B63\u5728\u65B0\u5EFA\u6570\u636E\u5E93\u2026";
-      const result = await builder.build(file2, id, file2.name, (data) => {
-        status2.textContent = `${data.phase}${data.count === void 0 ? "" : ` \xB7 ${data.count} / ${data.total}`}`;
-        if (data.total > 0) {
-          progress.max = data.total;
-          progress.value = data.count;
-        } else progress.removeAttribute("value");
-      });
-      cancelled2();
-      status2.textContent = "\u6B63\u5728\u52A0\u8F7D\u6570\u636E\u5E93\u2026";
-      cancel.disabled = true;
-      const built = await builder.file();
-      await load(built);
-      if (builder.persist) {
+      say(s, "\u7B49\u5F85\u6784\u5EFA\uFF08\u4E00\u6B21\u4E00\u4E2A\uFF0C\u964D\u4F4E\u5185\u5B58\u5360\u7528\uFF09");
+      await builds.run(async () => {
+        check2(signal);
+        say(s, "\u6B63\u5728\u65B0\u5EFA\u6570\u636E\u5E93\u2026");
+        const abort = () => builder.cancel();
+        signal.addEventListener("abort", abort, { once: true });
         try {
-          await builder.persist();
-        } catch (error) {
-          status2.textContent = `\u5DF2\u52A0\u8F7D\uFF0C\u4F46\u81EA\u52A8\u4FDD\u5B58\u5931\u8D25\uFF1A${error.message}\uFF1B\u8BF7\u5BFC\u51FA\u6570\u636E\u5E93`;
-          return;
+          const result = await builder.build(selected, s.id, selected.name, (data) => say(s, `${data.phase}${data.count === void 0 ? "" : ` \xB7 ${data.count} / ${data.total}`}`, data.count, data.total));
+          check2(signal);
+          s.committing = true;
+          update();
+          say(s, "\u6B63\u5728\u52A0\u8F7D\u6570\u636E\u5E93\u2026");
+          const previous = loadedFile(s.id);
+          const built = await builder.file();
+          await load(built);
+          if (builder.persist) {
+            try {
+              await builder.persist();
+            } catch (e) {
+              if (builder.completed) {
+                if (previous) await load(previous);
+                else if (client.remove) client.remove(s.id);
+                else {
+                  await client.close();
+                  s.loaded = false;
+                }
+                await builder.dispose();
+                throw e;
+              }
+              say(s, `\u5DF2\u6784\u5EFA\u5E76\u52A0\u8F7D ${result.count} \u6761\uFF1B\u65E7\u6587\u4EF6\u6E05\u7406\u5931\u8D25\uFF1A${e.message}`);
+              return;
+            }
+          }
+          if (s.archive) {
+            try {
+              await cache.discard(s.id);
+              s.archive = void 0;
+            } catch (e) {
+              say(s, `\u5DF2\u6784\u5EFA\u5E76\u52A0\u8F7D ${result.count} \u6761\uFF1B\u539F\u59CB\u6863\u6848\u6E05\u7406\u5931\u8D25\uFF1A${e.message}`);
+              return;
+            }
+          }
+          say(s, `\u5DF2\u6784\u5EFA\u5E76\u52A0\u8F7D ${result.count} \u6761`);
+        } finally {
+          signal.removeEventListener("abort", abort);
         }
-      }
-      status2.textContent = `${id} \xB7 \u5DF2\u6784\u5EFA\u5E76\u52A0\u8F7D ${result.count} \u6761`;
+      }, signal);
     };
-    const save = (id) => run(async () => {
-      const file2 = loadedFile(id);
-      if (!file2) throw new Error("\u5C1A\u672A\u52A0\u8F7D\u6B64\u6765\u6E90");
+    const save = (id) => run(id, async (s, signal) => {
+      const selected = loadedFile(id);
+      if (!selected) throw new Error("\u5C1A\u672A\u52A0\u8F7D\u6B64\u6765\u6E90");
       if (typeof globalThis.showSaveFilePicker === "function") {
         let handle;
         try {
           handle = await globalThis.showSaveFilePicker({ suggestedName: `${id}.sqlite` });
-        } catch (error) {
-          if (error.name === "AbortError") {
-            status2.textContent = "\u5DF2\u53D6\u6D88\u4FDD\u5B58";
+        } catch (e) {
+          if (e.name === "AbortError") {
+            say(s, "\u5DF2\u53D6\u6D88\u4FDD\u5B58");
             return;
           }
-          throw error;
+          throw e;
         }
-        const writable = await handle.createWritable();
+        const out = await handle.createWritable();
         try {
-          for (let offset = 0; offset < file2.size; offset += 1024 * 1024) {
-            cancelled2();
-            await writable.write(await file2.slice(offset, offset + 1024 * 1024).arrayBuffer());
+          for (let at = 0; at < selected.size; at += 1024 * 1024) {
+            check2(signal);
+            await out.write(await selected.slice(at, at + 1024 * 1024).arrayBuffer());
           }
-          cancelled2();
-          await writable.close();
-          status2.textContent = "\u6570\u636E\u5E93\u5DF2\u4FDD\u5B58";
-        } catch (error) {
-          await writable.abort();
-          throw error;
+          check2(signal);
+          await out.close();
+          say(s, "\u6570\u636E\u5E93\u5DF2\u4FDD\u5B58");
+        } catch (e) {
+          await out.abort();
+          throw e;
         }
       } else {
-        const href2 = URL.createObjectURL(file2);
+        const href2 = URL.createObjectURL(selected);
         exports.add(href2);
         const a = el("a");
         a.href = href2;
@@ -3923,62 +4147,79 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         root.append(a);
         a.click();
         a.remove();
-        status2.textContent = "\u5DF2\u5F00\u59CB\u5BFC\u51FA\u6570\u636E\u5E93";
+        say(s, "\u5DF2\u5F00\u59CB\u5BFC\u51FA\u6570\u636E\u5E93");
       }
     });
-    for (const source2 of catalogSources) {
+    for (const item of catalogSources) {
+      const s = { ...item, active: false, loaded: Boolean(client.hasProvider?.(item.id)), label: el("span", "\u672A\u52A0\u8F7D"), bar: el("progress") };
+      states.set(item.id, s);
       const card = el("div");
       card.className = "catalog-source";
-      card.dataset.provider = source2.id;
-      const label = el("span", "\u672A\u52A0\u8F7D");
-      states.set(source2.id, { label, loaded: Boolean(client.hasProvider?.(source2.id)) });
-      const start = button2(`${source2.name} \xB7 ${canAuto ? "\u4E0B\u8F7D\u5E76\u6784\u5EFA" : "\u4E0B\u8F7D\u539F\u59CB\u6570\u636E"}`, () => run(async (signal) => {
-        status2.textContent = `\u6B63\u5728\u83B7\u53D6 ${source2.name} \u4E0B\u8F7D\u5730\u5740\u2026`;
-        const href2 = await resolveArchive(source2, options.fetchManifest, signal);
-        cancelled2();
-        if (!canAuto) {
-          if (!options.download) throw new Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
-          await options.download(href2, source2.filename, signal);
-          status2.textContent = canBuild ? "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA" : `\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\u3002${capability.reason}`;
+      card.dataset.provider = item.id;
+      s.start = button2("", () => run(item.id, async (s2, signal) => {
+        if (s2.archive) {
+          await buildFile(s2, s2.archive.file, signal);
           return;
         }
-        label.textContent = "\u6B63\u5728\u4E0B\u8F7D";
-        let archive2;
-        try {
-          archive2 = await options.downloadArchive(href2, source2.filename, signal, (bytes, total) => {
-            status2.textContent = `${source2.name} \xB7 \u5DF2\u4E0B\u8F7D ${(bytes / 1024 / 1024).toFixed(1)} MiB${total ? ` / ${(total / 1024 / 1024).toFixed(1)} MiB` : ""}`;
-            if (total && total >= bytes) {
-              progress.max = total;
-              progress.value = bytes;
-            } else progress.removeAttribute("value");
-          });
-        } catch (error) {
-          if (error.name !== "AbortError") fallback.hidden = false;
-          throw error;
-        }
-        try {
-          cancelled2();
-          label.textContent = "\u6B63\u5728\u6784\u5EFA";
-          await buildFile(archive2.file, source2.id);
-        } catch (error) {
-          if (error.name !== "AbortError") fallback.hidden = false;
-          throw error;
-        } finally {
-          await archive2.cleanup();
+        say(s2, "\u7B49\u5F85\u4E0B\u8F7D");
+        await downloads.run(async () => {
+          check2(signal);
+          say(s2, "\u6B63\u5728\u83B7\u53D6\u4E0B\u8F7D\u5730\u5740\u2026");
+          const href2 = await resolveArchive(item, options.fetchManifest, signal);
+          check2(signal);
+          if (!canAuto) {
+            if (!options.download) throw new Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
+            await options.download(href2, item.filename, signal);
+            say(s2, canBuild ? "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA" : `\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\u3002${capability.reason}`);
+            return;
+          }
+          const archive2 = await options.downloadArchive(href2, item.filename, signal, (bytes, total) => say(s2, `\u5DF2\u4E0B\u8F7D ${size(bytes)}${total ? ` / ${size(total)}` : ""}`, bytes, total));
+          try {
+            s2.archive = await cache.save(item.id, archive2, href2);
+          } catch (e) {
+            await archive2.cleanup();
+            throw e;
+          }
+          say(s2, "\u5B8C\u6574\u6863\u6848\u5DF2\u4FDD\u5B58");
+          void updateStorage();
+        }, signal);
+        if (canAuto) {
+          check2(signal);
+          await buildFile(s2, s2.archive.file, signal);
         }
       }));
-      start.setAttribute("aria-label", start.textContent);
-      start.textContent = canAuto ? "\u4E0B\u8F7D\u5E76\u6784\u5EFA" : "\u4E0B\u8F7D\u539F\u59CB\u6570\u636E";
-      const fallback = button2("\u4EC5\u4E0B\u8F7D\u539F\u59CB\u6570\u636E", () => run(async (signal) => {
-        const href2 = await resolveArchive(source2, options.fetchManifest, signal);
-        if (!options.download) throw new Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
-        await options.download(href2, source2.filename, signal);
-        status2.textContent = "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA";
+      s.cancel = button2("\u53D6\u6D88\u4EFB\u52A1", () => {
+        if (!s.committing) s.controller?.abort();
+      });
+      s.fallback = button2("\u4EC5\u4E0B\u8F7D\u539F\u59CB\u6570\u636E", () => run(item.id, async (s2, signal) => {
+        await downloads.run(async () => {
+          const href2 = await resolveArchive(item, options.fetchManifest, signal);
+          check2(signal);
+          if (!options.download) throw Error("\u7F3A\u5C11\u4E0B\u8F7D\u6743\u9650");
+          await options.download(href2, item.filename, signal);
+          say(s2, "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA");
+        }, signal);
       }));
-      fallback.hidden = true;
-      const exportButton = button2("\u5BFC\u51FA\u6570\u636E\u5E93", () => save(source2.id));
-      exportButtons.set(source2.id, exportButton);
-      card.append(el("h4", source2.name), label, start, fallback, exportButton);
+      s.fallback.hidden = true;
+      s.exportButton = button2("\u5BFC\u51FA\u6570\u636E\u5E93", () => save(item.id));
+      s.clearRaw = button2("\u6E05\u9664\u539F\u59CB\u6863\u6848", () => {
+        if (confirm(`\u6E05\u9664 ${item.name} \u5DF2\u4E0B\u8F7D\u7684\u539F\u59CB\u6863\u6848\uFF1F\u5DF2\u6709\u6570\u636E\u5E93\u4E0D\u53D8\u3002`)) void run(item.id, async (s2) => {
+          await cache.discard(item.id);
+          s2.archive = void 0;
+          say(s2, "\u5DF2\u6E05\u9664\u539F\u59CB\u6863\u6848\uFF0C\u5DF2\u6709\u6570\u636E\u5E93\u4E0D\u53D8");
+        });
+      });
+      s.clearDb = button2("\u79FB\u9664\u6570\u636E\u5E93", () => {
+        if (confirm(`\u79FB\u9664\u6D4F\u89C8\u5668\u4E2D\u7684 ${item.name} \u6570\u636E\u5E93\uFF1F\u4E0D\u4F1A\u4FEE\u6539 Komga \u5143\u6570\u636E\u6216\u5916\u90E8\u6587\u4EF6\u3002`)) void run(item.id, async (s2, signal) => {
+          await loads.run(async () => {
+            await removeSavedCatalog(item.id);
+            client.remove?.(item.id);
+            s2.loaded = false;
+          }, signal);
+          say(s2, "\u5DF2\u79FB\u9664\u6D4F\u89C8\u5668\u6570\u636E\u5E93");
+        });
+      });
+      card.append(el("h4", item.name), s.label, s.bar, s.start, s.cancel, s.fallback, s.exportButton, s.clearRaw, s.clearDb);
       cards.append(card);
     }
     const existing = el("details");
@@ -3989,71 +4230,86 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     file.setAttribute("aria-label", "\u672C\u5730\u6570\u636E\u5E93\u6587\u4EF6");
     fileLabel.append(file);
     file.onchange = () => {
-      if (file.files?.[0]) {
-        const selected = file.files[0];
-        void run(() => load(selected));
-      }
+      if (!file.files?.[0] || importedBusy || restoring) return;
+      const selected = file.files[0];
+      importedBusy = true;
+      update();
+      const task = load(selected).catch((e) => {
+        status2.textContent = `\u5931\u8D25\uFF1A${e.message}`;
+      }).finally(() => {
+        importedBusy = false;
+        activeTasks.delete(task);
+        if (!disposed) update();
+      });
+      activeTasks.add(task);
     };
     const rawDetails = el("details");
     rawDetails.append(el("summary", "\u4ECE\u5DF2\u4E0B\u8F7D\u7684\u539F\u59CB\u6570\u636E\u6784\u5EFA"));
     const source = el("select");
     source.setAttribute("aria-label", "\u6784\u5EFA\u6765\u6E90");
     for (const item of catalogSources) {
-      const option2 = el("option", item.name);
-      option2.value = item.id;
-      source.append(option2);
+      const o = el("option", item.name);
+      o.value = item.id;
+      source.append(o);
     }
+    source.onchange = update;
     const archive = el("input");
     archive.type = "file";
     archive.setAttribute("aria-label", "\u6765\u6E90\u6863\u6848");
-    const build = button2("\u6784\u5EFA\u5E76\u52A0\u8F7D", () => run(async () => {
-      if (!archive.files?.[0]) throw new Error("\u8BF7\u9009\u62E9\u539F\u59CB\u6570\u636E\u6587\u4EF6");
-      await buildFile(archive.files[0], source.value);
-    }));
-    build.dataset.needsBuild = "1";
+    const build = button2("\u6784\u5EFA\u5E76\u52A0\u8F7D", () => {
+      const selected = archive.files?.[0];
+      return run(source.value, async (s, signal) => {
+        if (!selected) throw Error("\u8BF7\u9009\u62E9\u539F\u59CB\u6570\u636E\u6587\u4EF6");
+        await buildFile(s, selected, signal);
+      });
+    });
     rawDetails.append(source, archive, build);
     existing.append(fileLabel, rawDetails);
-    root.append(style, el("h3", "\u4E0B\u8F7D\u5E76\u5EFA\u7ACB\u672C\u5730\u6570\u636E\u5E93"), el("p", "\u9009\u62E9\u6765\u6E90\u540E\u81EA\u52A8\u4E0B\u8F7D\u3001\u6784\u5EFA\u5E76\u52A0\u8F7D\uFF0C\u65E0\u9700\u9884\u5148\u521B\u5EFA\u6587\u4EF6\u3002\u5728\u6B64\u6784\u5EFA\u7684\u5E93\u4FDD\u5B58\u5728\u5F53\u524D\u6D4F\u89C8\u5668\uFF0C\u4E5F\u53EF\u4EE5\u5BFC\u51FA\u5907\u4EFD\u3002"));
+    root.append(style, el("h3", "\u4E0B\u8F7D\u5E76\u5EFA\u7ACB\u672C\u5730\u6570\u636E\u5E93"), el("p", "\u5173\u95ED\u5F39\u7A97\u540E\u4EFB\u52A1\u7EE7\u7EED\u3002\u6700\u591A\u540C\u65F6\u4E0B\u8F7D\u4E24\u4E2A\u6765\u6E90\uFF0C\u6784\u5EFA\u9010\u4E2A\u6392\u961F\u3002\u5B8C\u6574\u4E0B\u8F7D\u7684\u6863\u6848\u4F1A\u4FDD\u7559\u5230\u6784\u5EFA\u6210\u529F\uFF1B\u5237\u65B0\u540E\u53EF\u7EE7\u7EED\u6784\u5EFA\uFF0C\u4F46\u4E0D\u4FDD\u7559\u4E0B\u8F7D\u5230\u4E00\u534A\u6216\u6784\u5EFA\u5230\u4E00\u534A\u7684\u8FDB\u5EA6\u3002"));
     if (!canBuild) root.append(el("p", capability.reason));
-    root.append(cards, status2, progress, cancel, existing);
+    root.append(cards, status2, storageText, button2("\u5237\u65B0\u5B58\u50A8\u7528\u91CF", () => {
+      void updateStorage();
+    }), existing);
     container.append(root);
-    refresh();
+    update();
     const restore = async () => {
       if (!canBuild) return;
-      let directory;
-      try {
-        directory = await catalogDirectory("komga-catalog-build", false);
-      } catch (error) {
-        if (error.name !== "NotFoundError") status2.textContent = `\u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
-        return;
-      }
-      for (const source2 of catalogSources) {
-        if (disposed || client.hasProvider?.(source2.id)) continue;
+      for (const item of catalogSources) {
+        if (disposed) return;
+        const s = states.get(item.id);
         try {
-          const info = JSON.parse(await (await (await directory.getFileHandle(`active-${source2.id}.json`)).getFile()).text());
-          if (info.provider !== source2.id || !/^output-[\w-]+\.sqlite$/.test(info.name)) throw new Error("\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548");
-          if (disposed) return;
+          s.archive = await cache.get(item.id);
+          if (s.archive) s.label.textContent = `\u5B8C\u6574\u6863\u6848 ${size(s.archive.file.size)}\uFF0C\u53EF\u7EE7\u7EED\u6784\u5EFA`;
+        } catch (e) {
+          say(s, `\u6863\u6848\u6062\u590D\u5931\u8D25\uFF1A${e.message}`);
+        }
+        if (client.hasProvider?.(item.id)) continue;
+        try {
+          const directory = await catalogDirectory("komga-catalog-build", false);
+          const info = JSON.parse(await (await (await directory.getFileHandle(`active-${item.id}.json`)).getFile()).text());
+          if (info.provider !== item.id || !/^output-[\w-]+\.sqlite$/.test(info.name)) throw Error("\u4FDD\u5B58\u8BB0\u5F55\u65E0\u6548");
+          check2();
           await load(await (await directory.getFileHandle(info.name)).getFile());
-        } catch (error) {
-          if (error.name !== "NotFoundError" && !disposed) status2.textContent = `${source2.name} \u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
+          if (!s.archive) s.label.textContent = "\u5DF2\u52A0\u8F7D\uFF0C\u53EF\u7528\u4E8E\u641C\u7D22";
+        } catch (e) {
+          if (e.name !== "NotFoundError" && !disposed) say(s, `\u6062\u590D\u5931\u8D25\uFF1A${e.message}`);
         }
       }
-      if (!disposed) refresh();
     };
-    busy = true;
-    refresh();
     client.restoring = restore().finally(() => {
       client.restoring = void 0;
-      busy = false;
-      if (!disposed) refresh();
+      restoring = false;
+      if (!disposed) {
+        update();
+        void updateStorage();
+      }
     });
     return async () => {
       disposed = true;
-      controller?.abort();
-      builder?.cancel();
+      for (const s of states.values()) if (!s.committing) s.controller?.abort();
       client.cancel();
       await client.restoring;
-      await activeTask;
+      await Promise.allSettled([...activeTasks]);
       if (!options.builder) await builder?.dispose();
       for (const href2 of exports) URL.revokeObjectURL(href2);
       root.remove();
@@ -4067,7 +4323,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       available: () => Boolean(client.restoring || (client.hasProvider ? client.hasProvider(provider) : client.file)),
       async search(query, context) {
         if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
-        const abort = () => client.cancel();
+        const abort = () => client.cancelQueries ? client.cancelQueries() : client.cancel();
         context.signal.addEventListener("abort", abort, { once: true });
         try {
           return await client.search(query, provider);
@@ -4077,7 +4333,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       },
       async get(id, context) {
         if (context.signal.aborted) throw new DOMException("\u5DF2\u53D6\u6D88", "AbortError");
-        const abort = () => client.cancel();
+        const abort = () => client.cancelQueries ? client.cancelQueries() : client.cancel();
         context.signal.addEventListener("abort", abort, { once: true });
         try {
           return await client.get(provider, id);
@@ -4227,7 +4483,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     });
   }
   function createCatalogExtension() {
-    let assetController;
+    const assetController = new AbortController();
     const loadWorker = (name) => {
       if (!assetController) throw new Error("\u79BB\u7EBF\u8D44\u6E90\u8BF7\u6C42\u5DF2\u5173\u95ED");
       return worker(name, assetController.signal);
@@ -4237,31 +4493,26 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       workerFactory: () => loadWorker("catalog-build-worker.js")
     });
     let mounted = false;
+    let panel;
+    let destroyPanel;
     return {
       providers: providers.map((provider) => catalogProvider(client, provider)),
       mount(container) {
         if (mounted) throw new Error("\u79BB\u7EBF\u76EE\u5F55\u9762\u677F\u5DF2\u6302\u8F7D");
         mounted = true;
-        assetController = new AbortController();
-        const unmount = mountCatalogPanel(container, client, {
-          download,
-          downloadArchive,
-          fetchManifest,
-          builder
-        });
-        return async () => {
-          assetController?.abort();
-          try {
-            await unmount();
-          } finally {
-            assetController = void 0;
-            mounted = false;
-            client.cancel();
-          }
+        if (!panel) {
+          panel = document.createElement("div");
+          destroyPanel = mountCatalogPanel(panel, client, { download, downloadArchive, fetchManifest, builder });
+        }
+        container.append(panel);
+        return () => {
+          panel?.remove();
+          mounted = false;
         };
       },
       async dispose() {
         assetController?.abort();
+        await destroyPanel?.();
         client.dispose();
         await builder.dispose();
         mounted = false;

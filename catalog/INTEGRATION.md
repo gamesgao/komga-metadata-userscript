@@ -32,11 +32,11 @@ const provider = catalogProvider(client, 'bangumi');
 const hits = await client.search('葬送', 'bangumi', 50);
 const unmount = mountCatalogPanel(element, client, {
   buildWorkerUrl,
-  downloadArchive, // (url, filename, signal, progress) -> {file, cleanup()}
+  downloadArchive, // (url, filename, signal, progress) -> {file, storageName, cleanup()}
   download,        // GM_download promise, manual fallback only
   fetchManifest,   // GM JSON request for Bangumi's latest archive metadata
 });
-await unmount();
+await unmount(); // teardown on page/session disposal, NOT popup close
 client.dispose();
 ```
 
@@ -45,14 +45,22 @@ validated before replacing the prior reader. Search waits for persisted-catalog 
 `CatalogClient` remains the single-file API. Both use `FileReaderSync/File.slice` VFS,
 not whole-file RAM loading or mandatory OPFS copies. `stats()` reports reads, bytes,
 largest read and file size. Cancellation terminates readers; their retained File objects
-can be reopened on the next query. Collection cancellation affects its active readers.
+can be reopened on the next query. `cancelQueries()` affects active readers without cancelling
+the probe of a background build. Full `cancel()` also aborts that probe.
+
+The production extension retains one panel/task session per page, detaching/reattaching its
+view when dialogs close/open. Asset loading, GM requests and build Workers belong to that
+session, not the dialog. `TaskQueue` allows two downloads and one build; reader publication
+is serialized separately. The final save/load commit is not user-cancellable. Worker factories
+must recheck cancellation after awaited resource downloads, terminating a newly created Worker
+without starting a cancelled build.
 
 `BrowserCatalogBuilder.build(file, provider, sourceVersion?, onProgress?)` creates a new
 origin-local output, reporting extraction/staging/index phases and actual index counts. `file()`
 returns its completed file; `persist()` commits an `active-PROVIDER.json` pointer and
 relinquishes temporary ownership. The panel loads a validated result, commits that pointer
-and retires the superseded saved file. Failed index persistence retains the already-loaded
-result and tells the user to export it. `dispose()` removes only unpersisted builder-owned
+and retires the superseded saved file. Failed index persistence restores the prior reader
+and discards unpublished output before another provider uses the builder. `dispose()` removes only unpersisted builder-owned
 output. `exportTo(writable, chunkSize?)` remains available for streaming exports.
 
 The production downloader handles Tampermonkey's **status=0 onloadstart**, consumes the
@@ -61,6 +69,12 @@ committing the temporary archive. It checks final Content-Length when supplied. 
 and cancellation abort the writer and remove the temporary archive. It does not collect
 an entire archive into one Blob/ArrayBuffer. Manager-internal buffering is outside this
 module's control. Unsupported stream responses expose a manual-download fallback.
+
+`ArchiveCache` commits a provider-scoped `ready-PROVIDER.json` only for complete downloads.
+It records private filename, size, source URL and original filename, and restores the File
+after reload. Failed/cancelled builds retain this archive; success retires it. No Range/ETag
+resume, SQLite transaction checkpoints, automatic task restart or cross-tab scheduler is
+claimed. Manual external archives remain uncopied and need reselection after reload.
 
 The panel exports through a user-triggered save picker when available, otherwise a File
 object URL/browser download. Save-picker cancellation does not close the parent dialog.
@@ -86,7 +100,9 @@ Input `cancel` bubbles: the root dialog must act only on cancel events targeting
 - ZIP uses file ranges; decompression and output use the selected origin-local backend. Staging and FTS can still need
   substantial disk/RAM; source, temporary/index output and the prior saved version can
   coexist. No claim of bounded total memory for every full upstream archive.
-- Normal failure/cancel cleans owned temporary files. Abrupt termination may leave files
+- Normal failure/cancel cleans incomplete downloads/build scratch; complete archives remain
+  resumable. Storage usage/quota is queried from the active backend. Provider-scoped cleanup
+  requires confirmation and is disabled for that provider's running task. Abrupt termination may leave files
   in `komga-catalog-build` or `komga-catalog-download`; do not clear unrelated origin data.
 - Each SQLite snapshot is one provider. Routing composes it with the online provider of
   the same ID, rather than registering duplicate IDs. EH IDs are `gid:token`; BookWalker

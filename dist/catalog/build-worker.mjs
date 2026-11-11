@@ -4570,6 +4570,14 @@ var LegacyDirectory = class {
   constructor(entry) {
     this.entry = entry;
   }
+  async *entries() {
+    const reader = this.entry.createReader();
+    while (true) {
+      const entries = await invoke(reader, "readEntries");
+      if (!entries.length) return;
+      for (const entry of entries) if (entry.isFile) yield [entry.name, new LegacyFile(entry)];
+    }
+  }
   async getFileHandle(name, options = {}) {
     if (!name || name.includes("/") || name.includes("\\")) throw new Error("Invalid catalog filename");
     return new LegacyFile(await invoke(this.entry, "getFile", name, { create: Boolean(options.create) }));
@@ -4595,6 +4603,7 @@ var LegacyDirectory = class {
 var LegacyFile = class {
   constructor(entry) {
     this.entry = entry;
+    this.kind = "file";
   }
   getFile() {
     return invoke(this.entry, "file");
