@@ -1,4 +1,5 @@
 import init from './sqlite/index.mjs';
+import { receiveDirectory } from './storage.mjs';
 import { SCHEMA, SCHEMA_VERSION, ANALYZER_VERSION, indexText } from './analyzer.mjs';
 import { bangumi, ehentai, mangabaka, bookwalker, bookwalkerBook } from './mappings.mjs';
 import { Decompress } from 'fzstd';
@@ -317,8 +318,7 @@ async function stageBangumi(file, output) {
   } finally { await zip.close(); }
 }
 async function run({ file, directory, sourceName, outputName, provider, sourceVersion }) {
-  if (!isSecureContext || !navigator.storage?.getDirectory)
-    throw new Error('浏览器构建需要安全上下文和 OPFS；请使用原生 CLI');
+  directory = await receiveDirectory(directory);
   if (!['bangumi', 'ehentai', 'mangabaka', 'bookwalker'].includes(provider)) throw new Error('不支持的来源');
   if (!(file instanceof File)) throw new Error('请选择本地来源文件');
   const sqlite = await (sqlitePromise ??= init(wasmBinary

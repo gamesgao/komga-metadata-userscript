@@ -1,5 +1,14 @@
 # Validation ledger
 
+## v0.7.1 ordinary-HTTP catalog construction
+
+- PASS: typechecks, 91 core tests, 21 bundled browser tests, six catalog tests and six release tests. The no-storage fallback test now disables both OPFS availability and the legacy API, rather than assuming all HTTP is unsupported.
+- Actual non-secure origin (`isSecureContext=false`, `navigator.storage.getDirectory` absent): four archive-format fixtures build and persist, four providers restore after reload, and a downloaded export passes native SQLite integrity/provider checks. Tests cover aborted index replacement, an interrupted write, pending-file cleanup, and sparse writes beyond EOF.
+- Full native-manager PASS (development artifact): `KOMGA_ACCEPTANCE_HTTP=1 ... python acceptance/catalog_workflow.py` runs real Tampermonkey against an isolated Komga page at `http://catalog-http.test:18767`. Public complete BookWalker data streams to origin storage, builds and validates 14,379 entries, automatically loads, restores after refresh, returns three local 葬送 matches, and coexists with the full external Bangumi catalog. Input cancellation preserves the dialog.
+- The test hostname forwards to the loopback test Komga without overriding secure-context rules. Its unrelated background SSE subscription is explicitly aborted because the test forwarding buffers response bodies; catalog downloads, WASM and Komga page/API responses are real. No user NAS is contacted. Published-package verification is rerun separately after release.
+- Full-data testing caught a real compatibility issue that small SQLite fixtures missed: FileWriterSync.seek clamps past EOF. A failing sparse-write regression was added, then fixed by extending before seeking. Integrity checks prevented the failed experimental output from being published as an active catalog.
+- Legacy storage is Chromium-specific and deprecated; no universal-browser or power-loss durability claim. Other three providers have insecure-origin fixture coverage, not new full upstream browser-build claims. Raw evidence stays in `.runtime/acceptance/catalog-workflow-http/`.
+
 ## v0.7.0 local database workflow
 
 - PASS: 91 core tests, 21 bundled browser tests, six catalog tests (including actual browser Workers). File-input bubbling cancel preserves dialog/query state while dialog Escape still closes. Four preset downloads replace URL/manifest/checksum forms; external-file import is secondary.

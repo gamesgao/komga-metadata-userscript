@@ -1,12 +1,12 @@
-// Streaming GM response -> OPFS; never materialize an entire multi-GB archive.
+import { catalogDirectory, uniqueId, type CatalogWritable } from '../catalog/src/storage.mjs';
+// Streaming GM response -> origin-local storage; never buffer a complete archive.
 interface StreamResponse { status: number; response?: ReadableStream<Uint8Array>; responseHeaders?: string }
 declare function GM_xmlhttpRequest(options: { url: string; method: 'GET'; responseType: 'stream'; anonymous: true; fetch: true; onloadstart(r: StreamResponse): void; onload(r: StreamResponse): void; onerror(): void; onabort(): void }): { abort(): void };
 export async function downloadArchive(url: string, name: string, signal: AbortSignal, progress: (bytes: number, total?: number) => void) {
-  if (!isSecureContext || !navigator.storage?.getDirectory) throw new Error('自动构建需要 HTTPS 和浏览器本地存储');
-  const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('komga-catalog-download', { create: true });
-  const filename = `${crypto.randomUUID()}-${name}`;
+  const directory = await catalogDirectory('komga-catalog-download');
+  const filename = `${uniqueId()}-${name}`;
   const handle = await directory.getFileHandle(filename, { create: true });
-  let writable: FileSystemWritableFileStream | undefined;
+  let writable: CatalogWritable | undefined;
   let request: { abort(): void } | undefined, reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   const cleanup = async () => { await directory.removeEntry(filename).catch(error => { if (error.name !== 'NotFoundError') throw error; }); };
   try {

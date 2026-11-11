@@ -48,7 +48,7 @@ largest read and file size. Cancellation terminates readers; their retained File
 can be reopened on the next query. Collection cancellation affects its active readers.
 
 `BrowserCatalogBuilder.build(file, provider, sourceVersion?, onProgress?)` creates a new
-OPFS output, reporting extraction/staging/index phases and actual index counts. `file()`
+origin-local output, reporting extraction/staging/index phases and actual index counts. `file()`
 returns its completed file; `persist()` commits an `active-PROVIDER.json` pointer and
 relinquishes temporary ownership. The panel loads a validated result, commits that pointer
 and retires the superseded saved file. Failed index persistence retains the already-loaded
@@ -68,15 +68,22 @@ Input `cancel` bubbles: the root dialog must act only on cancel events targeting
 
 ## Storage, format and compatibility boundaries
 
-- Browser building requires a secure context, OPFS, Worker and sync file access in Worker;
-  gzip-tar additionally needs DecompressionStream. Remote plain HTTP cannot use this
-  build path, but selected prepared-file querying works there without SharedArrayBuffer.
+- Secure contexts prefer OPFS. Ordinary HTTP can use Chromium's legacy
+  webkitRequestFileSystem/FileWriterSync APIs, discovered by capability rather than a
+  user mode switch. Worker and gzip-tar DecompressionStream are still required.
+  The legacy API is deprecated and not a universal-browser guarantee. No secure-context
+  override, Web Locks, SharedArrayBuffer or whole-database in-memory fallback is used.
+- The storage adapter transfers a scoped directory descriptor to workers for legacy
+  storage, supplies bounded synchronous SQLite reads/writes, and uses temporary siblings
+  plus moveTo for asynchronous commit. Abort preserves the prior index. Cleanup removes
+  only pending siblings for a uniquely named build file, including after worker termination.
+  Legacy FileWriterSync provides no fsync primitive; do not claim power-loss durability.
 - Browser-local saved catalogs are per origin/profile; they are not an OS download or
   backup. External file inputs are read-only and need reselection after reload.
 - Zstandard decoding verifies frame checksums, rejects dictionary frames, and caps frame
   windows at 64 MiB. SQLite/FTS integrity checks run before a result is published. Checksums
   are not source authentication. No user-entered SHA form is exposed.
-- ZIP uses file ranges; decompression and output use OPFS. Staging and FTS can still need
+- ZIP uses file ranges; decompression and output use the selected origin-local backend. Staging and FTS can still need
   substantial disk/RAM; source, temporary/index output and the prior saved version can
   coexist. No claim of bounded total memory for every full upstream archive.
 - Normal failure/cancel cleans owned temporary files. Abrupt termination may leave files

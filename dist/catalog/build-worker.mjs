@@ -4554,6 +4554,148 @@ var init_zip_reader = __esm({
 // src/build-worker.mjs
 import init from "./sqlite/index.mjs";
 
+// src/storage.mjs
+function uniqueId() {
+  if (globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, "0")).join("");
+}
+var invoke = (object, method, ...args) => new Promise((resolve, reject) => object[method](...args, resolve, reject));
+var legacyFS = () => invoke(globalThis, "webkitRequestFileSystem", 0, 0);
+async function receiveDirectory(directory) {
+  if (!directory?.legacyCatalogPath) return directory;
+  if (!/^\/komga-catalog-[a-z-]+$/.test(directory.legacyCatalogPath)) throw new Error("Invalid catalog storage path");
+  return new LegacyDirectory(await invoke((await legacyFS()).root, "getDirectory", directory.legacyCatalogPath, { create: false }));
+}
+var LegacyDirectory = class {
+  constructor(entry) {
+    this.entry = entry;
+  }
+  async getFileHandle(name, options = {}) {
+    if (!name || name.includes("/") || name.includes("\\")) throw new Error("Invalid catalog filename");
+    return new LegacyFile(await invoke(this.entry, "getFile", name, { create: Boolean(options.create) }));
+  }
+  async removeEntry(name) {
+    let missing;
+    try {
+      const file = await this.getFileHandle(name);
+      await invoke(file.entry, "remove");
+    } catch (error) {
+      if (error.name !== "NotFoundError") throw error;
+      missing = error;
+    }
+    const reader = this.entry.createReader();
+    while (true) {
+      const entries = await invoke(reader, "readEntries");
+      if (!entries.length) break;
+      for (const entry of entries) if (entry.isFile && entry.name.startsWith(`.pending-${name}-`)) await invoke(entry, "remove");
+    }
+    if (missing) throw missing;
+  }
+};
+var LegacyFile = class {
+  constructor(entry) {
+    this.entry = entry;
+  }
+  getFile() {
+    return invoke(this.entry, "file");
+  }
+  async createWritable() {
+    const parent = await invoke(this.entry, "getParent");
+    const temporary = await invoke(parent, "getFile", `.pending-${this.entry.name}-${uniqueId()}`, { create: true, exclusive: true });
+    let writer;
+    try {
+      writer = await invoke(temporary, "createWriter");
+    } catch (error) {
+      await invoke(temporary, "remove").catch(() => {
+      });
+      throw error;
+    }
+    let position = 0, closed = false, rejectPending;
+    const write = (data) => new Promise((resolve, reject) => {
+      if (closed) {
+        reject(new Error("Writer is closed"));
+        return;
+      }
+      rejectPending = reject;
+      const blob = data instanceof Blob ? data : new Blob([data]);
+      writer.onerror = () => reject(writer.error);
+      writer.onwriteend = () => {
+        rejectPending = void 0;
+        if (!writer.error) {
+          position += blob.size;
+          resolve();
+        }
+      };
+      try {
+        writer.seek(position);
+        writer.write(blob);
+      } catch (error) {
+        reject(error);
+      }
+    });
+    return {
+      write,
+      close: async () => {
+        if (closed) throw new Error("Writer is closed");
+        await invoke(temporary, "moveTo", parent, this.entry.name);
+        closed = true;
+      },
+      abort: async () => {
+        if (closed) return;
+        closed = true;
+        rejectPending?.(new DOMException("Write cancelled", "AbortError"));
+        rejectPending = void 0;
+        if (writer.readyState === 1) {
+          await new Promise((resolve) => {
+            writer.onwriteend = resolve;
+            writer.onerror = resolve;
+            writer.abort();
+          });
+        }
+        await invoke(temporary, "remove").catch((error) => {
+          if (error.name !== "NotFoundError") throw error;
+        });
+      }
+    };
+  }
+  async createSyncAccessHandle() {
+    if (typeof globalThis.webkitRequestFileSystemSync !== "function") throw new Error("HTTP \u672C\u5730\u6784\u5EFA\u9700\u8981 Chromium Worker \u6587\u4EF6\u7CFB\u7EDF\u652F\u6301");
+    const fs = globalThis.webkitRequestFileSystemSync(0, 0);
+    const entry = fs.root.getFile(this.entry.fullPath, { create: false });
+    const writer = entry.createWriter(), reader = new FileReaderSync();
+    let snapshot;
+    return {
+      read(buffer2, { at = 0 } = {}) {
+        snapshot ??= entry.file();
+        const bytes = new Uint8Array(reader.readAsArrayBuffer(snapshot.slice(at, at + buffer2.byteLength)));
+        new Uint8Array(buffer2.buffer, buffer2.byteOffset, buffer2.byteLength).set(bytes);
+        return bytes.byteLength;
+      },
+      write(buffer2, { at = 0 } = {}) {
+        snapshot = void 0;
+        if (buffer2.byteLength && at > writer.length) writer.truncate(at);
+        writer.seek(at);
+        writer.write(new Blob([buffer2]));
+        return buffer2.byteLength;
+      },
+      truncate(size) {
+        snapshot = void 0;
+        writer.truncate(size);
+      },
+      getSize() {
+        return writer.length;
+      },
+      // Legacy FileWriterSync completes writes synchronously but exposes no fsync.
+      // Only fully built, integrity-checked immutable snapshots are published.
+      flush() {
+      },
+      close() {
+        snapshot = void 0;
+      }
+    };
+  }
+};
+
 // src/analyzer.mjs
 var SCHEMA_VERSION = 1;
 var ANALYZER_VERSION = 1;
@@ -9144,8 +9286,7 @@ async function stageBangumi(file, output) {
   }
 }
 async function run({ file, directory, sourceName, outputName, provider, sourceVersion }) {
-  if (!isSecureContext || !navigator.storage?.getDirectory)
-    throw new Error("\u6D4F\u89C8\u5668\u6784\u5EFA\u9700\u8981\u5B89\u5168\u4E0A\u4E0B\u6587\u548C OPFS\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI");
+  directory = await receiveDirectory(directory);
   if (!["bangumi", "ehentai", "mangabaka", "bookwalker"].includes(provider)) throw new Error("\u4E0D\u652F\u6301\u7684\u6765\u6E90");
   if (!(file instanceof File)) throw new Error("\u8BF7\u9009\u62E9\u672C\u5730\u6765\u6E90\u6587\u4EF6");
   const sqlite = await (sqlitePromise ??= init(wasmBinary ? { wasmBinary, locateFile: () => "" } : {}));

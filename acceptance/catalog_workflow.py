@@ -1,18 +1,33 @@
 #!/usr/bin/env python3
 """Real Tampermonkey: public full BookWalker archive -> browser build -> reload -> search."""
-import json,time,hashlib
+import json,time,hashlib,os
 from playwright.sync_api import sync_playwright,expect
 import e2e as h
 
 def run():
- out=h.RUNTIME/'acceptance'/'catalog-workflow';out.mkdir(parents=True,exist_ok=True)
+ insecure=os.environ.get('KOMGA_ACCEPTANCE_HTTP')=='1'
+ base=h.BASE_URL.replace('127.0.0.1','catalog-http.test') if insecure else h.BASE_URL
+ out=h.RUNTIME/'acceptance'/('catalog-workflow-http' if insecure else 'catalog-workflow');out.mkdir(parents=True,exist_ok=True)
  report={'status':'FAIL','artifact_sha256':hashlib.sha256(h.ARTIFACT.read_bytes()).hexdigest()}
  _,sid,_=h.fixture_ids(h.read_json(h.STATE))
  with sync_playwright() as pw:
-  ctx=pw.chromium.launch_persistent_context(str(h.PROFILE),channel='chromium',headless=True,viewport={'width':1400,'height':1000},color_scheme='light',args=[f'--disable-extensions-except={h.EXTENSION}',f'--load-extension={h.EXTENSION}'])
+  args=[f'--disable-extensions-except={h.EXTENSION}',f'--load-extension={h.EXTENSION}']
+  if insecure:args+=['--host-resolver-rules=MAP catalog-http.test 127.0.0.1','--proxy-bypass-list=catalog-http.test']
+  ctx=pw.chromium.launch_persistent_context(str(h.PROFILE),channel='chromium',headless=True,viewport={'width':1400,'height':1000},color_scheme='light',args=args)
+  if insecure:
+   # Route the test-only hostname to loopback even when a system proxy resolves DNS remotely.
+   # The browser origin stays ordinary HTTP; no secure-context override is used.
+   def forward(route):
+    # Catalog building does not consume Komga's background event stream. Abort it
+    # explicitly; response-buffering test forwarding cannot proxy an endless SSE body.
+    if 'text/event-stream' in route.request.headers.get('accept',''):route.abort();return
+    route.fulfill(response=route.fetch(url=route.request.url.replace('catalog-http.test','127.0.0.1')))
+   ctx.route(base+'/**',forward)
   page=None
   try:
-   h.import_userscript(ctx,h.extension_id_from(ctx));page=ctx.new_page();page.goto(h.BASE_URL+'/series/'+sid);h.login_if_needed(page,h.read_json(h.CONFIG));h.open_product_panel(page)
+   h.import_userscript(ctx,h.extension_id_from(ctx));page=ctx.new_page();page.goto(base+'/series/'+sid);h.login_if_needed(page,h.read_json(h.CONFIG));h.open_product_panel(page)
+   report['environment']=page.evaluate("({secure:isSecureContext,opfs:typeof navigator.storage?.getDirectory,legacy:typeof webkitRequestFileSystem})")
+   if insecure:assert report['environment']=={'secure':False,'opfs':'undefined','legacy':'function'},report['environment']
    panel=page.locator('#komga-metadata-panel');panel.get_by_role('tab',name='本地数据库',exact=True).click()
    expect(panel.get_by_placeholder('预制数据库或清单 URL')).to_have_count(0)
    status=panel.locator('section[data-km-catalog] [role=status]')

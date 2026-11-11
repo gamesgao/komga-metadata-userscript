@@ -497,9 +497,64 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       return { secure: isSecureContext, hits, capability: browserBuildCapability() };
     });
     assert.equal(insecureResult.secure, false);
-    assert.equal(insecureResult.capability.available, false);
-    assert.match(insecureResult.capability.reason, /普通 HTTP/);
+    assert.equal(insecureResult.capability.available, true);
     assert.ok(insecureResult.hits.some(hit => hit.id === '1'));
+    // Real insecure-origin build, not a mock isSecureContext override.
+    for (const [provider, input] of Object.entries(inputs)) {
+      await insecure.locator('#file').setInputFiles(input);
+      const built = await insecure.evaluate(async provider => {
+        const { BrowserCatalogBuilder } = await import('/browser-builder.mjs');
+        const { CatalogClient } = await import('/client.mjs');
+        const builder = new BrowserCatalogBuilder('/build-worker.mjs');
+        const result = await builder.build(document.querySelector('#file').files[0], provider, 'plain-http');
+        const reader = new CatalogClient('/worker.mjs'); await reader.open(await builder.file());
+        const manifest = await reader.manifest(); reader.dispose(); await builder.persist(); await builder.dispose();
+        return { result, manifest };
+      }, provider);
+      assert.equal(built.manifest.provider, provider); assert.ok(built.result.count > 0);
+    }
+    const atomic = await insecure.evaluate(async()=>{
+      const { catalogDirectory } = await import('/storage.mjs');
+      const directory = await catalogDirectory('komga-catalog-storage-test');
+      const file = await directory.getFileHandle('index.json', {create:true});
+      let out = await file.createWritable(); await out.write('old'); await out.close();
+      out = await file.createWritable(); await out.write('not committed'); await out.abort();
+      const afterAbort = await (await file.getFile()).text();
+      out = await file.createWritable(); await out.write('new'); await out.close();
+      const afterClose=await(await file.getFile()).text();
+      out=await file.createWritable();const pendingWrite=out.write(new Uint8Array(2*1024*1024)).catch(e=>e.name);await out.abort();await pendingWrite;
+      const afterInterrupted=await(await file.getFile()).text();
+      const abandoned=await directory.getFileHandle('abandoned.bin',{create:true});
+      const abandonedWriter=await abandoned.createWritable();await abandonedWriter.write('partial');await directory.removeEntry('abandoned.bin');await abandonedWriter.abort();
+      const names=await new Promise((ok,no)=>directory.entry.createReader().readEntries(entries=>ok(entries.map(e=>e.name)),no));
+      return { afterAbort, afterClose, afterInterrupted, names };
+    });
+    assert.deepEqual(atomic, {afterAbort:'old',afterClose:'new',afterInterrupted:'new',names:['index.json']});
+    const sparse = await insecure.evaluate(async()=>{
+      const moduleUrl=new URL('/storage.mjs',location.href).href;
+      const code=`import {catalogDirectory} from ${JSON.stringify(moduleUrl)};
+        const d=await catalogDirectory('komga-catalog-sparse-test');const f=await d.getFileHandle('sparse.bin',{create:true});const h=await f.createSyncAccessHandle();
+        h.truncate(0);h.write(new Uint8Array([7]),{at:8192});const bytes=new Uint8Array(8193);const count=h.read(bytes,{at:0});postMessage({size:h.getSize(),count,first:bytes[0],last:bytes[8192]});h.close();await d.removeEntry('sparse.bin');`;
+      const url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));const w=new Worker(url,{type:'module'});
+      try{return await new Promise((ok,no)=>{w.onmessage=e=>ok(e.data);w.onerror=e=>no(Error(e.message))});}finally{w.terminate();URL.revokeObjectURL(url)}
+    });
+    assert.deepEqual(sparse,{size:8193,count:8193,first:0,last:7});
+    await insecure.reload();
+    const restored = await insecure.evaluate(async()=>{
+      const { CatalogCollection }=await import('/collection.mjs');
+      const { mountCatalogPanel }=await import('/panel.mjs');
+      const client=new CatalogCollection('/worker.mjs');
+      const unmount=mountCatalogPanel(document.body,client,{buildWorkerUrl:'/build-worker.mjs'});
+      await client.restoring;
+      const sources=['bangumi','ehentai','mangabaka','bookwalker'].map(p=>client.hasProvider(p));
+      const hits=await client.search('フリーレン','bangumi');window.httpCatalog={client,unmount};return {sources,hits};
+    });
+    assert.deepEqual(restored.sources,[true,true,true,true]); assert.ok(restored.hits.some(hit=>hit.id==='1'));
+    const httpDownload=insecure.waitForEvent('download');await insecure.getByRole('button',{name:'导出数据库',exact:true}).nth(3).click();
+    const exportPath=join(dir,'http-bookwalker-export.sqlite');await(await httpDownload).saveAs(exportPath);
+    const exportedDb=new DatabaseSync(exportPath,{readOnly:true});
+    try {assert.equal(exportedDb.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.equal(exportedDb.prepare('SELECT provider FROM entries LIMIT 1').get().provider,'bookwalker');}finally{exportedDb.close()}
+    await insecure.evaluate(async()=>{await window.httpCatalog.unmount();window.httpCatalog.client.dispose()});
   } finally {
     if (browser) await browser.close();
     if (http) await new Promise(ok => http.close(ok));

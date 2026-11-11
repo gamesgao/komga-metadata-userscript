@@ -1,5 +1,6 @@
 import { SCHEMA_VERSION, ANALYZER_VERSION } from './analyzer.mjs';
 import { BrowserCatalogBuilder, browserBuildCapability } from './browser-builder.mjs';
+import { catalogDirectory } from './storage.mjs';
 function url(value) {
   const parsed = new URL(value);
   if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('仅支持无凭据的 HTTP(S) 地址');
@@ -165,7 +166,7 @@ export function mountCatalogPanel(container, client, options = {}) {
   const restore = async () => {
     if (!canBuild) return;
     let directory;
-    try { directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('komga-catalog-build'); }
+    try { directory = await catalogDirectory('komga-catalog-build', false); }
     catch (error) { if (error.name !== 'NotFoundError') status.textContent = `恢复失败：${error.message}`; return; }
     for (const source of catalogSources) {
       if (disposed || client.hasProvider?.(source.id)) continue;

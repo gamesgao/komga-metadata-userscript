@@ -196,13 +196,13 @@ test('fixture browser: no UI/menu/storage/network outside detected Komga; menu s
 });
 test('catalog UI: four preset downloads on HTTP, completion/error/cancel, no URL or primary prebuilt import', async ({ page }) => {
   await install(page);
-  await page.evaluate(() => Object.defineProperty(window,'isSecureContext',{value:false,configurable:true}));
+  await page.evaluate(() => { Object.defineProperty(window,'isSecureContext',{value:false,configurable:true}); Object.defineProperty(window,'webkitRequestFileSystem',{value:undefined,configurable:true}); });
   await page.route('https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json',route=>route.fulfill({json:{browser_download_url:'https://github.com/bangumi/Archive/releases/download/archive/source.zip'},headers:{'Access-Control-Allow-Origin':'*'}}));
   await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('tab',{name:'本地数据库'}).click();
   const area=page.locator('section[data-km-catalog]'),status=area.locator('[role=status]');
   await expect(area.getByPlaceholder('预制数据库或清单 URL')).toHaveCount(0);
   await expect(area.getByLabel('本地数据库文件')).not.toBeVisible();
-  await expect(area.getByText(/当前页面使用普通 HTTP/)).toBeVisible();
+  await expect(area.getByText(/当前浏览器不支持本地构建存储/)).toBeVisible();
   for(const name of ['Bangumi','E-Hentai','MangaBaka','BookWalker']) {
     await area.getByRole('button',{name:name+' · 下载原始数据',exact:true}).click();
     await expect(status).toContainText('原始数据已下载');

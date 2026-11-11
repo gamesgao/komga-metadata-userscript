@@ -1,6 +1,6 @@
+import { storageBackend, catalogDirectory, transferDirectory, uniqueId } from './storage.mjs';
 export function browserBuildCapability() {
-  if (!globalThis.isSecureContext) return { available: false, reason: '当前页面使用普通 HTTP，浏览器不允许创建数据库。使用 HTTPS 后可自动构建；也可导入已构建数据库。' };
-  if (!navigator.storage?.getDirectory) return { available: false, reason: '浏览器不支持 OPFS；请使用原生 CLI' };
+  if (!storageBackend()) return { available: false, reason: '当前浏览器不支持本地构建存储；可使用 Chrome/Edge、HTTPS 或导入已有数据库。' };
   if (typeof Worker !== 'function') return { available: false, reason: '浏览器不支持 Worker；请使用原生 CLI' };
   return { available: true, reason: '支持四种本地来源档案；浏览器资源不足时请使用原生 CLI' };
 }
@@ -23,10 +23,9 @@ export class BrowserCatalogBuilder {
     const generation = this.generation;
     this.busy = true;
     try {
-      const root = await navigator.storage.getDirectory();
-      const directory = await root.getDirectoryHandle('komga-catalog-build', { create: true });
+      const directory = await catalogDirectory('komga-catalog-build');
       if (generation !== this.generation) throw new DOMException('Build cancelled', 'AbortError');
-      const nonce = crypto.randomUUID();
+      const nonce = uniqueId();
       const outputName = `output-${nonce}.sqlite`, sourceName = `source-${nonce}.sqlite`;
       const created = this.workerFactory
         ? await this.workerFactory()
@@ -43,7 +42,7 @@ export class BrowserCatalogBuilder {
           task.reject = fail;
           worker.onmessage = ({ data }) => {
             if (data.type === 'ready') {
-              const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+              const payload = { file, directory: transferDirectory(directory), sourceName, outputName, provider, sourceVersion };
               worker.postMessage(initOptions ? { type: 'build', payload } : payload);
             } else if (data.type === 'progress') onProgress?.(data);
             else if (data.type === 'init-error') fail(new Error(data.error));
@@ -59,7 +58,7 @@ export class BrowserCatalogBuilder {
             const transfer = payload.wasmBinary instanceof ArrayBuffer ? [payload.wasmBinary] : [];
             worker.postMessage({ type: 'init', payload }, transfer);
           } else {
-            const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+            const payload = { file, directory: transferDirectory(directory), sourceName, outputName, provider, sourceVersion };
             worker.postMessage(payload);
           }
         });

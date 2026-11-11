@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.7.0
+// @version      0.7.1
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -3318,11 +3318,161 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   };
 
+  // catalog/src/storage.mjs
+  function storageBackend() {
+    if (globalThis.isSecureContext && globalThis.navigator?.storage?.getDirectory) return "opfs";
+    if (typeof globalThis.webkitRequestFileSystem === "function") return "legacy";
+    return void 0;
+  }
+  function uniqueId() {
+    if (globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  var invoke = (object2, method, ...args) => new Promise((resolve, reject) => object2[method](...args, resolve, reject));
+  var legacyFS = () => invoke(globalThis, "webkitRequestFileSystem", 0, 0);
+  async function catalogDirectory(name, create = true) {
+    if (!/^komga-catalog-[a-z-]+$/.test(name)) throw new Error("Invalid catalog storage directory");
+    if (storageBackend() === "opfs") return (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create });
+    if (storageBackend() === "legacy") return new LegacyDirectory(await invoke((await legacyFS()).root, "getDirectory", name, { create }));
+    throw new Error("\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u672C\u5730\u6784\u5EFA\u5B58\u50A8\uFF1B\u8BF7\u4F7F\u7528\u652F\u6301\u7684 Chromium \u6D4F\u89C8\u5668\u3001HTTPS \u6216\u5BFC\u5165\u5DF2\u6709\u6570\u636E\u5E93");
+  }
+  function transferDirectory(directory) {
+    return directory instanceof LegacyDirectory ? { legacyCatalogPath: directory.entry.fullPath } : directory;
+  }
+  var LegacyDirectory = class {
+    constructor(entry) {
+      this.entry = entry;
+    }
+    async getFileHandle(name, options = {}) {
+      if (!name || name.includes("/") || name.includes("\\")) throw new Error("Invalid catalog filename");
+      return new LegacyFile(await invoke(this.entry, "getFile", name, { create: Boolean(options.create) }));
+    }
+    async removeEntry(name) {
+      let missing;
+      try {
+        const file = await this.getFileHandle(name);
+        await invoke(file.entry, "remove");
+      } catch (error) {
+        if (error.name !== "NotFoundError") throw error;
+        missing = error;
+      }
+      const reader = this.entry.createReader();
+      while (true) {
+        const entries = await invoke(reader, "readEntries");
+        if (!entries.length) break;
+        for (const entry of entries) if (entry.isFile && entry.name.startsWith(`.pending-${name}-`)) await invoke(entry, "remove");
+      }
+      if (missing) throw missing;
+    }
+  };
+  var LegacyFile = class {
+    constructor(entry) {
+      this.entry = entry;
+    }
+    getFile() {
+      return invoke(this.entry, "file");
+    }
+    async createWritable() {
+      const parent = await invoke(this.entry, "getParent");
+      const temporary = await invoke(parent, "getFile", `.pending-${this.entry.name}-${uniqueId()}`, { create: true, exclusive: true });
+      let writer;
+      try {
+        writer = await invoke(temporary, "createWriter");
+      } catch (error) {
+        await invoke(temporary, "remove").catch(() => {
+        });
+        throw error;
+      }
+      let position = 0, closed = false, rejectPending;
+      const write = (data) => new Promise((resolve, reject) => {
+        if (closed) {
+          reject(new Error("Writer is closed"));
+          return;
+        }
+        rejectPending = reject;
+        const blob = data instanceof Blob ? data : new Blob([data]);
+        writer.onerror = () => reject(writer.error);
+        writer.onwriteend = () => {
+          rejectPending = void 0;
+          if (!writer.error) {
+            position += blob.size;
+            resolve();
+          }
+        };
+        try {
+          writer.seek(position);
+          writer.write(blob);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      return {
+        write,
+        close: async () => {
+          if (closed) throw new Error("Writer is closed");
+          await invoke(temporary, "moveTo", parent, this.entry.name);
+          closed = true;
+        },
+        abort: async () => {
+          if (closed) return;
+          closed = true;
+          rejectPending?.(new DOMException("Write cancelled", "AbortError"));
+          rejectPending = void 0;
+          if (writer.readyState === 1) {
+            await new Promise((resolve) => {
+              writer.onwriteend = resolve;
+              writer.onerror = resolve;
+              writer.abort();
+            });
+          }
+          await invoke(temporary, "remove").catch((error) => {
+            if (error.name !== "NotFoundError") throw error;
+          });
+        }
+      };
+    }
+    async createSyncAccessHandle() {
+      if (typeof globalThis.webkitRequestFileSystemSync !== "function") throw new Error("HTTP \u672C\u5730\u6784\u5EFA\u9700\u8981 Chromium Worker \u6587\u4EF6\u7CFB\u7EDF\u652F\u6301");
+      const fs = globalThis.webkitRequestFileSystemSync(0, 0);
+      const entry = fs.root.getFile(this.entry.fullPath, { create: false });
+      const writer = entry.createWriter(), reader = new FileReaderSync();
+      let snapshot;
+      return {
+        read(buffer, { at = 0 } = {}) {
+          snapshot ??= entry.file();
+          const bytes = new Uint8Array(reader.readAsArrayBuffer(snapshot.slice(at, at + buffer.byteLength)));
+          new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).set(bytes);
+          return bytes.byteLength;
+        },
+        write(buffer, { at = 0 } = {}) {
+          snapshot = void 0;
+          if (buffer.byteLength && at > writer.length) writer.truncate(at);
+          writer.seek(at);
+          writer.write(new Blob([buffer]));
+          return buffer.byteLength;
+        },
+        truncate(size) {
+          snapshot = void 0;
+          writer.truncate(size);
+        },
+        getSize() {
+          return writer.length;
+        },
+        // Legacy FileWriterSync completes writes synchronously but exposes no fsync.
+        // Only fully built, integrity-checked immutable snapshots are published.
+        flush() {
+        },
+        close() {
+          snapshot = void 0;
+        }
+      };
+    }
+  };
+
   // src/catalog-download.ts
   async function downloadArchive(url2, name, signal, progress) {
-    if (!isSecureContext || !navigator.storage?.getDirectory) throw new Error("\u81EA\u52A8\u6784\u5EFA\u9700\u8981 HTTPS \u548C\u6D4F\u89C8\u5668\u672C\u5730\u5B58\u50A8");
-    const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("komga-catalog-download", { create: true });
-    const filename = `${crypto.randomUUID()}-${name}`;
+    const directory = await catalogDirectory("komga-catalog-download");
+    const filename = `${uniqueId()}-${name}`;
     const handle = await directory.getFileHandle(filename, { create: true });
     let writable;
     let request2, reader;
@@ -3444,8 +3594,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
 
   // catalog/src/browser-builder.mjs
   function browserBuildCapability() {
-    if (!globalThis.isSecureContext) return { available: false, reason: "\u5F53\u524D\u9875\u9762\u4F7F\u7528\u666E\u901A HTTP\uFF0C\u6D4F\u89C8\u5668\u4E0D\u5141\u8BB8\u521B\u5EFA\u6570\u636E\u5E93\u3002\u4F7F\u7528 HTTPS \u540E\u53EF\u81EA\u52A8\u6784\u5EFA\uFF1B\u4E5F\u53EF\u5BFC\u5165\u5DF2\u6784\u5EFA\u6570\u636E\u5E93\u3002" };
-    if (!navigator.storage?.getDirectory) return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 OPFS\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
+    if (!storageBackend()) return { available: false, reason: "\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u672C\u5730\u6784\u5EFA\u5B58\u50A8\uFF1B\u53EF\u4F7F\u7528 Chrome/Edge\u3001HTTPS \u6216\u5BFC\u5165\u5DF2\u6709\u6570\u636E\u5E93\u3002" };
     if (typeof Worker !== "function") return { available: false, reason: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 Worker\uFF1B\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
     return { available: true, reason: "\u652F\u6301\u56DB\u79CD\u672C\u5730\u6765\u6E90\u6863\u6848\uFF1B\u6D4F\u89C8\u5668\u8D44\u6E90\u4E0D\u8DB3\u65F6\u8BF7\u4F7F\u7528\u539F\u751F CLI" };
   }
@@ -3468,10 +3617,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const generation = this.generation;
       this.busy = true;
       try {
-        const root = await navigator.storage.getDirectory();
-        const directory = await root.getDirectoryHandle("komga-catalog-build", { create: true });
+        const directory = await catalogDirectory("komga-catalog-build");
         if (generation !== this.generation) throw new DOMException("Build cancelled", "AbortError");
-        const nonce = crypto.randomUUID();
+        const nonce = uniqueId();
         const outputName = `output-${nonce}.sqlite`, sourceName = `source-${nonce}.sqlite`;
         const created = this.workerFactory ? await this.workerFactory() : new Worker(this.workerUrl, { type: "module" });
         const worker2 = created?.worker ?? created;
@@ -3491,7 +3639,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
             task.reject = fail;
             worker2.onmessage = ({ data }) => {
               if (data.type === "ready") {
-                const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+                const payload = { file, directory: transferDirectory(directory), sourceName, outputName, provider, sourceVersion };
                 worker2.postMessage(initOptions ? { type: "build", payload } : payload);
               } else if (data.type === "progress") onProgress?.(data);
               else if (data.type === "init-error") fail(new Error(data.error));
@@ -3510,7 +3658,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
               const transfer = payload.wasmBinary instanceof ArrayBuffer ? [payload.wasmBinary] : [];
               worker2.postMessage({ type: "init", payload }, transfer);
             } else {
-              const payload = { file, directory, sourceName, outputName, provider, sourceVersion };
+              const payload = { file, directory: transferDirectory(directory), sourceName, outputName, provider, sourceVersion };
               worker2.postMessage(payload);
             }
           });
@@ -3874,7 +4022,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       if (!canBuild) return;
       let directory;
       try {
-        directory = await (await navigator.storage.getDirectory()).getDirectoryHandle("komga-catalog-build");
+        directory = await catalogDirectory("komga-catalog-build", false);
       } catch (error) {
         if (error.name !== "NotFoundError") status2.textContent = `\u6062\u590D\u5931\u8D25\uFF1A${error.message}`;
         return;
