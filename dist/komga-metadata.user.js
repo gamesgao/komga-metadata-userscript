@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.8.0
+// @version      0.9.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -1822,7 +1822,7 @@ svg{width:18px;height:18px;flex-shrink:0;vertical-align:middle}button,input,sele
 .tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);padding:0 24px;flex-shrink:0}.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);padding:10px 0 12px;font-size:13px}.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
 .viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--surface);scrollbar-width:thin;scrollbar-color:var(--line) transparent}.tab-panel{padding:22px 24px;min-height:100%}.workspace{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:20px;align-items:start}.card{min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:18px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h3{margin:0;font-size:14px;font-weight:650}.section-title select{font-size:12px;height:32px;padding:4px 8px}
 h3{font-size:14px;font-weight:600;margin:0 0 10px}p{margin:8px 0;overflow-wrap:anywhere}pre{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;line-height:1.75;color:var(--muted)}.search-row{display:flex;gap:8px}.search-row input{width:100%;flex:1}.source-toggles{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}.source-toggles label{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:11px;transition:background .12s}.source-toggles label:has(:checked){background:var(--tint);border-color:var(--tint);color:var(--accent)}.source-toggles input{width:12px;height:12px}.direct-row{display:grid;grid-template-columns:115px minmax(0,1fr) auto;gap:8px}.direct-row input{width:100%}
-details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0;user-select:none}details[open]>summary{margin-bottom:8px}.results{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-height:230px}.results:empty::before{content:'\u641C\u7D22\u4F5C\u54C1\uFF0C\u9009\u62E9\u5339\u914D\u7684\u6761\u76EE';display:block;text-align:center;padding:64px 8px;color:var(--muted);font-size:13px}.result-group{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.result-group>summary{display:flex;align-items:center;gap:8px;list-style:none;padding:11px 12px;margin:0!important;color:var(--text);font-size:13px;font-weight:600;background:var(--surface)}.result-group>summary::-webkit-details-marker{display:none}.result-group>summary::before{content:'\u203A';font-size:20px;line-height:1;transition:transform .12s}.result-group[open]>summary::before{transform:rotate(90deg)}.result-count{margin-left:auto;color:var(--muted);font-size:11px;font-weight:400}.result-group>p{padding:0 12px;color:var(--muted);font-size:12px}.candidate-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(115px,1fr));gap:10px;padding:12px;max-height:460px;overflow:auto;scrollbar-width:thin}.candidate-grid:empty{display:none}.candidate{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;height:100%;min-width:0;padding:7px;margin:0;text-align:left;white-space:normal;line-height:1.45;font-weight:500;gap:8px}.candidate[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:var(--tint)}.candidate-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:12px;min-height:2.9em}.cover-thumb{display:flex;align-items:center;justify-content:center;aspect-ratio:2/3;width:100%;min-width:0;background:var(--surface);border-radius:5px;overflow:hidden;color:var(--muted);font-size:11px;font-weight:400}.cover-thumb img{display:block;width:100%;height:100%;object-fit:contain}.cover-thumb[data-state=pending]::before{content:'';width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite}.selected-record:empty{display:none}.selected-record:not(:empty){border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.selected-record>h3{font-size:16px;line-height:1.6}.record-url{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-meta{font-size:12px;color:var(--muted)}.record-summary{max-height:210px;overflow:auto;scrollbar-width:thin}.volumes button{display:flex;width:100%;white-space:normal;text-align:left;justify-content:flex-start;margin:5px 0;font-size:12px}
+details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0;user-select:none}details[open]>summary{margin-bottom:8px}.results{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);min-height:230px}.results:empty::before{content:'\u641C\u7D22\u4F5C\u54C1\uFF0C\u9009\u62E9\u5339\u914D\u7684\u6761\u76EE';display:block;text-align:center;padding:64px 8px;color:var(--muted);font-size:13px}.result-group{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.result-group>summary{display:flex;align-items:center;gap:8px;list-style:none;padding:11px 12px;margin:0!important;color:var(--text);font-size:13px;font-weight:600;background:var(--surface)}.result-group>summary::-webkit-details-marker{display:none}.result-group>summary::before{content:'\u203A';font-size:20px;line-height:1;transition:transform .12s}.result-group[open]>summary::before{transform:rotate(90deg)}.result-count{margin-left:auto;color:var(--muted);font-size:11px;font-weight:400}.result-group>p{padding:0 12px;color:var(--muted);font-size:12px}.candidate-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(115px,1fr));gap:10px;padding:12px;max-height:460px;overflow:auto;scrollbar-width:thin}.candidate-grid:empty{display:none}.candidate-card{position:relative;min-width:0}.candidate-link{position:absolute;right:11px;top:11px;display:grid;place-items:center;min-width:28px;min-height:28px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--accent);text-decoration:none;font-size:17px;box-shadow:0 1px 5px #0002}.candidate-link:hover{background:var(--tint)}.source-details:empty{display:none}.candidate{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;width:100%;height:100%;min-width:0;padding:7px;margin:0;text-align:left;white-space:normal;line-height:1.45;font-weight:500;gap:8px}.candidate[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:var(--tint)}.candidate-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:12px;min-height:2.9em}.cover-thumb{display:flex;align-items:center;justify-content:center;aspect-ratio:2/3;width:100%;min-width:0;background:var(--surface);border-radius:5px;overflow:hidden;color:var(--muted);font-size:11px;font-weight:400}.cover-thumb img{display:block;width:100%;height:100%;object-fit:contain}.cover-thumb[data-state=pending]::before{content:'';width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite}.selected-record:empty{display:none}.selected-record:not(:empty){border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}.selected-record>h3{font-size:16px;line-height:1.6}.record-url{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.record-meta{font-size:12px;color:var(--muted)}.record-summary{max-height:210px;overflow:auto;scrollbar-width:thin}.volumes button{display:flex;width:100%;white-space:normal;text-align:left;justify-content:flex-start;margin:5px 0;font-size:12px}
 .field-label{display:grid;gap:6px;color:var(--muted);font-size:12px;margin-bottom:12px}.field-label select{width:100%;color:var(--text);font-size:13px}.field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 6px;padding:12px 0 16px}.field-grid label,.check-label{display:flex;align-items:center;gap:7px;font-size:12px;line-height:1.5;min-height:28px}.field-grid label:first-child{grid-column:span 2}.field-caption{font-size:12px;font-weight:600;border-top:1px solid var(--line);padding-top:16px;margin-top:16px}.hint{font-size:11px;color:var(--muted);margin:8px 0 0}
 .footer{display:flex;align-items:center;gap:10px;padding:14px 24px;border-top:1px solid var(--line);background:var(--bg);flex-shrink:0}.status{flex:1;min-width:0;font-size:12px;color:var(--muted);margin:0;max-height:90px;overflow:auto}.status[data-state=error]{color:var(--danger)}.status[data-state=busy]::before{content:'';display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:km-spin .7s linear infinite;vertical-align:middle}.status[data-state=success]{color:var(--positive);font-size:0}.status[data-state=success]::before{content:'\u2713';font-size:22px}.footer-actions{display:flex;gap:8px;align-items:center}.cancel-action[hidden]{display:none}
 .preview:empty{display:none}.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}.preview-head h3{font-size:18px;margin:0}.target-heading{font-size:12px;color:var(--muted);margin:20px 0 10px}.row{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:14px;margin:10px 0}.row>label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}.diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}.diff-caption{font-size:10px;color:var(--muted);margin-bottom:5px}.diff pre{margin:0;padding:10px;background:var(--surface);border-radius:7px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:180px;overflow:auto}.diff textarea{display:block;width:100%;min-height:92px;resize:vertical;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.row:has(input[data-field]:not(:checked)){opacity:.55}
@@ -1830,7 +1830,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px
 section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog]>[role=status]{font-size:12px;color:var(--muted);padding:10px 0}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
 .cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
 .search-progress{margin-top:16px;display:grid;gap:7px;font-size:12px;color:var(--muted)}.search-progress progress{width:100%;height:7px;border:0;border-radius:4px;overflow:hidden;accent-color:var(--accent)}.search-progress progress::-webkit-progress-bar{background:var(--line)}.search-progress progress::-webkit-progress-value{background:var(--accent)}.result-group[data-state=error] .result-count{color:var(--danger)}.selected-source{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}.selected-source>span{flex:1;min-width:0;overflow-wrap:anywhere}.selected-source button{padding:4px 7px;font-size:11px}.merge-rules{border-top:1px solid var(--line);margin:12px 0;padding-top:4px}.merge-rules>p{font-size:12px;color:var(--muted)}.merge-rules .field-label{grid-template-columns:90px minmax(0,1fr);align-items:center}
-.field-compose{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:10px 0}.field-source-picks{grid-column:1/-1}.field-source-picks label{display:flex;align-items:flex-start;gap:8px;margin-top:8px;overflow-wrap:anywhere;font-size:12px;line-height:1.5}.field-source-picks input{flex-shrink:0}.language-options p{font-size:12px;color:var(--muted);line-height:1.6}.language-options .field-grid{margin:12px 0}
+.field-compose{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:10px 0}.field-source-picks{grid-column:1/-1}.field-source-picks label{display:flex;align-items:flex-start;gap:8px;margin-top:8px;overflow-wrap:anywhere;font-size:12px;line-height:1.5}.field-source-picks input{flex-shrink:0}.language-options p{font-size:12px;color:var(--muted);line-height:1.6}.language-list{display:grid;gap:6px;margin:12px 0}.language-row{display:flex;align-items:center;gap:6px}.language-row label{flex:1;display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.language-row button{padding:4px 10px;min-height:30px}
 @keyframes km-spin{to{transform:rotate(360deg)}}
 @media(max-width:820px){.dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);border-radius:12px}.workspace{grid-template-columns:1fr}.tab-panel{padding:16px}.header{padding:16px}.tabs{padding:0 16px}.footer{padding:12px 16px;flex-wrap:wrap}.status{flex-basis:100%}.footer-actions{margin-left:auto}.direct-row{grid-template-columns:95px minmax(0,1fr) auto}.diff{grid-template-columns:1fr}.context{max-width:55vw}}
 @media(prefers-reduced-motion:reduce){*,*::before{transition:none!important;animation-duration:1.5s!important}.dialog{transition:none!important}}
@@ -1881,6 +1881,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     add(title, resolve) {
       const frame = document.createElement("span");
       frame.className = "cover-thumb";
+      frame.title = title;
       frame.dataset.state = "pending";
       frame.setAttribute("aria-label", "\u52A0\u8F7D\u5C01\u9762");
       this.jobs.set(frame, { frame, title, resolve, queued: false, started: false });
@@ -1936,7 +1937,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         job.frame.dataset.state = "error";
         job.frame.textContent = "\u5C01\u9762\u52A0\u8F7D\u5931\u8D25";
         job.frame.setAttribute("aria-label", "\u5C01\u9762\u52A0\u8F7D\u5931\u8D25");
-        job.frame.title = error instanceof Error ? error.message : String(error);
       }
     }
     dispose() {
@@ -1981,11 +1981,20 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   }
 
   // src/languages.ts
-  var allLanguages = ["en", "ja", "zh", "romaji", "unknown", "other"];
-  function wantsChineseTags(languages) {
-    return languages.includes("zh");
+  var allLanguages = ["zh", "ja", "en", "romaji", "other"];
+  var languageLabels = { en: "\u82F1\u6587 EN", ja: "\u65E5\u6587 JP", zh: "\u4E2D\u6587 ZH / CH", romaji: "\u7F57\u9A6C\u5B57 Romaji", unknown: "\u5176\u4ED6\u8BED\u8A00", other: "\u5176\u4ED6\u8BED\u8A00" };
+  function normalizeLanguages(values) {
+    return [...new Set(values.map((v) => v === "unknown" ? "other" : v).filter((v) => allLanguages.includes(v)))];
   }
-  var languageLabels = { en: "\u82F1\u6587 EN", ja: "\u65E5\u6587 JP", zh: "\u4E2D\u6587 ZH / CH", romaji: "\u7F57\u9A6C\u5B57 Romaji", unknown: "\u672A\u6807\u6CE8", other: "\u5176\u4ED6\u8BED\u8A00" };
+  function languagePreferences(enabled = allLanguages, priority) {
+    const order = normalizeLanguages([...priority ?? allLanguages, ...allLanguages]);
+    const accepted2 = normalizeLanguages(enabled);
+    return { order, accepted: order.filter((v) => accepted2.includes(v)) };
+  }
+  function wantsChineseTags(languages) {
+    const preferred = normalizeLanguages(languages).find((v) => v === "zh" || v === "en");
+    return preferred === "zh";
+  }
   function languageOf(text2, explicit) {
     const code = explicit?.trim().toLowerCase().replace(/_/g, "-");
     if (code && /^(romaji|ja-latn|ja-ro|jp-ro|romanized|romanised)$/.test(code)) return "romaji";
@@ -1993,17 +2002,21 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     if (code && /^(zh|ch|zho|chi|chinese)(-|$)/.test(code)) return "zh";
     if (code && /^(en|eng|english)(-|$)/.test(code)) return "en";
     if (code && !["und", "unknown", "zxx"].includes(code)) return "other";
-    return /[\u3040-\u30ff]/u.test(text2) ? "ja" : "unknown";
+    return /[\u3040-\u30ff]/u.test(text2) ? "ja" : "other";
+  }
+  function languageRank(text2, code, languages) {
+    const rank = normalizeLanguages(languages).indexOf(languageOf(text2, code));
+    return rank < 0 ? Infinity : rank;
   }
   function accepted(text2, code, languages) {
-    return languages.includes(languageOf(text2, code));
+    return Number.isFinite(languageRank(text2, code, languages));
   }
   function acceptedTitles(r, languages) {
-    return r.titles.filter((t) => accepted(t.text, t.language, languages)).sort((a, b) => Number(b.type === "native") - Number(a.type === "native"));
+    return r.titles.filter((t) => t.text.trim() && accepted(t.text, t.language, languages)).sort((a, b) => languageRank(a.text, a.language, languages) - languageRank(b.text, b.language, languages) || Number(b.type === "native") - Number(a.type === "native"));
   }
   function languageFields(r, languages) {
     const values = mappedFields(r), titles2 = acceptedTitles(r, languages);
-    values.title = (titles2.find((t) => t.type === "native") ?? titles2[0])?.text;
+    values.title = titles2[0]?.text;
     values.alternateTitles = titles2.map((t) => ({ title: t.text, label: t.language || t.type }));
     if (r.summary && !accepted(r.summary, r.summaryLanguage, languages)) values.summary = void 0;
     if (r.publisher && !accepted(r.publisher, void 0, languages)) values.publisher = void 0;
@@ -2011,7 +2024,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     values.genres = r.genres.filter((t) => accepted(t, void 0, languages));
     values.authors = r.authors.flatMap((a) => {
       const names = [[a.native, a.nativeLanguage], [a.name, a.language], [a.localized, a.localizedLanguage]];
-      const name = names.find(([text2, lang]) => text2 && accepted(text2, lang, languages))?.[0];
+      const name = names.filter(([text2, lang]) => text2?.trim() && accepted(text2, lang, languages)).sort(([a2, al], [b, bl]) => languageRank(a2, al, languages) - languageRank(b, bl, languages))[0]?.[0];
       return name ? [{ name, role: a.role }] : [];
     });
     return normalizeWriteFields(values);
@@ -2050,7 +2063,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const mapped = records.map((r) => ({ r, value: languageFields(r, languages) }));
     const values = {}, used = {}, options = {};
     for (const field of mergeFields) {
-      const entries = field === "title" ? records.flatMap((r) => acceptedTitles(r, languages).map((t, i) => ({ key: `${sourceKey(r)}#title${i}`, provider: r.provider, label: `${r.provider} \xB7 ${r.id} \xB7 ${languageOf(t.text, t.language)} \xB7 ${t.text}`, value: t.text }))) : mapped.filter((x) => present(x.value[field])).map((x) => ({ key: sourceKey(x.r), provider: x.r.provider, label: `${x.r.provider} \xB7 ${x.r.id} \xB7 ${nativeTitle(x.r)}`, value: x.value[field] }));
+      const entries = field === "title" ? records.flatMap((r) => acceptedTitles(r, languages).map((t, i) => ({ key: `${sourceKey(r)}#title${i}`, provider: r.provider, label: `${r.provider} \xB7 ${r.id} \xB7 ${languageOf(t.text, t.language)} \xB7 ${t.text}`, value: t.text, rank: languageRank(t.text, t.language, languages) }))) : mapped.filter((x) => present(x.value[field])).map((x) => ({ key: sourceKey(x.r), provider: x.r.provider, label: `${x.r.provider} \xB7 ${x.r.id} \xB7 ${nativeTitle(x.r)}`, value: x.value[field], rank: field === "summary" ? languageRank(x.r.summary, x.r.summaryLanguage, languages) : field === "publisher" ? languageRank(x.r.publisher, void 0, languages) : 0 }));
+      entries.sort((a, b) => a.rank - b.rank);
       options[field] = entries;
       if (!entries.length) continue;
       const chosen = entries.find((e) => e.key === choices[field]);
@@ -2067,6 +2081,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     const covers = [];
     for (const r of records) for (const cover of r.covers) if (accepted("", cover.language, languages) && !covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+    covers.sort((a, b) => languageRank("", a.cover.language, languages) - languageRank("", b.cover.language, languages));
     return { record: { ...records[0], covers: covers.map((c) => c.cover) }, values, used, options, covers };
   }
 
@@ -2217,6 +2232,27 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
     return value;
   }
+  function candidateCard(candidate2, title, href2) {
+    const card = element("div");
+    card.className = "candidate-card";
+    candidate2.title = title;
+    card.append(candidate2);
+    try {
+      const url2 = new URL(href2);
+      if (["https:", "http:"].includes(url2.protocol) && !url2.username && !url2.password) {
+        const link = element("a", "\u2197");
+        link.className = "candidate-link";
+        link.href = url2.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = title;
+        link.setAttribute("aria-label", `${title}\uFF1A\u6253\u5F00\u6765\u6E90`);
+        card.append(link);
+      }
+    } catch {
+    }
+    return card;
+  }
   var Panel = class {
     constructor(registry, client, writer, translation) {
       this.registry = registry;
@@ -2320,25 +2356,57 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const languages = element("details");
       languages.className = "language-options";
       languages.append(element("summary", "\u63A5\u53D7\u7684\u8D44\u6599\u8BED\u8A00"));
+      const preference = languagePreferences(this.settings.acceptedLanguages, this.settings.languagePriority);
+      this.settings.languagePriority = preference.order;
+      this.settings.acceptedLanguages = preference.accepted;
+      storage.set("settings-v1", this.settings);
       const languageChecks = element("div");
-      languageChecks.className = "field-grid";
-      for (const language of allLanguages) {
-        const check2 = input(languageLabels[language], languageChecks, "checkbox");
-        check2.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
-        check2.dataset.language = language;
-        check2.onchange = () => {
-          this.settings.acceptedLanguages = [...languageChecks.querySelectorAll("input:checked")].map((i) => i.dataset.language);
-          storage.set("settings-v1", this.settings);
-          this.renderSelection();
-        };
-      }
-      languages.append(languageChecks, element("p", "\u7B5B\u9009\u5DF2\u6709\u7684\u6807\u9898\u3001\u7B80\u4ECB\u3001\u4F5C\u8005\u7B49\u6587\u672C\uFF1B\u65E0\u6CD5\u53EF\u9760\u5224\u65AD\u65F6\u5F52\u5165\u300C\u672A\u6807\u6CE8\u300D\u3002\u52FE\u9009\u4E2D\u6587\u65F6\uFF0CEH \u6807\u7B7E\u6309\u8BCD\u5E93\u7FFB\u8BD1\uFF1B\u5426\u5219\u4FDD\u7559\u539F\u59CB\u6807\u7B7E\u3002\u641C\u7D22\u8BCD\u4E0E\u4F5C\u54C1\u539F\u59CB\u8BED\u8A00\u4E0D\u53D8\u3002"));
+      languageChecks.className = "language-list";
+      const saveLanguages = () => {
+        this.settings.acceptedLanguages = this.settings.languagePriority.filter((l) => this.settings.acceptedLanguages.includes(l));
+        storage.set("settings-v1", this.settings);
+        this.renderSelection();
+      };
+      const renderLanguages = () => {
+        languageChecks.replaceChildren();
+        this.settings.languagePriority.forEach((language, index, order) => {
+          const row = element("div");
+          row.className = "language-row";
+          row.dataset.language = language;
+          const check2 = input(languageLabels[language], row, "checkbox");
+          check2.dataset.language = language;
+          check2.checked = this.settings.acceptedLanguages.includes(language);
+          check2.onchange = () => {
+            this.settings.acceptedLanguages = this.settings.acceptedLanguages.filter((l) => l !== language);
+            if (check2.checked) this.settings.acceptedLanguages.push(language);
+            saveLanguages();
+          };
+          for (const [direction, offset, text2] of [["up", -1, "\u4E0A\u79FB"], ["down", 1, "\u4E0B\u79FB"]]) {
+            const move = button(direction === "up" ? "\u2191" : "\u2193", () => {
+              if (this.busy || index + offset < 0 || index + offset >= order.length) return;
+              [order[index], order[index + offset]] = [order[index + offset], order[index]];
+              saveLanguages();
+              renderLanguages();
+              languageChecks.querySelector(`input[data-language="${language}"]`)?.focus();
+            });
+            move.className = "ghost";
+            move.setAttribute("aria-label", `${languageLabels[language]}${text2}`);
+            move.disabled = index + offset < 0 || index + offset >= order.length;
+            move.dataset.boundaryDisabled = String(move.disabled);
+            row.append(move);
+          }
+          languageChecks.append(row);
+        });
+      };
+      renderLanguages();
+      languages.append(languageChecks);
       directDetails.append(directRow);
       searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
       const choices = element("div");
       choices.className = "card";
-      this.detail.className = "selected-record";
-      choices.append(this.detail, element("h3", "\u5199\u5165\u9009\u9879"));
+      this.detail.className = "source-details";
+      searchCard.append(this.detail);
+      choices.append(element("h3", "\u5199\u5165\u9009\u9879"));
       this.book.setAttribute("aria-label", "\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66");
       this.cover.setAttribute("aria-label", "\u4F7F\u7528\u54EA\u5F20\u5C01\u9762");
       this.coverTarget.setAttribute("aria-label", "\u66FF\u6362\u54EA\u4E2A\u5C01\u9762");
@@ -2471,7 +2539,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     selections = [];
     merged;
     tagReplacements = /* @__PURE__ */ new Map();
-    sameWork = false;
     plan;
     seriesId;
     undoData = storage.get("undo-v1", void 0);
@@ -2522,7 +2589,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           if (!this.state.series.oneshot) option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
         }
         if (this.state.series.oneshot) option(this.coverTarget, "both", "\u7CFB\u5217\u4E0E\u552F\u4E00\u4E66\u7C4D\u5171\u7528\u5C01\u9762");
-        this.status.textContent = `\u5F53\u524D\uFF1A${this.state.series.metadata.title}`;
+        this.status.textContent = "";
       });
     }
     get signal() {
@@ -2565,7 +2632,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         await action();
         if (this.status.dataset.state === "busy" || this.status.dataset.state === "search") {
           this.status.dataset.state = "idle";
-          if (!this.status.textContent) this.status.textContent = this.plan ? "\u786E\u8BA4\u9884\u89C8\u540E\u5E94\u7528" : this.selected ? "\u5DF2\u9009\u62E9\u6765\u6E90\u6761\u76EE" : "\u8BF7\u9009\u62E9\u5339\u914D\u6761\u76EE";
         }
       } catch (error) {
         this.status.dataset.state = "error";
@@ -2574,7 +2640,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.busy = false;
         this.status.removeAttribute("aria-label");
         this.cancelButton.hidden = true;
-        this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = this.finishing);
+        this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = this.finishing || e.dataset.boundaryDisabled === "true");
         this.results.querySelectorAll("button").forEach((e) => e.disabled = this.finishing);
         this.preview.querySelectorAll("input,select,textarea,button").forEach((e) => e.disabled = this.finishing);
         this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
@@ -2592,7 +2658,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.searchProgress.replaceChildren();
       this.selections = [];
       this.merged = void 0;
-      this.sameWork = false;
       this.selected = void 0;
       this.detail.replaceChildren();
       this.results.replaceChildren();
@@ -2645,7 +2710,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           });
           group.dataset.state = "ready";
           count.textContent = `${result.mode} \xB7 ${result.candidates.length} \u9879`;
-          if (result.note) {
+          if (result.note?.startsWith("\u672C\u5730\u67E5\u8BE2\u5931\u8D25")) {
             const note = element("p", result.note);
             note.className = "hint";
             group.append(note);
@@ -2668,10 +2733,11 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
             candidate2.setAttribute("aria-pressed", "false");
             candidate2.dataset.key = `${c.provider}:${c.id}`;
             candidate2.title = c.title;
+            candidate2.dataset.mode = provider.capabilities.offline ? "offline" : "online";
             const title = element("span", c.title);
             title.className = "candidate-title";
             candidate2.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title);
-            grid.append(candidate2);
+            grid.append(candidateCard(candidate2, c.title, c.url));
           }
           group.append(grid);
         } catch (error) {
@@ -2687,7 +2753,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       cancelled(context.signal);
       if (failed) {
         this.status.dataset.state = "error";
-        this.status.textContent = "\u90E8\u5206\u6765\u6E90\u5931\u8D25\uFF1B\u5176\u4ED6\u7ED3\u679C\u4ECD\u53EF\u9009\u62E9";
+        this.status.textContent = "\u90E8\u5206\u6765\u6E90\u5931\u8D25";
       }
     }
     async readDirect() {
@@ -2713,13 +2779,43 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       if (existing < 0) next.push({ record: record2, provider });
       else next[existing] = { record: record2, provider };
       mergeRecords(next.map((s) => s.record));
+      if (![...this.results.querySelectorAll(".candidate")].some((e) => e.dataset.key === sourceKey(record2))) {
+        let group = [...this.results.querySelectorAll(".result-group")].find((e) => e.dataset.provider === record2.provider);
+        if (!group) {
+          group = element("details");
+          group.className = "result-group";
+          group.dataset.provider = record2.provider;
+          group.open = true;
+          group.append(element("summary", record2.provider));
+          this.results.append(group);
+        }
+        let grid = group.querySelector(".candidate-grid");
+        if (!grid) {
+          grid = element("div");
+          grid.className = "candidate-grid";
+          group.append(grid);
+        }
+        const card = button("", () => {
+          if (!this.busy) {
+            if (this.selections.some((s) => sourceKey(s.record) === sourceKey(record2))) this.removeSelection(sourceKey(record2));
+            else this.choose(record2, provider);
+          }
+        });
+        card.className = "candidate";
+        card.dataset.key = sourceKey(record2);
+        card.setAttribute("aria-label", nativeTitle(record2));
+        card.dataset.mode = provider.capabilities.offline ? "offline" : "online";
+        const title = element("span", nativeTitle(record2));
+        title.className = "candidate-title";
+        this.thumbnails ??= new Thumbnails(this.viewport, (url2, signal) => this.writer.image(url2, signal));
+        card.append(this.thumbnails.add(nativeTitle(record2), async () => record2.covers[0]?.url), title);
+        grid.append(candidateCard(card, nativeTitle(record2), record2.url));
+      }
       this.selections = next;
-      this.sameWork = false;
       this.renderSelection();
     }
     removeSelection(key2) {
       this.selections = this.selections.filter((s) => sourceKey(s.record) !== key2);
-      this.sameWork = false;
       this.renderSelection();
     }
     renderSelection() {
@@ -2737,47 +2833,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
       this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
       this.selected = this.merged.record;
-      const record2 = this.selected;
-      this.detail.append(element("h3", this.selections.length === 1 ? `${record2.provider} \xB7 ${nativeTitle(record2)}` : `\u5DF2\u9009 ${this.selections.length} \u4E2A\u6761\u76EE`));
       for (const { record: r, provider } of this.selections) {
-        const row = element("div");
-        row.className = "selected-source";
-        const name = element("span", `${r.provider}${provider.capabilities.offline ? " \xB7 \u672C\u5730" : ""} \xB7 ${nativeTitle(r)}`);
-        name.title = r.url;
-        const remove2 = button("\u79FB\u9664", () => {
-          if (!this.busy) this.removeSelection(sourceKey(r));
-        });
-        remove2.className = "ghost";
-        remove2.setAttribute("aria-label", `\u79FB\u9664 ${r.provider}`);
-        row.append(name, remove2);
-        this.detail.append(row);
-      }
-      const states = { ONGOING: "\u8FDE\u8F7D\u4E2D", ENDED: "\u5DF2\u5B8C\u7ED3", HIATUS: "\u6682\u505C\u8FDE\u8F7D", ABANDONED: "\u5DF2\u505C\u6B62\u8FDE\u8F7D" };
-      const meta2 = element("p", `${isVolumeRecord(record2) ? "\u5355\u5377\u8D44\u6599" : "\u6574\u90E8\u4F5C\u54C1\u8D44\u6599"}${record2.status ? ` \xB7 ${states[record2.status]}` : ""}`);
-      meta2.className = "record-meta";
-      this.detail.append(meta2);
-      if (this.selections.length > 1) {
-        this.detail.append(element("p", "\u5728\u9884\u89C8\u4E2D\u9010\u5B57\u6BB5\u9009\u62E9\u300C\u5355\u9009\u300D\u6216\u300C\u5408\u5E76\u300D\u3002"));
-        const confirm2 = input("\u8FD9\u4E9B\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C", this.detail, "checkbox");
-        confirm2.parentElement.className = "check-label";
-        confirm2.checked = this.sameWork;
-        confirm2.onchange = () => {
-          this.sameWork = confirm2.checked;
-          this.invalidate();
-        };
-      }
-      const summaryText = this.merged.values.summary;
-      if (typeof summaryText === "string" && summaryText) {
-        const summary = element("pre", summaryText);
-        summary.className = "record-summary";
-        if (this.selections.length > 1) {
-          const about = element("details");
-          about.append(element("summary", "\u4F5C\u54C1\u7B80\u4ECB"), summary);
-          this.detail.append(about);
-        } else this.detail.append(summary);
-      }
-      for (const { record: r, provider } of this.selections) {
-        for (const warning of r.warnings ?? []) this.detail.append(element("p", warning));
         if (r.books?.length) {
           const volumes = element("details");
           volumes.className = "volumes";
@@ -2796,7 +2852,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     async makePreview() {
       this.invalidate();
       if (!this.selected || !this.seriesId) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
-      if (this.selections.length > 1 && !this.sameWork) throw new MetadataError("verification", "\u8BF7\u5148\u786E\u8BA4\u9009\u4E2D\u6761\u76EE\u662F\u540C\u4E00\u4F5C\u54C1\uFF0F\u540C\u4E00\u5377\u548C\u7248\u672C");
       if (currentSeries(location, document) !== this.seriesId) throw new MetadataError("conflict", "\u9875\u9762\u7CFB\u5217\u53D8\u5316\uFF0C\u8BF7\u5173\u95ED\u540E\u91CD\u65B0\u542F\u52A8");
       let translationWarning;
       if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get("tags")?.checked && this.selections.some((s) => s.record.provider === "ehentai" && s.record.tags.length)) {
@@ -2850,7 +2905,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         const target = edit.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === edit.target.id);
         const targetHeading = element("h3", `${edit.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? edit.target.id}`);
         targetHeading.className = "target-heading";
-        targetHeading.title = `${edit.target.kind}/${edit.target.id}`;
         this.preview.append(targetHeading);
         for (const [field, value] of Object.entries(edit.after)) {
           const row = element("div");
@@ -2872,7 +2926,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           next.value = typeof value === "string" ? value : JSON.stringify(value, null, 2);
           next.dataset.edit = String(index);
           next.dataset.field = field;
-          next.title = next.dataset.format === "text" ? "\u53EF\u76F4\u63A5\u7F16\u8F91\u6587\u672C" : "JSON \u683C\u5F0F";
           next.setAttribute("aria-label", `${labels[field]}\u5199\u5165\u503C`);
           this.fieldComposer(row, field, value, before, next, check2, afterLabel);
           updated.append(afterLabel, next);
@@ -2882,9 +2935,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         }
       });
       for (const skipped of plan.skipped) this.preview.append(element("p", skipped));
-      const note = element("p", "\u4EC5\u5E94\u7528\u52FE\u9009\u5B57\u6BB5\u3002\u5199\u5165\u524D\u4F1A\u91CD\u65B0\u68C0\u67E5\uFF0C\u5B8C\u6210\u540E\u8BFB\u56DE\u6838\u5BF9\u3002");
-      note.className = "hint";
-      this.preview.append(note);
       cancelled(this.signal);
       this.plan = plan;
       this.controls.hidden = true;
@@ -3013,9 +3063,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       d.className = "card settings-card";
       d.open = true;
       d.append(element("summary", "\u6765\u6E90\u51ED\u636E"));
-      const note = element("p", "\u4EC5\u4FDD\u5B58\u5728\u5F53\u524D\u811A\u672C\u7BA1\u7406\u5668\u4E2D\u3002\u7559\u7A7A\u7684\u6765\u6E90\u4E0D\u4F1A\u4F7F\u7528\u51ED\u636E\u3002");
-      note.className = "hint";
-      d.append(note);
       const mal = input("MAL Client ID", d, "password"), cv = input("ComicVine API Key", d, "password");
       const exh = input("\u660E\u786E\u542F\u7528 ExH", d, "checkbox"), member = input("ExH member ID", d, "password"), pass = input("ExH pass hash", d, "password"), igneous = input("ExH igneous\uFF08\u53EF\u9009\uFF09", d, "password");
       mal.value = this.settings.credentials.malClientId ?? "";
@@ -3028,7 +3075,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         if (this.busy) return;
         this.settings.credentials = { malClientId: mal.value.trim(), comicVineKey: cv.value.trim(), exhentai: { enabled: exh.checked, memberId: member.value.trim(), passHash: pass.value.trim(), igneous: igneous.value.trim() } };
         storage.set("settings-v1", this.settings);
-        this.status.textContent = "\u8BBE\u7F6E\u5DF2\u4FDD\u5B58\uFF1B\u672A\u9A8C\u8BC1\u767B\u5F55";
+        this.status.textContent = "\u8BBE\u7F6E\u5DF2\u4FDD\u5B58";
       }));
       return d;
     }
@@ -3488,12 +3535,24 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   };
 
   // src/catalog-download.ts
+  function responseLength(response) {
+    if (/content-encoding:\s*(?!identity\b)\S+/i.test(response.responseHeaders ?? "")) return void 0;
+    const length = Number(response.responseHeaders?.match(/^content-length:\s*(\d+)/im)?.[1]);
+    return length > 0 ? length : void 0;
+  }
   async function downloadArchive(url2, name, signal, progress) {
     const directory = await catalogDirectory("komga-catalog-download");
     const filename = `${uniqueId()}-${name}`;
     const handle = await directory.getFileHandle(filename, { create: true });
     let writable;
-    let request2, reader;
+    let knownTotal;
+    const headers = (response) => {
+      if (signal.aborted) return;
+      if (response.status && (response.status < 200 || response.status >= 300)) return;
+      const length = responseLength(response);
+      if (length) knownTotal = length;
+    };
+    let request2, headRequest, reader;
     const cleanup = async () => {
       await directory.removeEntry(filename).catch((error) => {
         if (error.name !== "NotFoundError") throw error;
@@ -3501,6 +3560,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     };
     try {
       writable = await handle.createWritable();
+      try {
+        headRequest = GM_xmlhttpRequest({ url: url2, method: "HEAD", responseType: "text", anonymous: true, timeout: 1e4, onload: headers, onerror: () => {
+        }, ontimeout: () => {
+        } });
+      } catch {
+      }
       let lastProgress = 0;
       await new Promise((resolve, reject) => {
         let started = false, settled = false;
@@ -3515,6 +3580,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         const abort = () => {
           finish2(new DOMException("\u5DF2\u53D6\u6D88\u4E0B\u8F7D", "AbortError"));
           request2?.abort();
+          headRequest?.abort();
           void reader?.cancel().catch(() => {
           });
         };
@@ -3533,12 +3599,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
             finish2(new Error(`\u4E0B\u8F7D HTTP ${finalResponse.status}`));
             return;
           }
-          const total = Number(finalResponse.responseHeaders?.match(/^content-length:\s*(\d+)/im)?.[1]) || void 0;
+          const total = responseLength(finalResponse);
           if (total && downloaded !== total) {
             finish2(new Error("\u4E0B\u8F7D\u6587\u4EF6\u957F\u5EA6\u4E0D\u7B26"));
             return;
           }
-          progress(downloaded, total);
+          progress(downloaded, total ?? downloaded);
           finish2();
         };
         const consume = async (response) => {
@@ -3548,8 +3614,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           try {
             if (response.status && (response.status < 200 || response.status >= 300)) throw new Error(`\u4E0B\u8F7D HTTP ${response.status}`);
             if (!response.response || typeof response.response.getReader !== "function") throw new Error("\u5F53\u524D\u811A\u672C\u7BA1\u7406\u5668\u4E0D\u652F\u6301\u6D41\u5F0F\u4E0B\u8F7D\uFF1B\u53EF\u5148\u4E0B\u8F7D\u539F\u59CB\u6570\u636E\uFF0C\u518D\u9009\u62E9\u6587\u4EF6\u6784\u5EFA");
-            const length = Number(response.responseHeaders?.match(/^content-length:\s*(\d+)/im)?.[1]);
-            const total = length > 0 ? length : void 0;
+            headers(response);
             reader = response.response.getReader();
             let received = 0;
             while (true) {
@@ -3559,8 +3624,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
               for (let offset = 0; offset < value.byteLength; offset += 1024 * 1024)
                 await writable.write(value.slice(offset, offset + 1024 * 1024));
               received += value.byteLength;
+              if (knownTotal && received > knownTotal) knownTotal = void 0;
               if (Date.now() - lastProgress > 150) {
-                progress(received, total);
+                progress(received, knownTotal);
                 lastProgress = Date.now();
               }
             }
@@ -3581,6 +3647,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
             responseType: "stream",
             anonymous: true,
             fetch: true,
+            onreadystatechange: headers,
             onloadstart: (r) => {
               void consume(r);
             },
@@ -3607,6 +3674,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       });
       await cleanup();
       throw error;
+    } finally {
+      headRequest?.abort();
     }
   }
 
@@ -3901,10 +3970,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   }
   async function storageUsage() {
-    let usage, quota, owned = 0;
-    if (storageBackend() === "legacy" && navigator.webkitTemporaryStorage?.queryUsageAndQuota) {
-      ({ usage, quota } = await new Promise((ok, no) => navigator.webkitTemporaryStorage.queryUsageAndQuota((usage2, quota2) => ok({ usage: usage2, quota: quota2 }), no)));
-    } else if (navigator.storage?.estimate) ({ usage, quota } = await navigator.storage.estimate());
+    let owned = 0;
     for (const name of ["komga-catalog-build", "komga-catalog-download"]) {
       try {
         const directory = await catalogDirectory(name, false);
@@ -3915,7 +3981,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         if (e.name !== "NotFoundError") throw e;
       }
     }
-    return { owned, usage, quota };
+    return { owned };
   }
 
   // catalog/src/panel.mjs
@@ -3952,8 +4018,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   function mountCatalogPanel(container, client, options = {}) {
     const root = el("section");
     root.dataset.kmCatalog = "1";
-    const style = el("style", "section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{width:100%}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}");
-    const status2 = el("p", "\u9009\u62E9\u6765\u6E90\uFF0C\u4E0B\u8F7D\u5E76\u65B0\u5EFA\u6570\u636E\u5E93");
+    const style = el("style", "section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{display:block;width:100%;height:10px;min-height:10px;border:0;border-radius:5px;overflow:hidden;appearance:none;accent-color:var(--accent,#4f46e5)}section[data-km-catalog] progress::-webkit-progress-bar{background:var(--line,#e4e7ed)}section[data-km-catalog] progress::-webkit-progress-value{background:var(--accent,#4f46e5)}section[data-km-catalog] progress:not([value])::-webkit-progress-bar{background:repeating-linear-gradient(110deg,var(--line,#e4e7ed) 0 12px,var(--accent,#4f46e5) 12px 24px);background-size:48px 100%;animation:catalog-working 1.4s linear infinite}@keyframes catalog-working{to{background-position:48px 0}}@media(prefers-reduced-motion:reduce){section[data-km-catalog] progress:not([value])::-webkit-progress-bar{animation:none}}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}");
+    const status2 = el("p");
     status2.setAttribute("role", "status");
     const cards = el("div");
     cards.className = "catalog-sources";
@@ -3978,7 +4044,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
       try {
         const info = await (options.storageUsage ?? storageUsage)();
-        if (!disposed) storageText.textContent = `\u672C\u5DE5\u5177\u6587\u4EF6\u7EA6 ${size(info.owned)} \xB7 ${Number.isFinite(info.usage) && Number.isFinite(info.quota) ? `\u672C\u7AD9\u70B9\u5DF2\u7528 ${size(info.usage)} / \u6D4F\u89C8\u5668\u914D\u989D ${size(info.quota)}\uFF08\u4F30\u7B97\uFF09` : "\u6D4F\u89C8\u5668\u672A\u63D0\u4F9B\u914D\u989D"}`;
+        if (!disposed) storageText.textContent = `\u672C\u5DE5\u5177\u6587\u4EF6\u5360\u7528 ${size(info.owned)}`;
       } catch (e) {
         if (!disposed) storageText.textContent = `\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u5B58\u50A8\u7528\u91CF\uFF1A${e.message}`;
       }
@@ -4007,6 +4073,8 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const say = (s, text2, count, total) => {
       s.label.textContent = text2;
       status2.textContent = `${s.id} \xB7 ${text2}`;
+      s.bar.setAttribute("aria-label", `${s.name} \u5F53\u524D\u9636\u6BB5\u8FDB\u5EA6`);
+      s.bar.setAttribute("aria-valuetext", text2);
       if (total > 0) {
         s.bar.max = total;
         s.bar.value = count;
@@ -4069,7 +4137,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         const abort = () => builder.cancel();
         signal.addEventListener("abort", abort, { once: true });
         try {
-          const result = await builder.build(selected, s.id, selected.name, (data) => say(s, `${data.phase}${data.count === void 0 ? "" : ` \xB7 ${data.count} / ${data.total}`}`, data.count, data.total));
+          const result = await builder.build(selected, s.id, selected.name, (data) => say(s, `${data.phase}${data.count === void 0 ? "" : data.unit === "bytes" ? ` \xB7 ${size(data.count)} / ${size(data.total)}` : ` \xB7 ${data.count} / ${data.total}`}`, data.count, data.total));
           check2(signal);
           s.committing = true;
           update();
@@ -4173,7 +4241,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
             say(s2, canBuild ? "\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\uFF0C\u8BF7\u5728\u300C\u5DF2\u6709\u6587\u4EF6\u300D\u4E2D\u9009\u62E9\u5B83\u6765\u6784\u5EFA" : `\u539F\u59CB\u6570\u636E\u5DF2\u4E0B\u8F7D\u3002${capability.reason}`);
             return;
           }
-          const archive2 = await options.downloadArchive(href2, item.filename, signal, (bytes, total) => say(s2, `\u5DF2\u4E0B\u8F7D ${size(bytes)}${total ? ` / ${size(total)}` : ""}`, bytes, total));
+          const archive2 = await options.downloadArchive(href2, item.filename, signal, (bytes, total) => say(s2, `\u5DF2\u4E0B\u8F7D ${size(bytes)}${total ? ` / ${size(total)}` : "\uFF08\u603B\u5927\u5C0F\u672A\u77E5\uFF09"}`, bytes, total));
           try {
             s2.archive = await cache.save(item.id, archive2, href2);
           } catch (e) {
@@ -4265,7 +4333,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     });
     rawDetails.append(source, archive, build);
     existing.append(fileLabel, rawDetails);
-    root.append(style, el("h3", "\u4E0B\u8F7D\u5E76\u5EFA\u7ACB\u672C\u5730\u6570\u636E\u5E93"), el("p", "\u5173\u95ED\u5F39\u7A97\u540E\u4EFB\u52A1\u7EE7\u7EED\u3002\u6700\u591A\u540C\u65F6\u4E0B\u8F7D\u4E24\u4E2A\u6765\u6E90\uFF0C\u6784\u5EFA\u9010\u4E2A\u6392\u961F\u3002\u5B8C\u6574\u4E0B\u8F7D\u7684\u6863\u6848\u4F1A\u4FDD\u7559\u5230\u6784\u5EFA\u6210\u529F\uFF1B\u5237\u65B0\u540E\u53EF\u7EE7\u7EED\u6784\u5EFA\uFF0C\u4F46\u4E0D\u4FDD\u7559\u4E0B\u8F7D\u5230\u4E00\u534A\u6216\u6784\u5EFA\u5230\u4E00\u534A\u7684\u8FDB\u5EA6\u3002"));
+    root.append(style, el("h3", "\u672C\u5730\u6570\u636E\u5E93"));
     if (!canBuild) root.append(el("p", capability.reason));
     root.append(cards, status2, storageText, button2("\u5237\u65B0\u5B58\u50A8\u7528\u91CF", () => {
       void updateStorage();

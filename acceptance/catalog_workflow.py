@@ -50,6 +50,7 @@ def run():
    panel.get_by_role('button',name='BookWalker · 下载并构建',exact=True).click()
    if tasks:
     expect(status).to_contain_text('已下载',timeout=180000)
+    report['download_progress']=panel.locator('[data-provider=bookwalker] progress').evaluate('e=>({value:e.value,max:e.max,determinate:e.hasAttribute("value"),height:e.getBoundingClientRect().height})')
     hide_until_progress(page,panel,status)
     expect(status).to_contain_text(re.compile('新建数据库|解压|整理|建立检索索引'),timeout=180000)
     panel.locator('[data-provider=bookwalker]').get_by_role('button',name='取消任务',exact=True).click()
@@ -59,9 +60,15 @@ def run():
     panel.get_by_role('button',name='BookWalker · 继续构建',exact=True).click()
     report['stage_resume_after_cancel_and_reload']=True
    hidden_build=False
+   report['staging_progress']=None
    deadline=time.monotonic()+1200;previous='';last=0
    while time.monotonic()<deadline:
     text=status.inner_text()
+    if '整理标签和关联数据' in text and not report['staging_progress']:
+     bar=panel.locator('[data-provider=bookwalker] progress')
+     snapshot=bar.evaluate('e=>({value:e.value,max:e.max,determinate:e.hasAttribute("value"),height:e.getBoundingClientRect().height})')
+     if snapshot['determinate'] and 0<snapshot['value']<snapshot['max']:
+      assert snapshot['height']>=8;report['staging_progress']={'label':text,**snapshot};page.screenshot(path=str(out/'staging-progress.png'))
     if tasks and not hidden_build and '建立检索索引' in text:
      hide_until_progress(page,panel,status);hidden_build=True;report['download_and_build_continue_with_popup_hidden']=True
     if text!=previous and time.monotonic()-last>10:print(text,flush=True);last=time.monotonic();previous=text
@@ -69,9 +76,11 @@ def run():
     if '失败' in text or '不支持' in text or '超时' in text:raise AssertionError(text)
     page.wait_for_timeout(500)
    else:raise AssertionError('full browser build timed out: '+status.inner_text())
+   assert report['staging_progress'],'No measurable staging progress observed'
    report['full_build']=status.inner_text();page.screenshot(path=str(out/'built.png'))
    if tasks:
-    expect(panel.locator('[data-storage]')).to_contain_text('配额',timeout=15000)
+    expect(panel.locator('[data-storage]')).to_contain_text('本工具文件占用',timeout=15000)
+    expect(panel.locator('[data-storage]')).not_to_contain_text('配额')
     expect(panel.locator('[data-provider=bookwalker]').get_by_role('button',name='清除原始档案',exact=True)).to_be_hidden()
    # Separate existing file can coexist with the browser-built provider.
    panel.get_by_label('本地数据库文件',exact=True).set_input_files(str(h.RUNTIME/'catalogs'/'bangumi.sqlite'))

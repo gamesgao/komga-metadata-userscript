@@ -7,9 +7,9 @@ import { panelStyle, icon } from './ui-style';
 import { Thumbnails } from './thumbnails';
 import { searchPreferred } from './search';
 import { mergeRecords, sourceKey, canMergeField, combineField, type Merged } from './merge';
-import { allLanguages, languageLabels, wantsChineseTags } from './languages';
+import { allLanguages, languageLabels, wantsChineseTags, languagePreferences } from './languages';
 import { EhTagTranslation, translateExisting } from './eh-tag-translation';
-interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[] }
+interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[]; languagePriority?: AcceptedLanguage[] }
 interface SavedUndo { seriesId: string; result: Result }
 const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -53,6 +53,18 @@ function validateValue(field: string, value: unknown): Value {
   }
   return value as Value;
 }
+function candidateCard(candidate: HTMLButtonElement, title: string, href: string): HTMLElement {
+  const card = element('div'); card.className = 'candidate-card'; candidate.title = title; card.append(candidate);
+  try {
+    const url = new URL(href);
+    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) {
+      const link = element('a', '↗'); link.className = 'candidate-link'; link.href = url.href;
+      link.target = '_blank'; link.rel = 'noopener noreferrer'; link.title = title;
+      link.setAttribute('aria-label', `${title}：打开来源`); card.append(link);
+    }
+  } catch { /* No external navigation for malformed provider URLs. */ }
+  return card;
+}
 export class Panel {
   private host = element('div');
   private shadow = this.host.attachShadow({ mode: 'open' });
@@ -75,7 +87,7 @@ export class Panel {
   private merged?: Merged;
   private tagReplacements = new Map<string, string>();
 
-  private sameWork = false;
+
   private plan?: Plan;
   private seriesId?: string;
   private undoData?: SavedUndo = storage.get<SavedUndo | undefined>('undo-v1', undefined);
@@ -160,19 +172,45 @@ export class Panel {
     directRow.append(this.provider, this.direct, button('读取', () => void this.run(() => this.readDirect())));
     this.searchProgress.className = 'search-progress'; this.searchProgress.hidden = true;
     const languages = element('details'); languages.className = 'language-options'; languages.append(element('summary', '接受的资料语言'));
-    const languageChecks = element('div'); languageChecks.className = 'field-grid';
-    for (const language of allLanguages) {
-      const check = input(languageLabels[language], languageChecks, 'checkbox'); check.checked = (this.settings.acceptedLanguages ?? allLanguages).includes(language);
-      check.dataset.language = language;
-      check.onchange = () => {
-        this.settings.acceptedLanguages = [...languageChecks.querySelectorAll<HTMLInputElement>('input:checked')].map(i => i.dataset.language as AcceptedLanguage);
-        storage.set('settings-v1', this.settings); this.renderSelection();
-      };
-    }
-    languages.append(languageChecks, element('p', '筛选已有的标题、简介、作者等文本；无法可靠判断时归入「未标注」。勾选中文时，EH 标签按词库翻译；否则保留原始标签。搜索词与作品原始语言不变。'));
+    const preference = languagePreferences(this.settings.acceptedLanguages, this.settings.languagePriority);
+    this.settings.languagePriority = preference.order; this.settings.acceptedLanguages = preference.accepted;
+    storage.set('settings-v1', this.settings);
+    const languageChecks = element('div'); languageChecks.className = 'language-list';
+    const saveLanguages = () => {
+      this.settings.acceptedLanguages = this.settings.languagePriority!.filter(l => this.settings.acceptedLanguages!.includes(l));
+      storage.set('settings-v1', this.settings); this.renderSelection();
+    };
+    const renderLanguages = () => {
+      languageChecks.replaceChildren();
+      this.settings.languagePriority!.forEach((language, index, order) => {
+        const row = element('div'); row.className = 'language-row'; row.dataset.language = language;
+        const check = input(languageLabels[language], row, 'checkbox'); check.dataset.language = language;
+        check.checked = this.settings.acceptedLanguages!.includes(language);
+        check.onchange = () => {
+          this.settings.acceptedLanguages = this.settings.acceptedLanguages!.filter(l => l !== language);
+          if (check.checked) this.settings.acceptedLanguages.push(language);
+          saveLanguages();
+        };
+        for (const [direction, offset, text] of [['up', -1, '上移'], ['down', 1, '下移']] as const) {
+          const move = button(direction === 'up' ? '↑' : '↓', () => {
+            if (this.busy || index + offset < 0 || index + offset >= order.length) return;
+            [order[index], order[index + offset]] = [order[index + offset]!, order[index]!];
+            saveLanguages(); renderLanguages();
+            languageChecks.querySelector<HTMLInputElement>(`input[data-language="${language}"]`)?.focus();
+          });
+          move.className = 'ghost'; move.setAttribute('aria-label', `${languageLabels[language]}${text}`);
+          move.disabled = index + offset < 0 || index + offset >= order.length;
+          move.dataset.boundaryDisabled = String(move.disabled);
+          row.append(move);
+        }
+        languageChecks.append(row);
+      });
+    };
+    renderLanguages();
+    languages.append(languageChecks);
     directDetails.append(directRow); searchCard.append(searchTitle, searchRow, this.sourceToggles, languages, directDetails, this.searchProgress, this.results);
     const choices = element('div'); choices.className = 'card';
-    this.detail.className = 'selected-record'; choices.append(this.detail, element('h3', '写入选项'));
+    this.detail.className = 'source-details'; searchCard.append(this.detail); choices.append(element('h3', '写入选项'));
     this.book.setAttribute('aria-label', '同时更新哪本书'); this.cover.setAttribute('aria-label', '使用哪张封面'); this.coverTarget.setAttribute('aria-label', '替换哪个封面');
     option(this.cover, '', '不修改封面');
     for (const [label, select] of [['同时更新哪本书', this.book], ['使用哪张封面', this.cover], ['替换哪个封面', this.coverTarget]] as const) {
@@ -270,7 +308,7 @@ export class Panel {
         if (!this.state.series.oneshot) option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? '?'} · ${b.metadata.title}`);
       }
       if (this.state.series.oneshot) option(this.coverTarget, 'both', '系列与唯一书籍共用封面');
-      this.status.textContent = `当前：${this.state.series.metadata.title}`;
+      this.status.textContent = '';
     });
   }
   private get signal(): AbortSignal {
@@ -301,14 +339,14 @@ export class Panel {
       await action();
       if (this.status.dataset.state === 'busy' || this.status.dataset.state === 'search') {
         this.status.dataset.state = 'idle';
-        if (!this.status.textContent) this.status.textContent = this.plan ? '确认预览后应用' : this.selected ? '已选择来源条目' : '请选择匹配条目';
+
       }
     }
     catch (error) { this.status.dataset.state = 'error'; this.status.textContent = error instanceof Error ? error.message : String(error); }
     finally {
       this.busy = false;
       this.status.removeAttribute('aria-label'); this.cancelButton.hidden = true;
-      this.controls.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select').forEach(e => e.disabled = this.finishing);
+      this.controls.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input,button,select').forEach(e => e.disabled = this.finishing || e.dataset.boundaryDisabled === 'true');
       this.results.querySelectorAll<HTMLButtonElement>('button').forEach(e => e.disabled = this.finishing);
       this.preview.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>('input,select,textarea,button').forEach(e => e.disabled = this.finishing);
       this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
@@ -319,7 +357,7 @@ export class Panel {
   private clearSearch(): void {
     this.thumbnails?.dispose(); this.thumbnails = undefined;
     this.searchProgress.hidden = true; this.searchProgress.replaceChildren();
-    this.selections = []; this.merged = undefined; this.sameWork = false;
+    this.selections = []; this.merged = undefined;
     this.selected = undefined; this.detail.replaceChildren(); this.results.replaceChildren(); this.invalidate();
     this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
   }
@@ -347,7 +385,7 @@ export class Panel {
       try {
         const result = await searchPreferred(this.registry.list().find(p => p.id === id), this.extension?.providers.find(p => p.id === id), query, context, phase => { count.textContent = phase; });
         group.dataset.state = 'ready'; count.textContent = `${result.mode} · ${result.candidates.length} 项`;
-        if (result.note) { const note = element('p', result.note); note.className = 'hint'; group.append(note); }
+        if (result.note?.startsWith('本地查询失败')) { const note = element('p', result.note); note.className = 'hint'; group.append(note); }
         if (!result.candidates.length) group.append(element('p', '无匹配'));
         const grid = element('div'); grid.className = 'candidate-grid';
         for (const c of result.candidates) {
@@ -359,8 +397,9 @@ export class Panel {
           candidate.disabled = this.busy;
           candidate.className = 'candidate'; candidate.setAttribute('aria-label', c.title); candidate.setAttribute('aria-pressed', 'false');
           candidate.dataset.key = `${c.provider}:${c.id}`; candidate.title = c.title;
+          candidate.dataset.mode = provider.capabilities.offline ? 'offline' : 'online';
           const title = element('span', c.title); title.className = 'candidate-title';
-          candidate.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title); grid.append(candidate);
+          candidate.append(thumbnails.add(c.title, async () => c.cover || (await provider.get(c.id, imageContext)).covers[0]?.url), title); grid.append(candidateCard(candidate, c.title, c.url));
         }
         group.append(grid);
       } catch (error) {
@@ -369,7 +408,7 @@ export class Panel {
       } finally { completed++; progress(); }
     }));
     cancelled(context.signal);
-    if (failed) { this.status.dataset.state = 'error'; this.status.textContent = '部分来源失败；其他结果仍可选择'; }
+    if (failed) { this.status.dataset.state = 'error'; this.status.textContent = '部分来源失败'; }
   }
   private async readDirect() {
     this.invalidate();
@@ -391,10 +430,23 @@ export class Panel {
     const existing = next.findIndex(s => sourceKey(s.record) === sourceKey(record));
     if (existing < 0) next.push({ record, provider }); else next[existing] = { record, provider };
     mergeRecords(next.map(s => s.record)); // reject incompatible scopes before changing selection
-    this.selections = next; this.sameWork = false; this.renderSelection();
+    // Direct links/associated volumes must also have a left-hand toggle card.
+    if (![...this.results.querySelectorAll<HTMLElement>('.candidate')].some(e => e.dataset.key === sourceKey(record))) {
+      let group = [...this.results.querySelectorAll<HTMLDetailsElement>('.result-group')].find(e => e.dataset.provider === record.provider);
+      if (!group) { group = element('details'); group.className = 'result-group'; group.dataset.provider = record.provider; group.open = true; group.append(element('summary', record.provider)); this.results.append(group); }
+      let grid = group.querySelector<HTMLElement>('.candidate-grid');
+      if (!grid) { grid = element('div'); grid.className = 'candidate-grid'; group.append(grid); }
+      const card = button('', () => { if (!this.busy) { if (this.selections.some(s => sourceKey(s.record) === sourceKey(record))) this.removeSelection(sourceKey(record)); else this.choose(record, provider); } });
+      card.className = 'candidate'; card.dataset.key = sourceKey(record); card.setAttribute('aria-label', nativeTitle(record));
+      card.dataset.mode = provider.capabilities.offline ? 'offline' : 'online';
+      const title = element('span', nativeTitle(record)); title.className = 'candidate-title';
+      this.thumbnails ??= new Thumbnails(this.viewport, (url, signal) => this.writer.image(url, signal));
+      card.append(this.thumbnails.add(nativeTitle(record), async () => record.covers[0]?.url), title); grid.append(candidateCard(card, nativeTitle(record), record.url));
+    }
+    this.selections = next; this.renderSelection();
   }
   private removeSelection(key: string): void {
-    this.selections = this.selections.filter(s => sourceKey(s.record) !== key); this.sameWork = false; this.renderSelection();
+    this.selections = this.selections.filter(s => sourceKey(s.record) !== key); this.renderSelection();
   }
   private renderSelection(): void {
     this.invalidate(); this.detail.replaceChildren();
@@ -404,29 +456,9 @@ export class Panel {
     if (!this.selections.length) { this.selected = undefined; this.merged = undefined; this.previewButton.disabled = true; return; }
     this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
     this.selected = this.merged.record;
-    const record = this.selected;
-    this.detail.append(element('h3', this.selections.length === 1 ? `${record.provider} · ${nativeTitle(record)}` : `已选 ${this.selections.length} 个条目`));
+
     for (const { record: r, provider } of this.selections) {
-      const row = element('div'); row.className = 'selected-source';
-      const name = element('span', `${r.provider}${provider.capabilities.offline ? ' · 本地' : ''} · ${nativeTitle(r)}`); name.title = r.url;
-      const remove = button('移除', () => { if (!this.busy) this.removeSelection(sourceKey(r)); }); remove.className = 'ghost'; remove.setAttribute('aria-label', `移除 ${r.provider}`);
-      row.append(name, remove); this.detail.append(row);
-    }
-    const states = { ONGOING: '连载中', ENDED: '已完结', HIATUS: '暂停连载', ABANDONED: '已停止连载' };
-    const meta = element('p', `${isVolumeRecord(record) ? '单卷资料' : '整部作品资料'}${record.status ? ` · ${states[record.status]}` : ''}`); meta.className = 'record-meta'; this.detail.append(meta);
-    if (this.selections.length > 1) {
-      this.detail.append(element('p', '在预览中逐字段选择「单选」或「合并」。'));
-      const confirm = input('这些条目是同一作品／同一卷和版本', this.detail, 'checkbox'); confirm.parentElement!.className = 'check-label'; confirm.checked = this.sameWork;
-      confirm.onchange = () => { this.sameWork = confirm.checked; this.invalidate(); };
-    }
-    const summaryText = this.merged.values.summary;
-    if (typeof summaryText === 'string' && summaryText) {
-      const summary = element('pre', summaryText); summary.className = 'record-summary';
-      if (this.selections.length > 1) { const about = element('details'); about.append(element('summary', '作品简介'), summary); this.detail.append(about); }
-      else this.detail.append(summary);
-    }
-    for (const { record: r, provider } of this.selections) {
-      for (const warning of r.warnings ?? []) this.detail.append(element('p', warning));
+
       if (r.books?.length) {
         const volumes = element('details'); volumes.className = 'volumes'; volumes.append(element('summary', `${r.provider} · 关联单卷 · ${r.books.length}`));
         for (const b of r.books) volumes.append(button(`单卷：${nativeTitle(b)}`, () => void this.run(async () => this.choose(await provider.get(b.id, this.context()), provider))));
@@ -440,7 +472,7 @@ export class Panel {
   private async makePreview() {
     this.invalidate();
     if (!this.selected || !this.seriesId) throw new MetadataError('verification', '先选择候选');
-    if (this.selections.length > 1 && !this.sameWork) throw new MetadataError('verification', '请先确认选中条目是同一作品／同一卷和版本');
+
     if (currentSeries(location, document) !== this.seriesId) throw new MetadataError('conflict', '页面系列变化，请关闭后重新启动');
     let translationWarning: string | undefined;
     if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get('tags')?.checked && this.selections.some(s => s.record.provider === 'ehentai' && s.record.tags.length)) {
@@ -479,7 +511,7 @@ export class Panel {
     plan.edits.forEach((edit, index) => {
       const target = edit.target.kind === 'series' ? this.state!.series : this.state!.books.find(b => b.id === edit.target.id);
       const targetHeading = element('h3', `${edit.target.kind === 'series' ? '系列' : '书籍'} · ${target?.metadata.title ?? edit.target.id}`);
-      targetHeading.className = 'target-heading'; targetHeading.title = `${edit.target.kind}/${edit.target.id}`; this.preview.append(targetHeading);
+      targetHeading.className = 'target-heading'; this.preview.append(targetHeading);
       for (const [field, value] of Object.entries(edit.after)) {
         const row = element('div'); row.className = 'row';
         const check = input(labels[field as Field], row, 'checkbox'); check.checked = true; check.dataset.edit = String(index); check.dataset.field = field;
@@ -491,14 +523,14 @@ export class Panel {
         old.append(beforeLabel, element('pre', typeof before === 'string' ? before || '—' : JSON.stringify(before, null, 2)));
         const next = element('textarea'); next.dataset.format = typeof value === 'string' ? 'text' : 'json';
         next.value = typeof value === 'string' ? value : JSON.stringify(value, null, 2); next.dataset.edit = String(index); next.dataset.field = field;
-        next.title = next.dataset.format === 'text' ? '可直接编辑文本' : 'JSON 格式';
+
         next.setAttribute('aria-label', `${labels[field as Field]}写入值`);
         this.fieldComposer(row, field as Field, value!, before, next, check, afterLabel);
         updated.append(afterLabel, next); diff.append(old, updated); row.append(diff); this.preview.append(row);
       }
     });
     for (const skipped of plan.skipped) this.preview.append(element('p', skipped));
-    const note = element('p', '仅应用勾选字段。写入前会重新检查，完成后读回核对。'); note.className = 'hint'; this.preview.append(note);
+
     cancelled(this.signal); this.plan = plan;
     this.controls.hidden = true; this.previewButton.hidden = true; this.viewport.scrollTop = 0;
   }
@@ -582,7 +614,7 @@ export class Panel {
   private settingsPanel(): HTMLElement {
     const d = element('details'); d.className = 'card settings-card'; d.open = true;
     d.append(element('summary', '来源凭据'));
-    const note = element('p', '仅保存在当前脚本管理器中。留空的来源不会使用凭据。'); note.className = 'hint'; d.append(note);
+
     const mal = input('MAL Client ID', d, 'password'), cv = input('ComicVine API Key', d, 'password');
     const exh = input('明确启用 ExH', d, 'checkbox'), member = input('ExH member ID', d, 'password'), pass = input('ExH pass hash', d, 'password'), igneous = input('ExH igneous（可选）', d, 'password');
     mal.value = this.settings.credentials.malClientId ?? ''; cv.value = this.settings.credentials.comicVineKey ?? '';
@@ -592,7 +624,7 @@ export class Panel {
       if (this.busy) return;
       this.settings.credentials = { malClientId: mal.value.trim(), comicVineKey: cv.value.trim(), exhentai: { enabled: exh.checked, memberId: member.value.trim(), passHash: pass.value.trim(), igneous: igneous.value.trim() } };
       storage.set('settings-v1', this.settings);
-      this.status.textContent = '设置已保存；未验证登录';
+      this.status.textContent = '设置已保存';
     }));
     return d;
   }

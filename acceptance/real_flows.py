@@ -27,7 +27,7 @@ def source_record(page,series_id):
  panel.get_by_role('textbox',name='来源链接或 ID').fill('https://bgm.tv/subject/305429')
  panel.get_by_role('combobox',name='来源',exact=True).select_option('bangumi')
  panel.get_by_role('button',name='读取',exact=True).click()
- panel.get_by_role('heading',name='bangumi · 葬送のフリーレン',exact=True).wait_for(timeout=45000)
+ panel.locator('.candidate[data-key^="bangumi:"][aria-pressed=true]').wait_for(timeout=45000)
  return panel
 
 

@@ -25,19 +25,26 @@ def run():
     details=panel.locator('.language-options')
     if not details.evaluate('e=>e.open'):details.locator('summary').click()
     for box in details.locator('input').all():box.set_checked(box.get_attribute('data-language') in codes)
-   reset_languages=languages
+   def priority(order):
+    languages(set(order))
+    for code in reversed(order):
+     row=panel.locator(f'.language-row[data-language={code}]')
+     while row.locator('button').first.is_enabled():row.locator('button').first.click()
+   reset_languages=priority
    languages({'en','ja','zh','romaji','unknown','other'})
    panel.get_by_text('通过链接或 ID 读取',exact=True).click();panel.get_by_label('来源',exact=True).select_option('anilist')
    panel.get_by_role('textbox',name='来源链接或 ID').fill('118586');panel.get_by_role('button',name='读取',exact=True).click()
-   expect(panel.locator('.selected-source')).to_contain_text('anilist',timeout=90000)
+   expect(panel.locator('.candidate[data-key="anilist:118586"][aria-pressed=true]')).to_have_count(1,timeout=90000)
    flows.select_fields(panel,{'title'})
-   for language,key in [('ja','native'),('romaji','romaji'),('en','english')]:
-    languages({language});flows.preview(panel)
+   for order,key in [(['zh','ja','en'],'native'),(['romaji','en'],'romaji'),(['en','ja','zh'],'english')]:
+    priority(order)
+    if key=='english':page.screenshot(path=str(output/'language-priority-options.png'))
+    flows.preview(panel)
     values=panel.get_by_role('textbox',name='标题（默认不改）写入值',exact=True)
     expect(values).to_have_count(2)
     for box in values.all():expect(box).to_have_value(reference[key])
-    report['checks'].append({'accepted':language,'actual_existing_title':reference[key],'both_metadata_targets':True})
-    if language!='en':panel.get_by_role('button',name='返回选项',exact=True).click()
+    report['checks'].append({'priority':order,'actual_existing_title':reference[key],'both_metadata_targets':True})
+    if key!='english':panel.get_by_role('button',name='返回选项',exact=True).click()
    page.screenshot(path=str(output/'title-language-preview.png'))
    flows.wait_action(page,'应用')
    for k,i in originals:assert flows.metadata(page,k,i)['title']==reference['english']
@@ -49,7 +56,7 @@ def run():
    if page and originals:
     for (k,i),original in originals.items():flows.patch_metadata(page,k,i,{'title':original['title'],'titleLock':original.get('titleLock',False)})
     if reset_languages:
-     h.open_product_panel(page);reset_languages({'en','ja','zh','romaji','unknown','other'});page.keyboard.press('Escape')
+     h.open_product_panel(page);reset_languages(['zh','ja','en','romaji','other']);page.keyboard.press('Escape')
    ctx.close();(output/'report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
  print(json.dumps(report,ensure_ascii=False))
 if __name__=='__main__':run()

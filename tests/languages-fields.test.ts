@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { languageOf, languageFields } from '../src/languages';
+import { languageOf, languageFields, languagePreferences, wantsChineseTags } from '../src/languages';
 import { mergeRecords, combineField, canMergeField } from '../src/merge';
 import { createRegistry } from '../src/providers';
 import type { MetadataRecord } from '../src/model';
@@ -8,7 +8,7 @@ const r: MetadataRecord = { provider:'anilist',id:'1',url:'https://anilist.co/ma
 describe('language-aware existing source values (not translation)',()=>{
  it('recognizes aliases without guessing Latin names or Han-only languages',()=>{
   expect(languageOf('','jp')).toBe('ja');expect(languageOf('','ch')).toBe('zh');expect(languageOf('','zh-Hant')).toBe('zh');expect(languageOf('','ja-ro')).toBe('romaji');
-  expect(languageOf('Yamada')).toBe('unknown');expect(languageOf('山田')).toBe('unknown');expect(languageOf('物語の始まり')).toBe('ja');
+  expect(languageOf('Yamada')).toBe('other');expect(languageOf('山田')).toBe('other');expect(languageOf('物語の始まり')).toBe('ja');
  });
  it('filters titles, summaries, author alternatives and covers without changing original work language',()=>{
   expect(languageFields(r,['en'])).toMatchObject({title:'English title',summary:'An English description',authors:[]});
@@ -26,6 +26,28 @@ describe('language-aware existing source values (not translation)',()=>{
  });
 });
 describe('per-field composition',()=>{
+ it('migrates old unknown selection into Other and preserves ordered settings',()=>{
+  expect(languagePreferences(['unknown','other','en']).accepted).toEqual(['en','other']);
+  expect(languagePreferences(['zh','ja','en'],['en','zh','ja']).accepted).toEqual(['en','zh','ja']);
+  expect(languagePreferences([]).accepted).toEqual([]);
+ });
+ it('uses language priority before native and before source order, falling back per field',()=>{
+  expect(languageFields(r,['en','ja']).title).toBe('English title');
+  const first={...r,titles:r.titles.filter(t=>t.language==='en')};
+  const second={...r,id:'2',titles:[{text:' ',type:'localized' as const,language:'zh'},...r.titles.filter(t=>t.language==='ja')],summary:'日本語の説明',summaryLanguage:'ja'};
+  const merged=mergeRecords([first,second],{},['zh','ja','en']);
+  expect(merged.values).toMatchObject({title:'日本語の作品',summary:'日本語の説明'});
+  expect(mergeRecords([first,second],{summary:'anilist:1'},['zh','ja','en']).values.summary).toBe('An English description');
+  expect(mergeRecords([first,{...second,summary:undefined}],{},['zh','ja','en']).values.summary).toBe('An English description');
+ });
+ it('selects each author name by priority without losing other contributors',()=>{
+  const data={...r,authors:[{name:'Writer',language:'en',native:'日本語の作家',nativeLanguage:'ja',localized:'中文作者',localizedLanguage:'zh',role:'writer'},{name:'Second writer',language:'en',role:'writer'}]};
+  expect(languageFields(data,['zh','ja','en']).authors).toEqual([{name:'中文作者',role:'writer'},{name:'Second writer',role:'writer'}]);
+  expect(languageFields(data,['ja','zh','en']).authors).toEqual([{name:'日本語の作家',role:'writer'},{name:'Second writer',role:'writer'}]);
+ });
+ it('uses English EH tags when English precedes Chinese and skips unavailable Japanese',()=>{
+  expect(wantsChineseTags(['en','zh'])).toBe(false);expect(wantsChineseTags(['ja','zh','en'])).toBe(true);expect(wantsChineseTags(['ja','other'])).toBe(false);
+ });
  it('unions arrays by meaning and combines text only on request',()=>{
   expect(combineField('tags',[['a','b'],['b','c']])).toEqual(['a','b','c']);
   expect(combineField('links',[[{label:'A',url:'https://a.com'}],[{label:'Other label',url:'https://a.com'}]])).toEqual([{label:'A',url:'https://a.com'}]);

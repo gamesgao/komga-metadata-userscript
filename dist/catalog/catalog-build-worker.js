@@ -22133,6 +22133,35 @@ async function e3() {
 }
 var wasmBinary;
 var sqlitePromise;
+var lastProgress = 0;
+var lastPhase = "";
+function progress(phase, count, total, unit) {
+  const now = Date.now();
+  if (phase !== lastPhase || now - lastProgress >= 150 || total !== void 0 && count === total) {
+    self.postMessage({ type: "progress", phase, count, total, unit });
+    lastProgress = now;
+    lastPhase = phase;
+  }
+}
+function sqlActivity(sqlite, db, phase, work) {
+  const start = Date.now();
+  let last = start;
+  progress(phase);
+  sqlite.capi.sqlite3_progress_handler(db.pointer, 1e4, () => {
+    const now = Date.now();
+    if (now - last >= 500) {
+      progress(`${phase} \xB7 \u5DF2\u8FD0\u884C ${Math.floor((now - start) / 1e3)} \u79D2`);
+      last = now;
+    }
+    return 0;
+  }, 0);
+  try {
+    return work();
+  } finally {
+    sqlite.capi.sqlite3_progress_handler(db.pointer, 0, 0, 0);
+  }
+}
+var stageLabels = { series_tags: "\u4F5C\u54C1\u6807\u7B7E\u5173\u7CFB", tags: "\u6807\u7B7E", products: "\u4E66\u7C4D", images: "\u5C01\u9762\u4FE1\u606F", product_external_ids: "\u4E66\u7C4D\u7F16\u53F7", product_contributors: "\u4E66\u7C4D\u4F5C\u8005\u5173\u7CFB", contributors: "\u4F5C\u8005", gid_tid: "\u56FE\u5E93\u6807\u7B7E\u5173\u7CFB", tag: "\u6807\u7B7E", subjects: "\u4F5C\u54C1", persons: "\u4EBA\u7269", subject_persons: "\u4F5C\u8005\u5173\u7CFB", relations: "\u4F5C\u54C1\u5173\u8054" };
 var StreamReader = class {
   constructor(stream) {
     this.reader = stream.getReader();
@@ -22201,7 +22230,12 @@ async function extractTarGzip(file, target) {
       const isSqlite = (kind === 0 || kind === 48) && /\.(sqlite|db)$/i.test(name);
       if (isSqlite && found) throw new Error("Archive contains multiple SQLite files");
       if (isSqlite) found = true;
-      await reader.read(size, isSqlite ? (chunk) => writable.write(chunk) : void 0);
+      let written = 0;
+      await reader.read(size, isSqlite ? async (chunk) => {
+        await writable.write(chunk);
+        written += chunk.length;
+        progress("\u89E3\u538B\u539F\u59CB\u6570\u636E", written, size, "bytes");
+      } : void 0);
       await reader.read((512 - size % 512) % 512);
     }
     if (!found) throw new Error("Archive does not contain a SQLite file");
@@ -22300,6 +22334,7 @@ async function extractZstd(file, target) {
           for (const chunk of chunks) await writable.write(chunk);
           chunks = [];
         }
+        progress("\u89E3\u538B\u539F\u59CB\u6570\u636E", Math.min(offset + input.length, file.size), file.size, "bytes");
       }
       decoder.push(new Uint8Array(), true);
       for (const chunk of chunks) await writable.write(chunk);
@@ -22429,7 +22464,7 @@ function each(db, sql, callback) {
     statement.finalize();
   }
 }
-function createStage(db, table) {
+function createStage(db, table, indexWork) {
   db.exec(`CREATE TABLE stage_${table}(key TEXT NOT NULL, json TEXT NOT NULL);`);
   const stmt = db.prepare(`INSERT INTO stage_${table} VALUES (?,?)`);
   return {
@@ -22439,17 +22474,20 @@ function createStage(db, table) {
     },
     done() {
       stmt.finalize();
-      db.exec(`CREATE INDEX stage_${table}_key ON stage_${table}(key);`);
+      const buildIndex = () => db.exec(`CREATE INDEX stage_${table}_key ON stage_${table}(key);`);
+      if (indexWork) indexWork(table, buildIndex);
+      else buildIndex();
     }
   };
 }
-function stageSource(source, output, table, column) {
-  const stage = createStage(output, table);
+function stageSource(source, output, table, column, onProgress, indexWork) {
+  const stage = createStage(output, table, indexWork);
   let count = 0;
   try {
     each(source, `SELECT * FROM "${table}"`, (row) => {
       stage.insert(row[column], row);
       if (++count % 1e4 === 0) output.exec("COMMIT; BEGIN");
+      onProgress(count);
     });
   } finally {
     stage.done();
@@ -22458,7 +22496,7 @@ function stageSource(source, output, table, column) {
 function stageRows(output, table, key) {
   return output.selectObjects(`SELECT json FROM stage_${table} WHERE key=?`, [String(key)]).map((row) => JSON.parse(row.json));
 }
-async function stageBangumi(file, output) {
+async function stageBangumi(file, output, indexWork) {
   const zip = new ZipReader(new BlobReader(file), { useWebWorkers: false });
   try {
     const entries = await zip.getEntries();
@@ -22478,9 +22516,9 @@ async function stageBangumi(file, output) {
       var line = line2;
       const found = entries.filter((entry) => entry.filename.split("/").at(-1) === filename);
       if (found.length !== 1) throw new Error(`Bangumi archive must contain exactly one ${filename}`);
-      const stage = createStage(output, table);
+      const stage = createStage(output, table, indexWork);
       const decoder = new TextDecoder("utf-8", { fatal: true });
-      let pending = "", count = 0;
+      let pending = "", count = 0, bytes = 0;
       output.exec("BEGIN");
       try {
         const stream = new WritableStream({
@@ -22492,6 +22530,8 @@ async function stageBangumi(file, output) {
               pending = pending.slice(pos + 1);
             }
             if (pending.length > 16 * 1024 * 1024) throw new Error("JSONL line exceeds 16 MiB");
+            bytes += chunk.length;
+            progress(`\u6574\u7406\u6807\u7B7E\u548C\u5173\u8054\u6570\u636E \xB7 ${stageLabels[table]}`, bytes, found[0].uncompressedSize, "bytes");
           },
           close() {
             pending += decoder.decode();
@@ -22542,9 +22582,10 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
     output.exec(SCHEMA.replace("PRAGMA journal_mode=DELETE;", ""));
     output.exec({ sql: "INSERT INTO manifest VALUES (?,?,?,?,?)", bind: [SCHEMA_VERSION, ANALYZER_VERSION, provider, sourceVersion || file.name, (/* @__PURE__ */ new Date()).toISOString()] });
     let staging = [];
+    const indexWork = (table, work) => sqlActivity(sqlite, output, `\u5EFA\u7ACB\u5173\u8054\u7D22\u5F15 \xB7 ${stageLabels[table]}`, work);
     self.postMessage({ type: "progress", phase: "\u6574\u7406\u6807\u7B7E\u548C\u5173\u8054\u6570\u636E" });
     if (provider === "bangumi") {
-      await stageBangumi(file, output);
+      await stageBangumi(file, output, indexWork);
       staging = ["subjects", "persons", "subject_persons", "relations"];
     } else {
       let specs;
@@ -22563,9 +22604,19 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
         if (tables.length === 1) throw new Error("MangaBaka tag relationship tables are incomplete");
         specs = tables.length === 2 ? [["series_tags", "series_id"], ["tags", "id"]] : [];
       }
+      let processed = 0;
+      const totals = specs.map(([table]) => sqlActivity(sqlite, source, `\u7EDF\u8BA1\u5173\u8054\u6570\u636E \xB7 ${stageLabels[table]}`, () => source.selectValue(`SELECT count(*) FROM "${table}"`)));
+      const stageTotal = totals.reduce((sum, n3) => sum + n3, 0);
       for (const [table, column] of specs) {
         output.exec("BEGIN");
-        stageSource(source, output, table, column);
+        let rows = 0;
+        const report = (count2) => {
+          rows = count2;
+          progress(`\u6574\u7406\u6807\u7B7E\u548C\u5173\u8054\u6570\u636E \xB7 ${stageLabels[table]}`, processed + count2, stageTotal);
+        };
+        report(0);
+        stageSource(source, output, table, column, report, indexWork);
+        processed += rows;
         output.exec("COMMIT");
         staging.push(table);
       }
@@ -22642,10 +22693,12 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
       }
       output.exec("COMMIT");
       if (!count) throw new Error("Source contained no records");
-      self.postMessage({ type: "progress", phase: "\u6821\u9A8C\u6570\u636E\u5E93", count, total });
-      for (const table of staging) output.exec(`DROP TABLE stage_${table}`);
-      output.exec("INSERT INTO title_fts(title_fts) VALUES('optimize'); INSERT INTO title_fts(title_fts) VALUES('integrity-check');");
-      if (output.selectValue("PRAGMA integrity_check") !== "ok") throw new Error("Output integrity check failed");
+      self.postMessage({ type: "progress", phase: "\u5EFA\u7ACB\u68C0\u7D22\u7D22\u5F15", count, total });
+      sqlActivity(sqlite, output, "\u6E05\u7406\u6784\u5EFA\u4E2D\u95F4\u6570\u636E", () => {
+        for (const table of staging) output.exec(`DROP TABLE stage_${table}`);
+      });
+      sqlActivity(sqlite, output, "\u4F18\u5316\u68C0\u7D22\u7D22\u5F15", () => output.exec("INSERT INTO title_fts(title_fts) VALUES('optimize'); INSERT INTO title_fts(title_fts) VALUES('integrity-check');"));
+      if (sqlActivity(sqlite, output, "\u6821\u9A8C\u6570\u636E\u5E93", () => output.selectValue("PRAGMA integrity_check")) !== "ok") throw new Error("Output integrity check failed");
       return { provider, count, sourceVersion: sourceVersion || file.name };
     } finally {
       insert.finalize();

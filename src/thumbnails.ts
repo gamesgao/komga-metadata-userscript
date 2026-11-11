@@ -23,6 +23,7 @@ export class Thumbnails {
   }
   add(title: string, resolve: Job['resolve']): HTMLElement {
     const frame = document.createElement('span'); frame.className = 'cover-thumb';
+    frame.title = title;
     frame.dataset.state = 'pending'; frame.setAttribute('aria-label', '加载封面');
     this.jobs.set(frame, { frame, title, resolve, queued: false, started: false });
     this.observer.observe(frame); return frame;
@@ -54,7 +55,7 @@ export class Thumbnails {
       if (this.signal.aborted) return;
       job.frame.dataset.state = 'error'; job.frame.textContent = '封面加载失败';
       job.frame.setAttribute('aria-label', '封面加载失败');
-      job.frame.title = error instanceof Error ? error.message : String(error);
+
     }
   }
   dispose(): void {

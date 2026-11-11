@@ -8,6 +8,22 @@ import xxhash from 'xxhash-wasm';
 
 let wasmBinary;
 let sqlitePromise;
+let lastProgress = 0, lastPhase = '';
+function progress(phase, count, total, unit) {
+  const now = Date.now();
+  if (phase !== lastPhase || now - lastProgress >= 150 || (total !== undefined && count === total)) {
+    self.postMessage({ type: 'progress', phase, count, total, unit }); lastProgress = now; lastPhase = phase;
+  }
+}
+function sqlActivity(sqlite, db, phase, work) {
+  const start = Date.now(); let last = start;
+  progress(phase);
+  sqlite.capi.sqlite3_progress_handler(db.pointer, 10000, () => {
+    const now = Date.now(); if (now - last >= 500) { progress(`${phase} · 已运行 ${Math.floor((now-start)/1000)} 秒`); last = now; } return 0;
+  }, 0);
+  try { return work(); } finally { sqlite.capi.sqlite3_progress_handler(db.pointer, 0, 0, 0); }
+}
+const stageLabels = { series_tags:'作品标签关系',tags:'标签',products:'书籍',images:'封面信息',product_external_ids:'书籍编号',product_contributors:'书籍作者关系',contributors:'作者',gid_tid:'图库标签关系',tag:'标签',subjects:'作品',persons:'人物',subject_persons:'作者关系',relations:'作品关联' };
 class StreamReader {
   constructor(stream) {
     this.reader = stream.getReader();
@@ -72,7 +88,8 @@ async function extractTarGzip(file, target) {
       const isSqlite = (kind === 0 || kind === 48) && /\.(sqlite|db)$/i.test(name);
       if (isSqlite && found) throw new Error('Archive contains multiple SQLite files');
       if (isSqlite) found = true;
-      await reader.read(size, isSqlite ? chunk => writable.write(chunk) : undefined);
+      let written = 0;
+      await reader.read(size, isSqlite ? async chunk => { await writable.write(chunk); written += chunk.length; progress('解压原始数据',written,size,'bytes'); } : undefined);
       await reader.read((512 - size % 512) % 512);
     }
     if (!found) throw new Error('Archive does not contain a SQLite file');
@@ -169,6 +186,7 @@ async function extractZstd(file, target) {
           for (const chunk of chunks) await writable.write(chunk);
           chunks = [];
         }
+        progress('解压原始数据', Math.min(offset + input.length, file.size), file.size, 'bytes');
       }
       decoder.push(new Uint8Array(), true);
       for (const chunk of chunks) await writable.write(chunk);
@@ -250,7 +268,7 @@ function each(db, sql, callback) {
     while (statement.step()) callback(statement.get({}));
   } finally { statement.finalize(); }
 }
-function createStage(db, table) {
+function createStage(db, table, indexWork) {
   db.exec(`CREATE TABLE stage_${table}(key TEXT NOT NULL, json TEXT NOT NULL);`);
   const stmt = db.prepare(`INSERT INTO stage_${table} VALUES (?,?)`);
   return {
@@ -260,23 +278,25 @@ function createStage(db, table) {
     },
     done() {
       stmt.finalize();
-      db.exec(`CREATE INDEX stage_${table}_key ON stage_${table}(key);`);
+      const buildIndex = () => db.exec(`CREATE INDEX stage_${table}_key ON stage_${table}(key);`);
+      if (indexWork) indexWork(table, buildIndex); else buildIndex();
     }
   };
 }
-function stageSource(source, output, table, column) {
-  const stage = createStage(output, table);
+function stageSource(source, output, table, column, onProgress, indexWork) {
+  const stage = createStage(output, table, indexWork);
   let count = 0;
   try { each(source, `SELECT * FROM "${table}"`, row => {
     stage.insert(row[column], row);
     if (++count % 10000 === 0) output.exec('COMMIT; BEGIN');
+    onProgress(count);
   }); }
   finally { stage.done(); }
 }
 function stageRows(output, table, key) {
   return output.selectObjects(`SELECT json FROM stage_${table} WHERE key=?`, [String(key)]).map(row => JSON.parse(row.json));
 }
-async function stageBangumi(file, output) {
+async function stageBangumi(file, output, indexWork) {
   const zip = new ZipReader(new BlobReader(file), { useWebWorkers: false });
   try {
     const entries = await zip.getEntries();
@@ -289,9 +309,9 @@ async function stageBangumi(file, output) {
     for (const [filename, table, key] of specs) {
       const found = entries.filter(entry => entry.filename.split('/').at(-1) === filename);
       if (found.length !== 1) throw new Error(`Bangumi archive must contain exactly one ${filename}`);
-      const stage = createStage(output, table);
+      const stage = createStage(output, table, indexWork);
       const decoder = new TextDecoder('utf-8', { fatal: true });
-      let pending = '', count = 0;
+      let pending = '', count = 0, bytes = 0;
       function line(text) {
         if (!text.trim()) return;
         const row = JSON.parse(text);
@@ -308,6 +328,7 @@ async function stageBangumi(file, output) {
               line(pending.slice(0, pos)); pending = pending.slice(pos + 1);
             }
             if (pending.length > 16 * 1024 * 1024) throw new Error('JSONL line exceeds 16 MiB');
+            bytes += chunk.length; progress(`整理标签和关联数据 · ${stageLabels[table]}`, bytes, found[0].uncompressedSize, 'bytes');
           },
           close() { pending += decoder.decode(); line(pending); }
         });
@@ -352,9 +373,10 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
     output.exec(SCHEMA.replace('PRAGMA journal_mode=DELETE;', ''));
     output.exec({ sql: 'INSERT INTO manifest VALUES (?,?,?,?,?)', bind: [SCHEMA_VERSION, ANALYZER_VERSION, provider, sourceVersion || file.name, new Date().toISOString()] });
     let staging = [];
+    const indexWork = (table, work) => sqlActivity(sqlite, output, `建立关联索引 · ${stageLabels[table]}`, work);
     self.postMessage({ type: 'progress', phase: '整理标签和关联数据' });
     if (provider === 'bangumi') {
-      await stageBangumi(file, output);
+      await stageBangumi(file, output, indexWork);
       staging = ['subjects', 'persons', 'subject_persons', 'relations'];
     } else {
       let specs;
@@ -366,9 +388,14 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
         if (tables.length === 1) throw new Error('MangaBaka tag relationship tables are incomplete');
         specs = tables.length === 2 ? [['series_tags', 'series_id'], ['tags', 'id']] : [];
       }
+      let processed = 0;
+      const totals = specs.map(([table]) => sqlActivity(sqlite, source, `统计关联数据 · ${stageLabels[table]}`, () => source.selectValue(`SELECT count(*) FROM "${table}"`)));
+      const stageTotal = totals.reduce((sum, n) => sum + n, 0);
       for (const [table, column] of specs) {
         output.exec('BEGIN');
-        stageSource(source, output, table, column);
+        let rows = 0;
+        const report = count => { rows = count; progress(`整理标签和关联数据 · ${stageLabels[table]}`, processed + count, stageTotal); };
+        report(0); stageSource(source, output, table, column, report, indexWork); processed += rows;
         output.exec('COMMIT');
         staging.push(table);
       }
@@ -440,10 +467,10 @@ async function run({ file, directory, sourceName, outputName, provider, sourceVe
       }
       output.exec('COMMIT');
       if (!count) throw new Error('Source contained no records');
-      self.postMessage({ type: 'progress', phase: '校验数据库', count, total });
-      for (const table of staging) output.exec(`DROP TABLE stage_${table}`);
-      output.exec("INSERT INTO title_fts(title_fts) VALUES('optimize'); INSERT INTO title_fts(title_fts) VALUES('integrity-check');");
-      if (output.selectValue('PRAGMA integrity_check') !== 'ok') throw new Error('Output integrity check failed');
+      self.postMessage({ type: 'progress', phase: '建立检索索引', count, total });
+      sqlActivity(sqlite, output, '清理构建中间数据', () => { for (const table of staging) output.exec(`DROP TABLE stage_${table}`); });
+      sqlActivity(sqlite, output, '优化检索索引', () => output.exec("INSERT INTO title_fts(title_fts) VALUES('optimize'); INSERT INTO title_fts(title_fts) VALUES('integrity-check');"));
+      if (sqlActivity(sqlite, output, '校验数据库', () => output.selectValue('PRAGMA integrity_check')) !== 'ok') throw new Error('Output integrity check failed');
       return { provider, count, sourceVersion: sourceVersion || file.name };
     } finally { insert.finalize(); insertBook.finalize(); index.finalize(); }
   } finally {

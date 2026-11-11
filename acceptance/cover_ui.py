@@ -44,7 +44,7 @@ def run():
    report['checks'].append('Actual public Bangumi/MangaBaka result cards decoded through GM; folding one reveals the next source')
    baka.locator('summary').click();bg.locator('summary').click()
    bg.locator('.candidate[data-key="bangumi:305429"]').click()
-   expect(panel.get_by_role('heading',name='bangumi · 葬送のフリーレン',exact=True)).to_be_visible(timeout=90000)
+   expect(panel.locator('.candidate[data-key^="bangumi:"][aria-pressed=true]')).to_have_count(1,timeout=90000)
    expect(bg.locator('.candidate[data-key="bangumi:305429"]')).to_have_attribute('aria-pressed','true')
    report['checks'].append('Selecting a record retains both source groups and marks the chosen card')
    flows.select_fields(panel,set())

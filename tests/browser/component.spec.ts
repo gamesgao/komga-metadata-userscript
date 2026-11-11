@@ -122,7 +122,7 @@ async function install(page: Page, path = '/reader/oneshot/s-real') {
   await page.route('https://next.bgm.tv/**', route => {
     const url = route.request().url();
     const body = url.includes('search/subjects') ? { data: [{ id: 1, name: '日本語候选' }] }
-      : url.includes('staffs/persons') ? { data: [{ staff: { name: '山田鐘人', nameCN: 'Wrong display fallback' }, positions: [{ type: { id: 2001 } }] }], total: 1 }
+      : url.includes('staffs/persons') ? { data: [{ staff: { name: '山田鐘人', nameCN: '山田钟人' }, positions: [{ type: { id: 2001 } }] }], total: 1 }
       : { id: 1, name: '日本語候选', nameCN: '中文候选', summary: '<img src=x onerror=alert(1)>新简介<script>window.remoteExecuted=true</script>', tags: [{ name: 'female:glasses' }], series: false, images: { large: `${base}/fixture-cover.png` }, infobox: [] };
     return route.fulfill({ json: body, headers: { 'Access-Control-Allow-Origin': '*' } });
   });
@@ -131,12 +131,12 @@ async function install(page: Page, path = '/reader/oneshot/s-real') {
 }
 async function readAndPreview(page: Page, cover = false, ready = true) {
   await page.getByRole('button', { name: '元数据', exact: true }).click();
-  await expect(page.locator('#komga-metadata-panel p[data-state]')).toHaveText('当前：原始标题');
+  await expect(page.locator('#komga-metadata-panel .context')).toHaveText('原始标题');
   await expect(page.getByRole('textbox', { name: '搜索词' })).toHaveValue('原始标题');
   await page.getByText('通过链接或 ID 读取', { exact: true }).click();
   await page.getByRole('textbox', { name: '来源链接或 ID' }).fill('https://bgm.tv/subject/1');
   await page.getByRole('button', { name: '读取', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
+  await expect(page.locator('.candidate[data-key="bangumi:1"][aria-pressed=true]')).toBeVisible();
   if (cover) await page.getByLabel('使用哪张封面', { exact: true }).selectOption('0');
   await page.getByRole('button', { name: '生成预览' }).click();
   if (ready) await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
@@ -150,7 +150,7 @@ test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover 
   expect(series.metadata.title).toBe('原始标题'); expect(book.metadata.title).toBe('Original Book');
   expect(series.metadata.summary).toBe('old summary'); expect(book.metadata.summary).toBe('locked original');
   expect(series.metadata.tags).toEqual(['old', 'female:glasses']);
-  expect(book.metadata.authors).toEqual([{ name: '山田鐘人', role: 'writer' }]);
+  expect(book.metadata.authors).toEqual([{ name: '山田钟人', role: 'writer' }]);
   expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);
   expect(patches.filter(p => p.path.includes('/series/')).every(p => !('authors' in p.body))).toBe(true);
   await expect(page.getByRole('button', { name: '撤销最近写入' })).toBeDisabled();
@@ -228,7 +228,7 @@ test('fixture browser: one failed source keeps candidate visible; editable/unsel
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('MAL 需要自行填写 Client ID', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '日本語候选', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
+  await expect(page.locator('.candidate[data-key="bangumi:1"][aria-pressed=true]')).toBeVisible();
   await page.getByRole('button', { name: '生成预览' }).click();
   await expect(page.locator('textarea[data-field="tags"][data-edit="0"]')).toBeVisible();
   await page.locator('textarea[data-field="tags"][data-edit="0"]').fill('["old","female:glasses","用户编辑"]');
@@ -357,7 +357,7 @@ test('cover UI: source groups fold, image cards persist after selection and blob
   await bg.locator('summary').focus(); await page.keyboard.press('Enter');
   await expect(bg).toHaveJSProperty('open', true);
   await bg.getByRole('button', { name: '日本語候选', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'bangumi · 日本語候选' })).toBeVisible();
+  await expect(page.locator('.candidate[data-key="bangumi:1"][aria-pressed=true]')).toBeVisible();
   await expect(bg.locator('.candidate')).toHaveCount(2); await expect(ani).toBeVisible();
   await expect(bg.getByRole('button', { name: '日本語候选', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(coverDownloads).toBe(1); // shared candidate thumbnail, not duplicate downloads
@@ -383,13 +383,13 @@ test('cover UI: decoded current/new comparison and apply reuse the previewed dow
   });
   expect(await pixel(before)).toEqual([0, 0, 255, 255]); expect(await pixel(after)).toEqual([255, 0, 0, 255]);
   await expect(page.getByText('包含下载失败风险', { exact: false })).toHaveCount(0);
-  expect(patches).toEqual([]); expect(uploaded).toEqual([]); expect(coverDownloads).toBe(1);
+  expect(patches).toEqual([]); expect(uploaded).toEqual([]); expect(coverDownloads).toBe(2); // left card thumbnail plus preview
   await page.setViewportSize({ width: 390, height: 800 });
   expect(await page.locator('.viewport').evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
   coverFails = true; // source disappears AFTER preview: upload must use viewed bytes
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
-  expect(coverDownloads).toBe(1); expect(uploaded).toHaveLength(1);
+  expect(coverDownloads).toBe(2); expect(uploaded).toHaveLength(1); // apply reuses preview bytes
 });
 
 for (const failure of ['missing', 'html']) test(`cover UI: ${failure} source blocks preview/apply before all writes and allows retry`, async ({ page }) => {
@@ -423,7 +423,7 @@ async function ehFixture(page: import('@playwright/test').Page) {
   await page.route('https://api.e-hentai.org/api.php', route => route.fulfill({ json:{gmetadata:[{gid:1,token:'aaaaaaaaaa',title:'Japanese gallery',title_jpn:'日本語の資料',tags:['female:glasses','male:glasses','parody:test','other:unlisted']}]},headers:{'Access-Control-Allow-Origin':'*'} }));
   await page.getByRole('button',{name:'元数据',exact:true}).click(); await page.getByText('通过链接或 ID 读取',{exact:true}).click();
   await page.getByLabel('来源',{exact:true}).selectOption('ehentai'); await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('1:aaaaaaaaaa'); await page.getByRole('button',{name:'读取',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'ehentai · 日本語の資料'})).toBeVisible();
+  await expect(page.locator('.result-group[data-provider=ehentai] .candidate[aria-pressed=true]')).toHaveCount(1);
   for(const field of await page.locator('.field-grid input:not([data-language])').all()) await field.setChecked(await field.getAttribute('aria-label')==='标签');
 }
 const ehDictionary={version:7,head:{sha:'fixture'},data:[{namespace:'female',data:{glasses:{name:'眼镜👓'}}},{namespace:'male',data:{glasses:{name:'眼镜👓'}}},{namespace:'parody',data:{test:{name:'作品'}}}]};
@@ -484,10 +484,10 @@ test('same-provider multi-select and per-column preview single/merge semantics',
   });
   await readAndPreview(page); await page.getByRole('button', { name:'返回选项' }).click();
   await page.getByRole('textbox', { name:'来源链接或 ID' }).fill('2'); await page.getByRole('button', { name:'读取', exact:true }).click();
-  await expect(page.getByRole('heading', { name:'已选 2 个条目' })).toBeVisible();
+  await expect(page.locator('.candidate[aria-pressed=true]')).toHaveCount(2);
   await expect(page.getByLabel('主要来源', { exact:true })).toHaveCount(0);
   for (const id of ['mangadex','webtoons','yenpress']) await expect(page.locator(`.source-toggles input[aria-label=${id}]`)).toHaveCount(0);
-  await page.getByRole('checkbox', { name:'这些条目是同一作品／同一卷和版本' }).check();
+  await expect(page.getByRole('checkbox', { name:'这些条目是同一作品／同一卷和版本' })).toHaveCount(0);
   await page.getByRole('button', { name:'生成预览' }).click();
   const summary = page.locator('.row:has(input[data-edit="0"][data-field="summary"])');
   await expect(summary.getByLabel('简介处理方式')).toHaveValue('single');
@@ -508,6 +508,29 @@ test('same-provider multi-select and per-column preview single/merge semantics',
   expect(series.metadata.tags).toEqual(['shared','second']); expect(book.metadata.tags).toEqual(['shared','first','second']);
 });
 
+test('ordered languages persist, direct cards toggle, source links open without selection changes, tooltips stay titles', async ({page}) => {
+  await install(page); coverFails=true;
+  await page.context().route('https://bgm.tv/subject/1',route=>route.fulfill({contentType:'text/html',body:'<h1>Fixture source</h1>'}));
+  await page.getByRole('button',{name:'元数据',exact:true}).click();
+  await page.getByText('接受的资料语言',{exact:true}).click();
+  const rows=page.locator('.language-row');
+  expect(await rows.evaluateAll(es=>es.map(e=>(e as HTMLElement).dataset.language))).toEqual(['zh','ja','en','romaji','other']);
+  await expect(page.getByLabel('未标注',{exact:true})).toHaveCount(0); await expect(page.locator('.language-options p')).toHaveCount(0);
+  const boxes=await rows.evaluateAll(es=>es.map(e=>({x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y})));
+  expect(boxes.every((b,i)=>!i||(b.x===boxes[0]!.x&&b.y>boxes[i-1]!.y))).toBe(true);
+  await page.getByRole('button',{name:'英文 EN上移',exact:true}).click();await page.getByRole('button',{name:'英文 EN上移',exact:true}).click();
+  await page.getByText('通过链接或 ID 读取',{exact:true}).click();await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('1');await page.getByRole('button',{name:'读取',exact:true}).click();
+  const card=page.locator('.candidate[data-key="bangumi:1"]');await expect(card).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('button',{name:'英文 EN上移',exact:true})).toBeDisabled();
+  await expect(page.locator('.selected-record,.selected-source')).toHaveCount(0);await expect(page.locator('.footer')).not.toContainText('原始标题');
+  await expect(card.locator('.cover-thumb')).toHaveAttribute('data-state','error');await expect(card.locator('.cover-thumb')).toHaveAttribute('title','日本語候选');
+  const link=page.getByRole('link',{name:'日本語候选：打开来源'});await expect(link).toHaveAttribute('target','_blank');
+  const popupPromise=page.waitForEvent('popup');await link.click();const popup=await popupPromise;await popup.waitForLoadState();expect(popup.url()).toBe('https://bgm.tv/subject/1');await popup.close();
+  await expect(card).toHaveAttribute('aria-pressed','true');await card.click();await expect(card).toHaveAttribute('aria-pressed','false');await expect(page.getByRole('button',{name:'生成预览'})).toBeDisabled();await card.click();
+  await page.getByRole('button',{name:'关闭',exact:true}).click();await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByText('接受的资料语言',{exact:true}).click();
+  expect(await rows.evaluateAll(es=>es.map(e=>(e as HTMLElement).dataset.language))).toEqual(['en','zh','ja','romaji','other']);
+});
+
 test('accepted languages select real English/romaji title variants and persist without translation', async ({ page }) => {
   await install(page);
   await page.route('https://graphql.anilist.co', route => route.fulfill({json:{data:{Media:{id:2,siteUrl:'https://anilist.co/manga/2',countryOfOrigin:'JP',title:{native:'日本語の作品',english:'English title',romaji:'Nihongo no Sakuhin'},coverImage:{},startDate:{},genres:[],staff:{edges:[],pageInfo:{hasNextPage:false}}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
@@ -516,7 +539,7 @@ test('accepted languages select real English/romaji title variants and persist w
   for (const i of await page.locator('.language-options input').all()) await i.setChecked(await i.getAttribute('data-language') === 'en');
   await page.getByText('通过链接或 ID 读取',{exact:true}).click(); await page.getByRole('combobox',{name:'来源',exact:true}).selectOption('anilist');
   await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('2'); await page.getByRole('button',{name:'读取',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'anilist · 日本語の作品'})).toBeVisible();
+  await expect(page.locator('.candidate[data-key="anilist:2"][aria-pressed=true]')).toBeVisible();
   await page.getByRole('checkbox',{name:'标题（默认不改）',exact:true}).check(); await page.getByRole('button',{name:'生成预览'}).click();
   for (const t of await page.getByRole('textbox',{name:'标题（默认不改）写入值',exact:true}).all()) await expect(t).toHaveValue('English title');
   await page.getByRole('button',{name:'返回选项'}).click();
@@ -561,14 +584,12 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
   await expect(ani).toHaveAttribute('data-state', 'ready');
   await expect(page.getByRole('progressbar', { name: '搜索进度' })).toHaveJSProperty('value', 2);
   await bg.locator('.candidate').click(); await ani.locator('.candidate').click();
-  await expect(page.getByRole('heading', { name: '已选 2 个条目' })).toBeVisible();
+  await expect(page.locator('.candidate[aria-pressed=true]')).toHaveCount(2);
   await expect(bg.locator('.candidate')).toHaveAttribute('aria-pressed', 'true'); await expect(ani.locator('.candidate')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('使用哪张封面', { exact: true })).toHaveValue('');
   await expect(page.getByText('系列状态未知', { exact: false })).toHaveCount(0);
   await expect(page.getByText('保留已锁定字段；作者仅写入未锁定书籍。')).toHaveCount(0);
-  await page.getByRole('button', { name: '生成预览' }).click();
-  await expect(page.locator('.status[data-state=error]')).toContainText('先确认'); expect(patches).toEqual([]);
-  await page.getByRole('checkbox', { name: '这些条目是同一作品／同一卷和版本' }).check();
+  await expect(page.getByRole('checkbox', { name: '这些条目是同一作品／同一卷和版本' })).toHaveCount(0);
   await page.getByRole('button', { name: '生成预览' }).click();
   await page.getByLabel('简介来源', { exact: true }).selectOption('anilist:2');
   await expect(page.getByRole('textbox', { name: '简介写入值', exact: true })).toHaveValue('Second source summary');
@@ -577,6 +598,6 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
   expect(series.metadata.summary).toBe('Second source summary'); expect(book.metadata.summary).toBe('locked original');
   expect(series.metadata.tags).toEqual(expect.arrayContaining(['old', 'female:glasses'])); expect(series.metadata.genres).toEqual(['fantasy']);
-  expect(book.metadata.authors).toEqual([{ name: '山田鐘人', role: 'writer' }]);
+  expect(book.metadata.authors).toEqual([{ name: '山田钟人', role: 'writer' }, { name: '山田鐘人', role: 'writer' }]);
   expect(series.metadata.title).toBe('原始标题'); expect(uploaded).toEqual([]);
 });

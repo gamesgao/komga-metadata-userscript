@@ -1,5 +1,12 @@
 # Validation ledger
 
+## v0.9.0 ordered language fallback, lean UI and measurable catalog progress
+
+- PASS: 96 core tests, 22 bundled browser tests, eight catalog tests, six release tests and both typechecks. Tests cover legacy unknown-to-other migration, cross-source per-field fallback, explicit override, per-author variants, language ordering persistence/boundary buttons, card deselection, independent source-popup navigation, title-only failed-image tooltips, real download totals arriving after stream start or via concurrent HEAD, and visible determinate download bars.
+- Development native Tampermonkey PASS: real AniList variants obey zh→ja→en fallback, Romaji-first and English-first; One-shot series/book English title write/readback/undo succeeds. Real online/offline EH language-controlled tags, manual-tag preservation and both-target undo pass.
+- Development native ordinary-HTTP BookWalker PASS: measured staging denominator 969,938 relationship rows, partial value observed with a visible 10px bar; all 14,379 entries build, survive refresh and return three local matches. Popup-hidden work, cancel/complete-archive resume and multi-catalog coexistence pass. SQL-only index/integrity phases show real execution elapsed time rather than fictional percentages. Final published artifact is verified again after release; raw reports/screenshots stay in ignored `.runtime`.
+- Fixture upstream data remains distinct from public-source native acceptance. No new full-build claims for the other three upstream datasets and no user NAS access.
+
 ## v0.8.0 independent catalog tasks and complete-archive checkpoints
 
 - Component coverage: 91 core tests, 21 bundled browser tests, eight catalog tests and six release tests. The insecure-origin catalog case submits all four formats, observes two concurrent downloads and only one build, detaches the view while work proceeds, cancels another queued source without affecting the active build, injects a build failure, reloads and resumes from a complete archive with zero downloader calls. Actual WASM builds/readers and filesystem storage are used; source downloads in this scheduling fixture are controlled fixtures.

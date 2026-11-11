@@ -1,5 +1,5 @@
 import { type MetadataRecord, type AcceptedLanguage, MetadataError, nativeTitle } from './model';
-import { languageFields, acceptedTitles, allLanguages, accepted, languageOf } from './languages';
+import { languageFields, acceptedTitles, allLanguages, accepted, languageOf, languageRank } from './languages';
 import { type Metadata, type Value } from './komga';
 import { isVolumeRecord, seriesFields, bookFields, type Field, equal } from './plan';
 export const mergeFields: Field[] = [...new Set<Field>([...seriesFields, ...bookFields])];
@@ -39,8 +39,10 @@ export function mergeRecords(records: MetadataRecord[], choices: FieldChoices = 
   const values: Metadata = {}, used: Merged['used'] = {}, options: Merged['options'] = {};
   for (const field of mergeFields) {
     const entries = field === 'title'
-      ? records.flatMap(r => acceptedTitles(r, languages).map((t, i) => ({ key: `${sourceKey(r)}#title${i}`, provider: r.provider, label: `${r.provider} · ${r.id} · ${languageOf(t.text, t.language)} · ${t.text}`, value: t.text })))
-      : mapped.filter(x => present(x.value[field])).map(x => ({ key: sourceKey(x.r), provider: x.r.provider, label: `${x.r.provider} · ${x.r.id} · ${nativeTitle(x.r)}`, value: x.value[field]! }));
+      ? records.flatMap(r => acceptedTitles(r, languages).map((t, i) => ({ key: `${sourceKey(r)}#title${i}`, provider: r.provider, label: `${r.provider} · ${r.id} · ${languageOf(t.text, t.language)} · ${t.text}`, value: t.text, rank: languageRank(t.text, t.language, languages) })))
+      : mapped.filter(x => present(x.value[field])).map(x => ({ key: sourceKey(x.r), provider: x.r.provider, label: `${x.r.provider} · ${x.r.id} · ${nativeTitle(x.r)}`, value: x.value[field]!, rank: field === 'summary' ? languageRank(x.r.summary!, x.r.summaryLanguage, languages) : field === 'publisher' ? languageRank(x.r.publisher!, undefined, languages) : 0 }));
+    // Language outranks source selection order; same-language ties remain stable.
+    entries.sort((a, b) => a.rank - b.rank);
     options[field] = entries;
     if (!entries.length) continue;
     const chosen = entries.find(e => e.key === choices[field]);
@@ -51,5 +53,6 @@ export function mergeRecords(records: MetadataRecord[], choices: FieldChoices = 
   }
   const covers: Merged['covers'] = [];
   for (const r of records) for (const cover of r.covers) if (accepted('', cover.language, languages) && !covers.some(c => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+  covers.sort((a, b) => languageRank('', a.cover.language, languages) - languageRank('', b.cover.language, languages));
   return { record: { ...records[0]!, covers: covers.map(c => c.cover) }, values, used, options, covers };
 }

@@ -37,8 +37,8 @@ function el(tag, text) { const e = document.createElement(tag); if (text !== und
 function button(text, fn) { const b = el('button', text); b.type = 'button'; b.onclick = fn; return b; }
 export function mountCatalogPanel(container, client, options = {}) {
   const root = el('section'); root.dataset.kmCatalog = '1';
-  const style = el('style', 'section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{width:100%}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}');
-  const status = el('p', '选择来源，下载并新建数据库'); status.setAttribute('role','status');
+  const style = el('style', 'section[data-km-catalog] .catalog-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}section[data-km-catalog] .catalog-source{border:1px solid var(--km-border,#dce0e7);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start}section[data-km-catalog] progress{display:block;width:100%;height:10px;min-height:10px;border:0;border-radius:5px;overflow:hidden;appearance:none;accent-color:var(--accent,#4f46e5)}section[data-km-catalog] progress::-webkit-progress-bar{background:var(--line,#e4e7ed)}section[data-km-catalog] progress::-webkit-progress-value{background:var(--accent,#4f46e5)}section[data-km-catalog] progress:not([value])::-webkit-progress-bar{background:repeating-linear-gradient(110deg,var(--line,#e4e7ed) 0 12px,var(--accent,#4f46e5) 12px 24px);background-size:48px 100%;animation:catalog-working 1.4s linear infinite}@keyframes catalog-working{to{background-position:48px 0}}@media(prefers-reduced-motion:reduce){section[data-km-catalog] progress:not([value])::-webkit-progress-bar{animation:none}}section[data-km-catalog] .catalog-source h4{margin:0}section[data-km-catalog] .catalog-source button{width:100%}@media(max-width:600px){section[data-km-catalog] .catalog-sources{grid-template-columns:1fr}}');
+  const status = el('p'); status.setAttribute('role','status');
   const cards = el('div'); cards.className = 'catalog-sources';
   const capability = browserBuildCapability();
   const builder = options.builder ?? (options.buildWorkerUrl || options.buildWorkerFactory ? new BrowserCatalogBuilder(options.buildWorkerUrl, { workerFactory: options.buildWorkerFactory, initOptions: options.buildInitOptions }) : undefined);
@@ -55,7 +55,7 @@ export function mountCatalogPanel(container, client, options = {}) {
     if (!capability.available) { storageText.textContent = '此浏览器无法读取本地构建存储用量'; return; }
     try {
       const info = await (options.storageUsage ?? storageUsage)();
-      if (!disposed) storageText.textContent = `本工具文件约 ${size(info.owned)} · ${Number.isFinite(info.usage) && Number.isFinite(info.quota) ? `本站点已用 ${size(info.usage)} / 浏览器配额 ${size(info.quota)}（估算）` : '浏览器未提供配额'}`;
+      if (!disposed) storageText.textContent = `本工具文件占用 ${size(info.owned)}`;
     } catch (e) { if (!disposed) storageText.textContent = `暂时无法读取存储用量：${e.message}`; }
   };
   const update = () => {
@@ -76,6 +76,7 @@ export function mountCatalogPanel(container, client, options = {}) {
   };
   const say = (s, text, count, total) => {
     s.label.textContent = text; status.textContent = `${s.id} · ${text}`;
+    s.bar.setAttribute('aria-label', `${s.name} 当前阶段进度`); s.bar.setAttribute('aria-valuetext', text);
     if (total > 0) { s.bar.max = total; s.bar.value = count; } else s.bar.removeAttribute('value');
   };
   const run = (id, work) => {
@@ -109,7 +110,7 @@ export function mountCatalogPanel(container, client, options = {}) {
       check(signal); say(s, '正在新建数据库…');
       const abort = () => builder.cancel(); signal.addEventListener('abort', abort, { once:true });
       try {
-        const result = await builder.build(selected, s.id, selected.name, data => say(s, `${data.phase}${data.count === undefined ? '' : ` · ${data.count} / ${data.total}`}`, data.count, data.total));
+        const result = await builder.build(selected, s.id, selected.name, data => say(s, `${data.phase}${data.count === undefined ? '' : data.unit === 'bytes' ? ` · ${size(data.count)} / ${size(data.total)}` : ` · ${data.count} / ${data.total}`}`, data.count, data.total));
         check(signal); s.committing = true; update(); say(s, '正在加载数据库…');
         const previous = loadedFile(s.id);
         const built = await builder.file(); await load(built);
@@ -163,7 +164,7 @@ export function mountCatalogPanel(container, client, options = {}) {
           if (!options.download) throw new Error('缺少下载权限');
           await options.download(href,item.filename,signal); say(s,canBuild?'原始数据已下载，请在「已有文件」中选择它来构建':`原始数据已下载。${capability.reason}`);return;
         }
-        const archive=await options.downloadArchive(href,item.filename,signal,(bytes,total)=>say(s,`已下载 ${size(bytes)}${total?` / ${size(total)}`:''}`,bytes,total));
+        const archive=await options.downloadArchive(href,item.filename,signal,(bytes,total)=>say(s,`已下载 ${size(bytes)}${total?` / ${size(total)}`:'（总大小未知）'}`,bytes,total));
         // Commit a complete archive before reacting to cancellation. No partial data is resumable.
         try { s.archive=await cache.save(item.id,archive,href); }
         catch(e) { await archive.cleanup(); throw e; }
@@ -193,7 +194,7 @@ export function mountCatalogPanel(container, client, options = {}) {
   const archive=el('input');archive.type='file';archive.setAttribute('aria-label','来源档案');
   const build=button('构建并加载',()=>{const selected=archive.files?.[0];return run(source.value,async(s,signal)=>{if(!selected)throw Error('请选择原始数据文件');await buildFile(s,selected,signal);});});
   rawDetails.append(source,archive,build);existing.append(fileLabel,rawDetails);
-  root.append(style,el('h3','下载并建立本地数据库'),el('p','关闭弹窗后任务继续。最多同时下载两个来源，构建逐个排队。完整下载的档案会保留到构建成功；刷新后可继续构建，但不保留下载到一半或构建到一半的进度。'));
+  root.append(style,el('h3','本地数据库'));
   if(!canBuild)root.append(el('p',capability.reason));
   root.append(cards,status,storageText,button('刷新存储用量',()=>{void updateStorage();}),existing);container.append(root);update();
   const restore=async()=>{

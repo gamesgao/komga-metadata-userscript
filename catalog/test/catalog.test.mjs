@@ -582,7 +582,8 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
       builder.build=async(...args)=>{const s=window.taskStats;s.builds.push(args[1]);s.peakBuilds=Math.max(s.peakBuilds,++s.activeBuilds);
         try{if(args[1]==='bangumi'){window.markFirstBuild();await new Promise(r=>window.releaseBuild=r);throw Error('injected build failure');}return await original(...args);}finally{s.activeBuilds--;}};
       window.taskHost=document.createElement('div');document.body.append(window.taskHost);
-      const downloadArchive=async(url,name,signal)=>{
+      const downloadArchive=async(url,name,signal,progress)=>{
+        progress(3,10);
         const s=window.taskStats;s.downloads++;s.peakDownloads=Math.max(s.peakDownloads,++s.activeDownloads);
         if(!window.downloadReady)await new Promise(r=>window.downloadWaiters.push(r));
         const id=name.includes('bangumi')?'bangumi':name.includes('e-hentai')?'ehentai':name.includes('series.sqlite')?'mangabaka':'bookwalker';
@@ -596,6 +597,9 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     });
     for(const name of ['Bangumi','E-Hentai','MangaBaka','BookWalker']) await insecure.getByRole('button',{name:name+' · 下载并构建',exact:true}).click();
     await insecure.waitForFunction(()=>window.taskStats.downloads===2);
+    const downloadBar=insecure.locator('[data-provider=bangumi] progress');
+    assert.equal(await downloadBar.evaluate(e=>e.value),3);assert.equal(await downloadBar.evaluate(e=>e.max),10);
+    assert.ok((await downloadBar.boundingBox()).height>=8);
     await insecure.evaluate(()=>{window.taskHost.remove();window.downloadReady=true;window.downloadWaiters.forEach(r=>r())});
     await insecure.waitForFunction(async()=>window.taskStats.downloads===4&&window.releaseBuild&&Boolean(await window.taskCache.get('bookwalker')));
     await insecure.evaluate(()=>document.body.append(window.taskHost));
@@ -633,7 +637,8 @@ test('fixture archives, atomic failure, and browser file-backed FTS', async () =
     await insecure.locator('[data-provider=bookwalker]').getByText('已移除浏览器数据库',{exact:true}).waitFor();
     assert.equal(await insecure.evaluate(()=>window.taskClient.hasProvider('bookwalker')),false);
     const afterClear=await insecure.evaluate(async()=>(await(await import('/archive-cache.mjs')).storageUsage()).owned);
-    assert.ok(afterClear<beforeClear);assert.ok((await insecure.locator('[data-storage]').textContent()).includes('配额'));
+    assert.ok(afterClear<beforeClear);assert.ok((await insecure.locator('[data-storage]').textContent()).includes('本工具文件占用'));
+    assert.ok(!(await insecure.locator('[data-storage]').textContent()).includes('配额'));
     await insecure.evaluate(async()=>{await window.taskUnmount();window.taskClient.dispose()});
   } finally {
     if (browser) await browser.close();

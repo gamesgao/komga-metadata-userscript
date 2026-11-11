@@ -1,4 +1,4 @@
-import { catalogDirectory, storageBackend } from './storage.mjs';
+import { catalogDirectory } from './storage.mjs';
 const ids = ['bangumi','ehentai','mangabaka','bookwalker'];
 function check(id) { if (!ids.includes(id)) throw new Error('不支持的来源'); }
 async function read(directory, name) { return JSON.parse(await (await (await directory.getFileHandle(name)).getFile()).text()); }
@@ -50,10 +50,7 @@ export async function removeSavedCatalog(id) {
   } catch (e) { if (e.name !== 'NotFoundError') throw e; }
 }
 export async function storageUsage() {
-  let usage, quota, owned = 0;
-  if (storageBackend() === 'legacy' && navigator.webkitTemporaryStorage?.queryUsageAndQuota) {
-    ({ usage, quota } = await new Promise((ok, no) => navigator.webkitTemporaryStorage.queryUsageAndQuota((usage, quota) => ok({usage, quota}), no)));
-  } else if (navigator.storage?.estimate) ({ usage, quota } = await navigator.storage.estimate());
+  let owned = 0;
   for (const name of ['komga-catalog-build','komga-catalog-download']) {
     try {
       const directory = await catalogDirectory(name, false);
@@ -62,5 +59,5 @@ export async function storageUsage() {
       }
     } catch (e) { if (e.name !== 'NotFoundError') throw e; }
   }
-  return { owned, usage, quota };
+  return { owned };
 }
