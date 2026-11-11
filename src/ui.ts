@@ -8,8 +8,8 @@ import { Thumbnails } from './thumbnails';
 import { searchPreferred } from './search';
 import { mergeRecords, sourceKey, canMergeField, combineField, type Merged } from './merge';
 import { allLanguages, languageLabels, wantsChineseTags } from './languages';
-import { EhTagTranslation, translateExisting, type PrefixStyle } from './eh-tag-translation';
-interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[]; ehTagPrefixes?: PrefixStyle }
+import { EhTagTranslation, translateExisting } from './eh-tag-translation';
+interface Settings { sources: string[]; offlineSources?: string[]; sourceMode?: 'online' | 'offline'; credentials: Credentials; acceptedLanguages?: AcceptedLanguage[] }
 interface SavedUndo { seriesId: string; result: Result }
 const labels: Record<Field, string> = { title: '标题（默认不改）', summary: '简介', publisher: '出版社', language: '语言', status: '状态', ageRating: '年龄', tags: '标签', genres: '类型', links: '链接', alternateTitles: '别名', authors: '作者', releaseDate: '发行日', isbn: 'ISBN' };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -182,12 +182,7 @@ export class Panel {
       i.onchange = () => this.invalidate();
     }
     choices.append(fieldGrid);
-    const tagOptions = element('details'); tagOptions.className = 'eh-tag-options'; tagOptions.append(element('summary', 'EH 标签格式'));
-    const prefixLabel = element('label', '标签前缀'), prefixes = element('select'); prefixes.setAttribute('aria-label', '标签前缀');
-    option(prefixes, 'compact', '简洁：去掉描述类前缀'); option(prefixes, 'preserve', '保留全部前缀'); prefixes.value = this.settings.ehTagPrefixes ?? 'compact'; prefixLabel.append(prefixes);
-    const credit = element('a', 'EhTagTranslation · CC BY-NC-SA 3.0'); credit.href = 'https://github.com/EhTagTranslation/Database'; credit.target = '_blank'; credit.rel = 'noopener noreferrer';
-    tagOptions.append(prefixLabel, credit); choices.append(tagOptions);
-    prefixes.onchange = () => { this.settings.ehTagPrefixes = prefixes.value as PrefixStyle; storage.set('settings-v1', this.settings); this.invalidate(); };
+
     this.propagate = input('将作者同步到系列内所有书籍', choices, 'checkbox'); this.propagate.checked = false;
     this.propagate.parentElement!.className = 'check-label';
 
@@ -448,7 +443,7 @@ export class Panel {
       this.status.textContent = '正在准备中文标签词库…';
       const loaded = await this.translation.load(this.signal);
       const records = this.selections.map(({ record }) => {
-        const projected = this.translation.project(record, this.settings.ehTagPrefixes ?? 'compact');
+        const projected = this.translation.project(record);
         for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
         return projected.record;
       });

@@ -433,18 +433,21 @@ async function ehFixture(page: import('@playwright/test').Page) {
   for(const field of await page.locator('.field-grid input:not([data-language])').all()) await field.setChecked(await field.getAttribute('aria-label')==='标签');
 }
 const ehDictionary={version:7,head:{sha:'fixture'},data:[{namespace:'female',data:{glasses:{name:'眼镜👓'}}},{namespace:'male',data:{glasses:{name:'眼镜👓'}}},{namespace:'parody',data:{test:{name:'作品'}}}]};
-test('EH Chinese preference: compact/preserve preview, cached dictionary, actual writes and locked book',async({page})=>{
+test('EH Chinese preference: fixed simple tags, no formatting controls, cached dictionary, writes and locked book',async({page})=>{
   series.metadata.tags=['female:glasses','manual'];book.metadata.tagsLock=true;
   await ehFixture(page);let downloads=0;
   await page.route('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json',route=>{downloads++;return route.fulfill({json:ehDictionary,headers:{'Access-Control-Allow-Origin':'*'}})});
   await page.getByText('接受的资料语言',{exact:true}).click();for(const box of await page.locator('.language-options input').all())await box.setChecked(['ja','zh'].includes((await box.getAttribute('data-language'))!));
   await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('heading',{name:'确认更改'})).toBeVisible();
   expect(JSON.parse(await page.getByRole('textbox',{name:'标签写入值',exact:true}).inputValue())).toEqual(['眼镜','manual','parody:作品','other:unlisted']);
-  await page.getByRole('button',{name:'返回选项'}).click();await page.locator('.eh-tag-options summary').click();await page.getByLabel('标签前缀',{exact:true}).selectOption('preserve');
+  await page.getByRole('button',{name:'返回选项'}).click();
+  await expect(page.getByLabel('标签前缀',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('EH 标签格式',{exact:true})).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'EhTagTranslation · CC BY-NC-SA 3.0'})).toHaveCount(0);
   await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('heading',{name:'确认更改'})).toBeVisible();
-  expect(JSON.parse(await page.getByRole('textbox',{name:'标签写入值',exact:true}).inputValue())).toEqual(['female:眼镜','manual','male:眼镜','parody:作品','other:unlisted']);expect(downloads).toBe(1);
+  expect(JSON.parse(await page.getByRole('textbox',{name:'标签写入值',exact:true}).inputValue())).toEqual(['眼镜','manual','parody:作品','other:unlisted']);expect(downloads).toBe(1);
   await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
-  expect(series.metadata.tags).toEqual(['female:眼镜','manual','male:眼镜','parody:作品','other:unlisted']);expect(book.metadata.tags).toEqual([]);
+  expect(series.metadata.tags).toEqual(['眼镜','manual','parody:作品','other:unlisted']);expect(book.metadata.tags).toEqual([]);
 });
 test('EH missing dictionary blocks all writes; removing Chinese restores raw tags without downloading',async({page})=>{
   await ehFixture(page);let downloads=0;await page.route('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json',route=>{downloads++;return route.fulfill({status:502,body:'bad',headers:{'Access-Control-Allow-Origin':'*'}})});

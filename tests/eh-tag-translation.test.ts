@@ -8,14 +8,14 @@ const record:MetadataRecord={provider:'ehentai',id:'1/x',url:'https://e-hentai.o
 const signal=()=>new AbortController().signal;
 function setup(){let value:unknown;let now=100;const store={get:<T>(_k:string,f:T)=>(value??f) as T,set:vi.fn((_k:string,v:unknown)=>{value=v})};const request=vi.fn(async()=>({status:200,text:db,headers:{},finalUrl:''}));const translator=new EhTagTranslation({request},store,()=>now);return{store,request,translator,time:(t:number)=>{now=t},reopen:()=>new EhTagTranslation({request},store,()=>now)};}
 describe('EhTagTranslation',()=>{
- it('loads names, preserves raw records and applies compact versus full prefixes without filtering',async()=>{
-  const s=setup();await s.translator.load(signal());const a=s.translator.project(record,'compact');
+ it('loads names, preserves raw records and simplifies descriptive prefixes without filtering',async()=>{
+  const s=setup();await s.translator.load(signal());const a=s.translator.project(record);
   expect(a.record.tags).toEqual(record.tags);expect(a.record.translatedTags).toEqual(['眼镜','眼镜','character:爱丽丝','parody:作品','other:glasses','unknown:never']);
-  expect(a.matched).toBe(4);expect(s.translator.project(record,'preserve').record.translatedTags?.[0]).toBe('female:眼镜');
-  expect(s.translator.project({...record,provider:'bangumi'},'compact').record).toEqual({...record,provider:'bangumi'});
+  expect(a.matched).toBe(4);
+  expect(s.translator.project({...record,provider:'bangumi'}).record).toEqual({...record,provider:'bangumi'});
  });
  it('Chinese preference controls output; mixed Chinese/Japanese works and other languages retain raw keys',async()=>{
-  const s=setup();await s.translator.load(signal());const p=s.translator.project(record,'compact');
+  const s=setup();await s.translator.load(signal());const p=s.translator.project(record);
   expect(wantsChineseTags(['zh','ja'])).toBe(true);expect(wantsChineseTags(['en','ja'])).toBe(false);
   expect(languageFields(p.record,['zh','ja']).tags).toEqual(['眼镜','character:爱丽丝','parody:作品','other:glasses','unknown:never']);
   for(const languages of [['en'],['ja'],[]] as const) expect(languageFields(p.record,[...languages]).tags).toEqual(record.tags);
@@ -38,6 +38,6 @@ describe('EhTagTranslation',()=>{
  });
  it('rejects empty or malformed dictionaries and does not use prototype entries',async()=>{
   for(const body of ['{}','{"data":[]}','{"data":[{"namespace":"female","data":{}}]}']) expect(()=>parseDictionary(body)).toThrow();
-  const s=setup();await s.translator.load(signal());expect(s.translator.project({...record,tags:['female:constructor','__proto__:glasses']},'compact').matched).toBe(0);
+  const s=setup();await s.translator.load(signal());expect(s.translator.project({...record,tags:['female:constructor','__proto__:glasses']}).matched).toBe(0);
  });
 });

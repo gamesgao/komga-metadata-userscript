@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.6.1
+// @version      0.6.2
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -50,6 +50,9 @@
 /*!
 Provider adaptations: Copyright (c) 2022 Snd-R; Copyright (c) 2023 eeezae; Copyright (c) 2025 ramu; Copyright (c) 2025 dyphire.
 See THIRD_PARTY.md for provenance.
+Optional runtime dictionary: EhTagTranslation/Database, copyright its contributors, CC BY-NC-SA 3.0 (separate from code MIT).
+Source: https://github.com/EhTagTranslation/Database
+Data license: https://github.com/EhTagTranslation/Database/blob/master/LICENSE.md
 MIT License
 
 Copyright (c) 2026 gamesgao
@@ -2134,7 +2137,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         throw new MetadataError("unavailable", `\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u4E0D\u53EF\u7528\uFF1A${error instanceof Error ? error.message : String(error)}\uFF1B\u53EF\u91CD\u8BD5\uFF0C\u6216\u5728\u8D44\u6599\u8BED\u8A00\u4E2D\u53D6\u6D88\u52FE\u9009\u4E2D\u6587`);
       }
     }
-    project(record2, style) {
+    project(record2) {
       const replacements = /* @__PURE__ */ new Map();
       if (record2.provider !== "ehentai") return { record: record2, replacements, matched: 0 };
       if (!this.cache) throw new MetadataError("unavailable", "\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u5C1A\u672A\u52A0\u8F7D");
@@ -2148,7 +2151,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         if (!name) return raw;
         const text2 = compactNamespaces.has(ns) ? name.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "").trim() : name;
         if (!text2) return raw;
-        const translated = style === "compact" && compactNamespaces.has(ns) ? text2 : `${ns}:${text2}`;
+        const translated = compactNamespaces.has(ns) ? text2 : `${ns}:${text2}`;
         replacements.set(key(raw), key(translated));
         matched++;
         return translated;
@@ -2357,26 +2360,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         i.onchange = () => this.invalidate();
       }
       choices.append(fieldGrid);
-      const tagOptions = element("details");
-      tagOptions.className = "eh-tag-options";
-      tagOptions.append(element("summary", "EH \u6807\u7B7E\u683C\u5F0F"));
-      const prefixLabel = element("label", "\u6807\u7B7E\u524D\u7F00"), prefixes = element("select");
-      prefixes.setAttribute("aria-label", "\u6807\u7B7E\u524D\u7F00");
-      option(prefixes, "compact", "\u7B80\u6D01\uFF1A\u53BB\u6389\u63CF\u8FF0\u7C7B\u524D\u7F00");
-      option(prefixes, "preserve", "\u4FDD\u7559\u5168\u90E8\u524D\u7F00");
-      prefixes.value = this.settings.ehTagPrefixes ?? "compact";
-      prefixLabel.append(prefixes);
-      const credit = element("a", "EhTagTranslation \xB7 CC BY-NC-SA 3.0");
-      credit.href = "https://github.com/EhTagTranslation/Database";
-      credit.target = "_blank";
-      credit.rel = "noopener noreferrer";
-      tagOptions.append(prefixLabel, credit);
-      choices.append(tagOptions);
-      prefixes.onchange = () => {
-        this.settings.ehTagPrefixes = prefixes.value;
-        storage.set("settings-v1", this.settings);
-        this.invalidate();
-      };
       this.propagate = input("\u5C06\u4F5C\u8005\u540C\u6B65\u5230\u7CFB\u5217\u5185\u6240\u6709\u4E66\u7C4D", choices, "checkbox");
       this.propagate.checked = false;
       this.propagate.parentElement.className = "check-label";
@@ -2819,7 +2802,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.status.textContent = "\u6B63\u5728\u51C6\u5907\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u2026";
         const loaded = await this.translation.load(this.signal);
         const records = this.selections.map(({ record: record2 }) => {
-          const projected = this.translation.project(record2, this.settings.ehTagPrefixes ?? "compact");
+          const projected = this.translation.project(record2);
           for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
           return projected.record;
         });

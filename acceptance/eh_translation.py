@@ -45,6 +45,9 @@ def run():
     for box in values.all():assert json.loads(box.input_value())==expected
     expect(panel.get_by_text('查看标签翻译对照',exact=True)).to_have_count(0)
     expect(panel.get_by_label('将 EH 标签译为中文并写入',exact=True)).to_have_count(0)
+    expect(panel.get_by_label('标签前缀',exact=True)).to_have_count(0)
+    expect(panel.get_by_text('EH 标签格式',exact=True)).to_have_count(0)
+    expect(panel.get_by_role('link',name='EhTagTranslation · CC BY-NC-SA 3.0')).to_have_count(0)
     page.screenshot(path=str(output/(route+('-zh' if 'zh' in languages else '-en')+'-preview.png')))
     flows.wait_action(page,'应用')
     for (k,i),before in originals.items():

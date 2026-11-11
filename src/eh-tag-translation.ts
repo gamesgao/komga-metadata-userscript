@@ -2,7 +2,7 @@ import { cancelled, MetadataError, type MetadataRecord } from './model';
 import { storage, type Transport } from './transport';
 export const dictionaryUrl = 'https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json';
 export const dictionaryKey = 'eh-tag-dictionary-v1';
-export type PrefixStyle = 'compact' | 'preserve';
+
 type Dictionary = Record<string, Record<string, string>>;
 interface Cache { format: 1; checkedAt: number; revision: string; names: Dictionary }
 interface Store { get<T>(key: string, fallback: T): T; set<T>(key: string, value: T): void }
@@ -52,7 +52,7 @@ export class EhTagTranslation {
       throw new MetadataError('unavailable', `中文标签词库不可用：${error instanceof Error ? error.message : String(error)}；可重试，或在资料语言中取消勾选中文`);
     }
   }
-  project(record: MetadataRecord, style: PrefixStyle): { record: MetadataRecord; replacements: Map<string, string>; matched: number } {
+  project(record: MetadataRecord): { record: MetadataRecord; replacements: Map<string, string>; matched: number } {
     const replacements = new Map<string, string>();
     if (record.provider !== 'ehentai') return { record, replacements, matched: 0 };
     if (!this.cache) throw new MetadataError('unavailable', '中文标签词库尚未加载');
@@ -66,7 +66,7 @@ export class EhTagTranslation {
       // Remove decorative emoji only for descriptive tags; preserve named entities.
       const text = compactNamespaces.has(ns) ? name.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() : name;
       if (!text) return raw;
-      const translated = style === 'compact' && compactNamespaces.has(ns) ? text : `${ns}:${text}`;
+      const translated = compactNamespaces.has(ns) ? text : `${ns}:${text}`;
       replacements.set(key(raw), key(translated)); matched++;
       return translated;
     });

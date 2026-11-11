@@ -1,5 +1,10 @@
 # Validation ledger
 
+## v0.6.2 remove EH formatting controls
+
+- Regression asserts zero EH formatting sections, prefix selectors, translation switches, duplicate translation tables or attribution links in the operation UI. Fixed compact translation continues to preserve raw source records, unknown tags and named-entity prefixes; legacy prefix settings cannot select an alternate policy.
+- Attribution remains in THIRD_PARTY.md and the generated userscript legal notice. The real-manager EH acceptance continues to cover both online/local records, English/Chinese language choice, both One-shot metadata targets, readback and undo.
+
 ## v0.6.1 language-driven EH translation
 
 - PASS: 88 core tests, 20 actual-bundle browser tests. Chinese membership controls translation, including mixed Chinese/Japanese and Chinese/English. English/Japanese-only keep raw EH keys rather than filtering them away as unknown-language text.

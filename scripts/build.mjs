@@ -60,7 +60,7 @@ const header = `// ==UserScript==
 // ==/UserScript==`;
 const license = await readFile('LICENSE', 'utf8');
 await writeFile(`dist/${metaFilename}`, `${header}\n`);
-const notices = `Provider adaptations: Copyright (c) 2022 Snd-R; Copyright (c) 2023 eeezae; Copyright (c) 2025 ramu; Copyright (c) 2025 dyphire.\nSee THIRD_PARTY.md for provenance.\n${license}`;
+const notices = `Provider adaptations: Copyright (c) 2022 Snd-R; Copyright (c) 2023 eeezae; Copyright (c) 2025 ramu; Copyright (c) 2025 dyphire.\nSee THIRD_PARTY.md for provenance.\nOptional runtime dictionary: EhTagTranslation/Database, copyright its contributors, CC BY-NC-SA 3.0 (separate from code MIT).\nSource: https://github.com/EhTagTranslation/Database\nData license: https://github.com/EhTagTranslation/Database/blob/master/LICENSE.md\n${license}`;
 await build({
   entryPoints: ['src/entry.ts'], bundle: true, format: 'iife', target: 'es2022',
   outfile: 'dist/komga-metadata.user.js', banner: { js: `${header}\n/*!\n${notices}*/` },

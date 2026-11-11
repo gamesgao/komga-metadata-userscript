@@ -45,10 +45,11 @@ Optional EH Chinese-tag projection downloads the official
 licensed under [CC BY-NC-SA 3.0](https://github.com/EhTagTranslation/Database/blob/master/LICENSE.md),
 subject to any entry-specific notices. It is not relicensed under this project's MIT license.
 The dictionary and derived name-only GM cache are not included in this repository
-or Release assets. Attribution and the source/license link appear in the UI.
+or Release assets. Attribution and source/license links are retained in this
+document and the generated userscript's legal notice, not the operation UI.
 Upstream requests a project-introduction Issue from downstream users; no such
 Issue is submitted automatically by this software.
 
-The independent TypeScript mapper uses namespace-exact lookups. Its user-selectable
+The independent TypeScript mapper uses namespace-exact lookups. Its fixed
 compact policy removes descriptive namespace prefixes only after a dictionary hit,
 does not copy komf-rs's namespace/tag exclusion lists, and leaves source records intact.
