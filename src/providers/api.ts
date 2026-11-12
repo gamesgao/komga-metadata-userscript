@@ -117,7 +117,8 @@ export class MangaUpdates implements Provider {
     r.authors = list(x.authors).map(v => { const a = obj(v); return { name: required(a.name), role: str(a.type).toLowerCase() === 'artist' ? 'penciller' : 'writer' }; });
     const publishers = list(x.publishers).map(v => str(obj(v).publisher_name)).filter(Boolean);
     r.publisher = publishers.length ? publishers.join(', ') : undefined;
-    addCover(r, x.image && obj(obj(x.image).url).original);
+    const images = obj(obj(x.image ?? {}).url ?? {});
+    addCover(r, images.original || images.thumb);
     return r;
   }
 }

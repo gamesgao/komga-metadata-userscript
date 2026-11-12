@@ -510,6 +510,30 @@ test('same-provider multi-select and per-column preview single/merge semantics',
   expect(series.metadata.tags).toEqual(['shared','second']); expect(book.metadata.tags).toEqual(['shared','first','second']);
 });
 
+test('MU/Baka/AniList covers remain selectable with Other and all text languages disabled',async({page})=>{
+  await install(page);
+  await page.route('https://api.mangaupdates.com/v1/series/1',route=>route.fulfill({json:{series_id:1,title:'日本語の作品',url:'https://www.mangaupdates.com/series/0000001',image:{url:{thumb:`${base}/fixture-cover.png?mu`}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://api.mangabaka.org/v1/series/1**',route=>route.fulfill({json:route.request().url().includes('/images')?{data:[],pagination:{next:null}}:{data:{id:1,title:'日本語の作品',cover:{raw:{url:`${base}/fixture-cover.png?baka`}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://graphql.anilist.co',route=>route.fulfill({json:{data:{Media:{id:1,siteUrl:'https://anilist.co/manga/1',title:{native:'日本語の作品'},coverImage:{large:`${base}/fixture-cover.png?ani`},startDate:{},staff:{edges:[],pageInfo:{hasNextPage:false}}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByText('接受的资料语言',{exact:true}).click();await page.getByLabel('其他语言',{exact:true}).uncheck();
+  await page.getByText('通过链接或 ID 读取',{exact:true}).click();
+  for(const [index,provider] of ['mangaupdates','mangabaka','anilist'].entries()){
+    await page.getByLabel('来源',{exact:true}).selectOption(provider);await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('1');await page.getByRole('button',{name:'读取',exact:true}).click();
+    await expect(page.locator(`.candidate[data-key="${provider}:1"]`)).toHaveAttribute('aria-pressed','true');
+    await expect(page.getByLabel('使用哪张封面',{exact:true}).locator('option')).toHaveCount(index+2);
+  }
+  const cover=page.getByLabel('使用哪张封面',{exact:true});await cover.selectOption('1');
+  for(const box of await page.locator('.language-options input').all())await box.uncheck();
+  await expect(cover.locator('option')).toHaveCount(4);await expect(cover).toHaveValue('1');
+  for(const box of await page.locator('.field-grid input').all())await box.uncheck();
+  for(const value of ['0','1','2']){
+    await cover.selectOption(value);await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
+    if(value!=='2')await page.getByRole('button',{name:'返回选项'}).click();
+  }
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);expect(patches).toEqual([]);
+});
+
 test('ordered languages persist, direct cards toggle, source links open without selection changes, tooltips stay titles', async ({page}) => {
   await install(page); coverFails=true;
   await page.context().route('https://bgm.tv/subject/1',route=>route.fulfill({contentType:'text/html',body:'<h1>Fixture source</h1>'}));

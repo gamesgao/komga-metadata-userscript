@@ -1,5 +1,5 @@
 import { type MetadataRecord, type AcceptedLanguage, MetadataError, nativeTitle } from './model';
-import { languageFields, acceptedTitles, allLanguages, accepted, languageOf, languageRank } from './languages';
+import { languageFields, acceptedTitles, allLanguages, languageOf, languageRank } from './languages';
 import { type Metadata, type Value } from './komga';
 import { isVolumeRecord, seriesFields, bookFields, type Field, equal } from './plan';
 export const mergeFields: Field[] = [...new Set<Field>([...seriesFields, ...bookFields])];
@@ -52,7 +52,8 @@ export function mergeRecords(records: MetadataRecord[], choices: FieldChoices = 
     } else { values[field] = entries[0]!.value; used[field] = [entries[0]!.provider]; }
   }
   const covers: Merged['covers'] = [];
-  for (const r of records) for (const cover of r.covers) if (accepted('', cover.language, languages) && !covers.some(c => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+  // Text preferences can rank covers, never remove an available image.
+  for (const r of records) for (const cover of r.covers) if (!covers.some(c => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
   covers.sort((a, b) => languageRank('', a.cover.language, languages) - languageRank('', b.cover.language, languages));
   return { record: { ...records[0]!, covers: covers.map(c => c.cover) }, values, used, options, covers };
 }

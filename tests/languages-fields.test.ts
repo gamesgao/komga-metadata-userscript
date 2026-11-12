@@ -10,11 +10,18 @@ describe('language-aware existing source values (not translation)',()=>{
   expect(languageOf('','jp')).toBe('ja');expect(languageOf('','ch')).toBe('zh');expect(languageOf('','zh-Hant')).toBe('zh');expect(languageOf('','ja-ro')).toBe('romaji');
   expect(languageOf('Yamada')).toBe('other');expect(languageOf('山田')).toBe('other');expect(languageOf('物語の始まり')).toBe('ja');
  });
- it('filters titles, summaries, author alternatives and covers without changing original work language',()=>{
+ it('filters text but only sorts covers without hiding other languages',()=>{
   expect(languageFields(r,['en'])).toMatchObject({title:'English title',summary:'An English description',authors:[]});
   expect(languageFields(r,['romaji'])).toMatchObject({title:'Nihongo no Sakuhin',summary:undefined,authors:[{name:'Yamada',role:'writer'}]});
   expect(languageFields(r,['zh']).title).toBe('中文标题');expect(languageFields(r,['ja']).title).toBe('日本語の作品');
-  expect(mergeRecords([r],{},['en']).covers.map(c=>c.cover.url)).toEqual(['https://example.com/b.jpg']);
+  expect(mergeRecords([r],{},['en']).covers.map(c=>c.cover.url)).toEqual(['https://example.com/b.jpg','https://example.com/a.jpg']);
+ });
+ it('keeps MU, MangaBaka and AniList unlabelled covers with Other disabled or all text languages disabled',()=>{
+  const records = (['mangaupdates','mangabaka','anilist'] as const).map(provider=>({...r,provider,covers:[{url:`https://example.com/${provider}.jpg`}]}));
+  for(const languages of [['zh','ja','en'],[]] as import('../src/model').AcceptedLanguage[][]){
+   const result=mergeRecords(records,{},languages);expect(result.covers.map(c=>c.provider)).toEqual(['mangaupdates','mangabaka','anilist']);
+  }
+  expect(mergeRecords([...records,{...records[0]!,id:'2'}],{},['ja']).covers).toHaveLength(3);
  });
  it('does not turn a missing accepted title into an ID or overwrite filtered fields',()=>{
   const result=languageFields({...r,titles:[{text:'Unknown Latin',type:'native'}]},['ja']);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.9.1
+// @version      0.9.2
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -582,7 +582,8 @@ SOFTWARE.
       });
       const publishers = list(x.publishers).map((v) => str(obj(v).publisher_name)).filter(Boolean);
       r.publisher = publishers.length ? publishers.join(", ") : void 0;
-      addCover(r, x.image && obj(obj(x.image).url).original);
+      const images = obj(obj(x.image ?? {}).url ?? {});
+      addCover(r, images.original || images.thumb);
       return r;
     }
   };
@@ -2080,7 +2081,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
     }
     const covers = [];
-    for (const r of records) for (const cover of r.covers) if (accepted("", cover.language, languages) && !covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
+    for (const r of records) for (const cover of r.covers) if (!covers.some((c) => c.cover.url === cover.url)) covers.push({ cover, provider: r.provider });
     covers.sort((a, b) => languageRank("", a.cover.language, languages) - languageRank("", b.cover.language, languages));
     return { record: { ...records[0], covers: covers.map((c) => c.cover) }, values, used, options, covers };
   }

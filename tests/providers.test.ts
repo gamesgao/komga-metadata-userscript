@@ -55,7 +55,12 @@ describe('online providers: fixture behavior, not live acceptance', () => {
     const r = await p.get('1', context());
     expect(r.tags).toEqual(['Magic']); expect(r.authors[0]?.name).toBe('山田'); expect(r.releaseDate).toBeUndefined();
   });
+  it('MangaUpdates uses its real thumbnail when the detail has no original image',async()=>{
+    const r=await new MangaUpdates(mock([{series_id:1,title:'Example',url:'https://www.mangaupdates.com/series/0000001/name',image:{url:{original:'',thumb:'https://cdn.mangaupdates.com/thumb.jpg'}}}])).get('1',context());
+    expect(r.covers).toEqual([{url:'https://cdn.mangaupdates.com/thumb.jpg',volume:undefined,language:undefined}]);
+  });
   it('MangaBaka upgrades multilingual titles, tags, raw covers and explicit volume images', async () => {
+
     const x = { id: 1995, native_title: '葬送のフリーレン', title: 'Frieren', original_language: 'ja', status: 'hiatus', authors: ['山田鐘人'], artists: ['アベツカサ'], tags_v2: [{ name: 'Magic', name_path: 'Theme/Magic', is_genre: false }, { name: 'Fantasy', is_genre: true }], titles: [{ title: '葬送のフリーレン', language: 'ja', type: 'native' }], published: { start_date: '2020-04-28' }, cover: { raw: { url: 'https://images.mangabaka.dev/raw' } }, links_v2: [{ name_display: 'Publisher', url: 'https://publisher.test/' }], publishers: [{ name: '小学館' }] };
     const p = new MangaBaka(mock([{ data: [x] }, { data: x }, { data: [{ index_numeric: 4, language: 'ja', image: { x350: { x3: 'https://cdn.mangabaka.dev/v4' } } }], pagination: { next: null } }]));
     expect((await p.search('Frieren', context()))[0]).toMatchObject({ title: '葬送のフリーレン', cover: 'https://images.mangabaka.dev/raw' });

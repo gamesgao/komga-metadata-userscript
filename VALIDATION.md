@@ -1,5 +1,12 @@
 # Validation ledger
 
+## v0.9.2 cover availability independent of text languages
+
+- Regression-first: the old implementation fails three new assertions (language-only cover filtering, unknown-language covers from MU/Baka/AniList, MU thumbnail-only detail). Fixed by preserving cover candidates and adding the MU fallback; no target/merge-policy changes.
+- 98 core and 23 bundled browser tests plus typecheck pass. New UI flow disables Other, selects all three sources, then disables every text language: all three covers stay selectable, selected image persists, each previews and one writes without metadata PATCH. Existing failed-image/lock/undo coverage passes.
+- Real Tampermonkey + public Frieren records from MU 66296374554, MangaBaka 1995 and AniList 118586: Other disabled, all three selected, 110 available covers; each source's main cover decodes, writes to the isolated One-shot book, both displayed hashes match preview bytes, and undo restores original thumbnail lists/hashes. Metadata remains unchanged. Evidence: ignored `.runtime/acceptance/cover-languages/`.
+- An initial test of a high-resolution specific-volume MangaBaka scan hit the isolated server's HTTP 413 upload-size limit. It was not counted as success; acceptance uses each source's main cover instead. This patch fixes absent choices, not server upload-size limits, and does not claim all 110 images upload successfully.
+
 ## v0.9.1 provider-local status only
 
 - 22 bundled browser tests, eight catalog tests, six release tests and root typecheck pass. Controlled concurrent callbacks assert different source labels retain their own values and no content outside the cards changes; no shared status node exists even hidden. Invalid import errors remain local to the file input.
