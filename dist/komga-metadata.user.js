@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.9.2
+// @version      0.9.3
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -1527,19 +1527,23 @@ SOFTWARE.
   function isVolumeRecord(record2) {
     return record2.volume !== void 0 || record2.provider === "viz" || record2.provider === "ehentai" || record2.id.startsWith("4000-") || record2.id.startsWith("/titles/");
   }
+  function isOneShotTarget(state) {
+    if (!state?.series.oneshot) return false;
+    if (state.books.length !== 1 || state.books[0].seriesId !== state.series.id) throw new MetadataError("invalid-response", "One-shot \u5FC5\u987B\u6709\u552F\u4E00\u5B9E\u9645\u5173\u8054\u4E66\u7C4D");
+    return true;
+  }
   function buildPlan(state, record2, selection) {
     const plan = { seriesId: state.series.id, edits: [], skipped: [] };
     const incoming = selection.mergedFields ?? mappedFields(record2);
     let chosen = selection.bookId ? state.books.find((b) => b.id === validId(selection.bookId)) : void 0;
     if (selection.bookId && !chosen) throw new MetadataError("invalid-id", "\u6240\u9009\u4E66\u7C4D\u4E0D\u5C5E\u4E8E\u5F53\u524D\u7CFB\u5217");
-    if (!chosen && selection.verifiedVolume !== void 0) {
+    if (isOneShotTarget(state)) {
+      chosen = state.books[0];
+      plan.oneShotBookId = chosen.id;
+    } else if (!chosen && selection.verifiedVolume !== void 0) {
       const matched = state.books.filter((b) => typeof b.metadata.number === "string" && /^\d+(?:\.\d+)?$/.test(b.metadata.number) && Number(b.metadata.number) === selection.verifiedVolume);
       if (matched.length !== 1 || record2.volume !== selection.verifiedVolume) throw new MetadataError("invalid-id", "\u5377\u53F7\u672A\u9A8C\u8BC1\u6216\u4E0D\u552F\u4E00\uFF0C\u8BF7\u660E\u786E\u9009\u62E9\u4E66\u7C4D ID");
       chosen = matched[0];
-    }
-    if (state.series.oneshot) {
-      if (state.books.length !== 1) throw new MetadataError("invalid-response", "One-shot \u5FC5\u987B\u6709\u552F\u4E00\u5B9E\u9645\u5173\u8054\u4E66\u7C4D");
-      chosen = state.books[0];
     }
     const add = (target, old, fields) => {
       const before = {}, after = {}, guards = {};
@@ -1685,6 +1689,7 @@ SOFTWARE.
       const result = { status: "error", outcomes: [], snapshots: [], covers: [] };
       try {
         const fresh = await this.client.state(plan.seriesId, signal);
+        if (plan.oneShotBookId && (!isOneShotTarget(fresh) || fresh.books[0].id !== plan.oneShotBookId)) throw new MetadataError("conflict", "One-shot \u76EE\u6807\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u9884\u89C8");
         for (const e of plan.edits) {
           if (e.target.kind === "books" && !fresh.books.some((b) => b.id === e.target.id)) throw new MetadataError("conflict", "\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
           await this.metadataGuard(e, signal);
@@ -2057,10 +2062,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     if (Array.isArray(values[0])) return union(field, values);
     return [...new Set(values.filter((v) => typeof v === "string").map((v) => v.trim()).filter(Boolean))].join(field === "summary" ? "\n\n" : " / ");
   }
-  function mergeRecords(records, choices = {}, languages = allLanguages) {
+  function mergeRecords(records, choices = {}, languages = allLanguages, target) {
     if (!records.length) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
-    if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError("verification", "\u4E0D\u80FD\u628A\u6574\u90E8\u4F5C\u54C1\u548C\u5355\u5377\u6761\u76EE\u6DF7\u5408\uFF1B\u8BF7\u5148\u79FB\u9664\u4E0D\u540C\u5C42\u7EA7\u7684\u6761\u76EE");
-    if (new Set(records.map((r) => r.volume).filter((v) => v !== void 0)).size > 1) throw new MetadataError("verification", "\u9009\u4E2D\u4E86\u4E0D\u540C\u5377\u53F7\uFF0C\u4E0D\u80FD\u5408\u5E76\u5230\u540C\u4E00\u672C\u4E66");
+    if (!isOneShotTarget(target)) {
+      if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError("verification", "\u4E0D\u80FD\u628A\u6574\u90E8\u4F5C\u54C1\u548C\u5355\u5377\u6761\u76EE\u6DF7\u5408\uFF1B\u8BF7\u5148\u79FB\u9664\u4E0D\u540C\u5C42\u7EA7\u7684\u6761\u76EE");
+      if (new Set(records.map((r) => r.volume).filter((v) => v !== void 0)).size > 1) throw new MetadataError("verification", "\u9009\u4E2D\u4E86\u4E0D\u540C\u5377\u53F7\uFF0C\u4E0D\u80FD\u5408\u5E76\u5230\u540C\u4E00\u672C\u4E66");
+    }
     const mapped = records.map((r) => ({ r, value: languageFields(r, languages) }));
     const values = {}, used = {}, options = {};
     for (const field of mergeFields) {
@@ -2779,7 +2786,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const existing = next.findIndex((s) => sourceKey(s.record) === sourceKey(record2));
       if (existing < 0) next.push({ record: record2, provider });
       else next[existing] = { record: record2, provider };
-      mergeRecords(next.map((s) => s.record));
+      mergeRecords(next.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
       if (![...this.results.querySelectorAll(".candidate")].some((e) => e.dataset.key === sourceKey(record2))) {
         let group = [...this.results.querySelectorAll(".result-group")].find((e) => e.dataset.provider === record2.provider);
         if (!group) {
@@ -2832,7 +2839,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.previewButton.disabled = true;
         return;
       }
-      this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
+      this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
       this.selected = this.merged.record;
       for (const { record: r, provider } of this.selections) {
         if (r.books?.length) {
@@ -2854,6 +2861,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.invalidate();
       if (!this.selected || !this.seriesId) throw new MetadataError("verification", "\u5148\u9009\u62E9\u5019\u9009");
       if (currentSeries(location, document) !== this.seriesId) throw new MetadataError("conflict", "\u9875\u9762\u7CFB\u5217\u53D8\u5316\uFF0C\u8BF7\u5173\u95ED\u540E\u91CD\u65B0\u542F\u52A8");
+      this.state = await this.client.state(this.seriesId, this.signal);
       let translationWarning;
       if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get("tags")?.checked && this.selections.some((s) => s.record.provider === "ehentai" && s.record.tags.length)) {
         this.status.textContent = "\u6B63\u5728\u51C6\u5907\u4E2D\u6587\u6807\u7B7E\u8BCD\u5E93\u2026";
@@ -2863,13 +2871,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
           return projected.record;
         });
-        this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages);
+        this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
         this.selected = this.merged.record;
         translationWarning = loaded.warning;
         this.status.textContent = "";
-      } else this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
+      } else this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
       this.selected = this.merged.record;
-      this.state = await this.client.state(this.seriesId, this.signal);
       const [kind, id] = this.coverTarget.value.split(":");
       const plan = buildPlan(this.state, this.selected, {
         fields: [...this.fields].filter(([, i]) => i.checked).map(([f]) => f),

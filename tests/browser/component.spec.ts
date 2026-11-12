@@ -510,6 +510,28 @@ test('same-provider multi-select and per-column preview single/merge semantics',
   expect(series.metadata.tags).toEqual(['shared','second']); expect(book.metadata.tags).toEqual(['shared','first','second']);
 });
 
+for(const reverse of [false,true])test(`One-shot mixed MU/EH selection and writeback, reverse=${reverse}`,async({page})=>{
+  await install(page);
+  await page.route('https://api.mangaupdates.com/v1/series/1',route=>route.fulfill({json:{series_id:1,title:'日本語の作品',url:'https://www.mangaupdates.com/series/0000001',categories:[{category:'source-tag'}],image:{url:{original:`${base}/fixture-cover.png`}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://api.e-hentai.org/api.php',route=>route.fulfill({json:{gmetadata:[{gid:1,token:'aaaaaaaaaa',title:'Gallery',title_jpn:'日本語の作品',tags:['female:glasses'],thumb:`${base}/fixture-cover.png?eh`}]},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://github.com/EhTagTranslation/Database/releases/latest/download/db.text.json',route=>route.fulfill({json:ehDictionary,headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByText('通过链接或 ID 读取',{exact:true}).click();
+  const sources=[['mangaupdates','1'],['ehentai','1:aaaaaaaaaa']];if(reverse)sources.reverse();
+  for(const [provider,id] of sources){await page.getByLabel('来源',{exact:true}).selectOption(provider!);await page.getByRole('textbox',{name:'来源链接或 ID'}).fill(id!);await page.getByRole('button',{name:'读取',exact:true}).click();await expect(page.locator(`.candidate[data-key="${provider}:${id}"]`)).toHaveAttribute('aria-pressed','true');}
+  for(const box of await page.locator('.field-grid input').all())await box.setChecked(await box.getAttribute('aria-label')==='标签');
+  const cover=page.getByLabel('使用哪张封面',{exact:true});const value=await cover.locator('option').filter({hasText:'mangaupdates'}).getAttribute('value');await cover.selectOption(value!);
+  await page.getByRole('button',{name:'生成预览'}).click();await expect(page.locator('textarea[data-field=tags]')).toHaveCount(2);
+  for(const box of await page.locator('textarea[data-field=tags]').all())expect(JSON.parse(await box.inputValue())).toEqual(expect.arrayContaining(['source-tag','眼镜']));
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);expect(patches).toHaveLength(2);
+  expect(patches.map(p=>p.path).sort()).toEqual(['/reader/api/v1/books/book-actual/metadata','/reader/api/v1/series/s-real/metadata']);
+});
+
+test('One-shot target changed after mixed preview blocks all writes',async({page})=>{
+  await install(page);await readAndPreview(page,true);series.oneshot=false;
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.locator('.status')).toContainText('One-shot 目标已变化');expect(patches).toEqual([]);expect(uploaded).toEqual([]);
+});
+
 test('MU/Baka/AniList covers remain selectable with Other and all text languages disabled',async({page})=>{
   await install(page);
   await page.route('https://api.mangaupdates.com/v1/series/1',route=>route.fulfill({json:{series_id:1,title:'日本語の作品',url:'https://www.mangaupdates.com/series/0000001',image:{url:{thumb:`${base}/fixture-cover.png?mu`}}},headers:{'Access-Control-Allow-Origin':'*'}}));

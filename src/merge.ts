@@ -1,7 +1,7 @@
 import { type MetadataRecord, type AcceptedLanguage, MetadataError, nativeTitle } from './model';
 import { languageFields, acceptedTitles, allLanguages, languageOf, languageRank } from './languages';
-import { type Metadata, type Value } from './komga';
-import { isVolumeRecord, seriesFields, bookFields, type Field, equal } from './plan';
+import { type Metadata, type Value, type State } from './komga';
+import { isVolumeRecord, isOneShotTarget, seriesFields, bookFields, type Field, equal } from './plan';
 export const mergeFields: Field[] = [...new Set<Field>([...seriesFields, ...bookFields])];
 export const sourceKey = (r: MetadataRecord): string => `${r.provider}:${r.id}`;
 export type FieldChoices = Partial<Record<Field, string>>;
@@ -29,12 +29,14 @@ export function combineField(field: Field, values: Value[]): Value | undefined {
   if (Array.isArray(values[0])) return union(field, values);
   return [...new Set(values.filter((v): v is string => typeof v === 'string').map(v => v.trim()).filter(Boolean))].join(field === 'summary' ? '\n\n' : ' / ');
 }
-/** Caller confirms same work/edition. Never mix series with volume records,
- * or different explicit volumes. Order is user-selected source priority. */
-export function mergeRecords(records: MetadataRecord[], choices: FieldChoices = {}, languages: AcceptedLanguage[] = allLanguages): Merged {
+/** A verified One-shot target accepts field candidates from any source scope.
+ * Ordinary series retain scope/volume protection. Same-language ties keep selection order. */
+export function mergeRecords(records: MetadataRecord[], choices: FieldChoices = {}, languages: AcceptedLanguage[] = allLanguages, target?: State): Merged {
   if (!records.length) throw new MetadataError('verification', '先选择候选');
-  if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError('verification', '不能把整部作品和单卷条目混合；请先移除不同层级的条目');
-  if (new Set(records.map(r => r.volume).filter(v => v !== undefined)).size > 1) throw new MetadataError('verification', '选中了不同卷号，不能合并到同一本书');
+  if (!isOneShotTarget(target)) {
+    if (new Set(records.map(isVolumeRecord)).size > 1) throw new MetadataError('verification', '不能把整部作品和单卷条目混合；请先移除不同层级的条目');
+    if (new Set(records.map(r => r.volume).filter(v => v !== undefined)).size > 1) throw new MetadataError('verification', '选中了不同卷号，不能合并到同一本书');
+  }
   const mapped = records.map(r => ({ r, value: languageFields(r, languages) }));
   const values: Metadata = {}, used: Merged['used'] = {}, options: Merged['options'] = {};
   for (const field of mergeFields) {

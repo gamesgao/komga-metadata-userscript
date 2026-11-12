@@ -1,5 +1,11 @@
 # Validation ledger
 
+## v0.9.3 target-aware One-shot composition
+
+- 99 core tests, 26 bundled browser tests, typecheck and six release tests pass. Covers MU/EH selection in both orders, Chinese tag projection, both metadata targets, one cover upload, unchanged ordinary-series mixed-scope/different-volume rejection, invalid One-shot cardinality/ownership, locked fields and target changes before apply (zero writes).
+- `acceptance/oneshot_mixed.py`: actual public MU series and a public Non-H EH gallery, synthetic isolated One-shot, real Tampermonkey. Both selection orders pass; field single/merge controls work, locked title/summary preserved, series/book tag readback and displayed-cover hashes verified, undo restores editable metadata and original thumbnail selection, unrelated books unchanged.
+- The real records deliberately exercise scope composition, not entity resolution; they are not claimed to be the same work. Only synthetic local books were written. Undo comparison excludes server-managed `lastModified`, which necessarily advances after writes. Evidence is under ignored `.runtime/acceptance/oneshot-mixed/`.
+
 ## v0.9.2 cover availability independent of text languages
 
 - Regression-first: the old implementation fails three new assertions (language-only cover filtering, unknown-language covers from MU/Baka/AniList, MU thumbnail-only detail). Fixed by preserving cover candidates and adding the MU fallback; no target/merge-policy changes.

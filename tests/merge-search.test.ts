@@ -30,6 +30,20 @@ describe('multi-source merge', () => {
     a.volume = 1; expect(() => mergeRecords([a, b])).toThrow('不同卷号');
     a.volume = 2; expect(mergeRecords([a, b]).record.volume).toBe(2);
   });
+  it('One-shot accepts series/gallery and different source volumes in either order with explicit field choices',()=>{
+    const state={series:{id:'s',oneshot:true,metadata:{title:'Locked',titleLock:true,tags:[]}},books:[{id:'b',seriesId:'s',metadata:{number:'1',title:'Book',tags:[],isbn:'old'}}]};
+    const a=record('mangaupdates'),b={...record('ehentai'),volume:7,isbn:'9780000000001',tags:['gallery']};
+    for(const records of [[a,b],[b,a]]){
+      const merged=mergeRecords(records,{summary:sourceKey(a)},undefined,state);
+      const p=buildPlan(state,merged.record,{fields:['title','summary','tags','isbn'],mergedFields:merged.values,verifiedVolume:99,cover:{url:'https://example.test/cover.jpg'}});
+      expect(p.oneShotBookId).toBe('b');expect(p.edits.map(e=>e.target)).toEqual([{kind:'series',id:'s'},{kind:'books',id:'b'}]);
+      expect(p.edits.every(e=>!('title' in e.after))).toBe(true);expect(p.edits[1]!.after.isbn).toBe(b.isbn);
+      expect(p.edits.every(e=>e.after.summary===a.summary)).toBe(true);expect(p.cover?.target).toEqual({kind:'books',id:'b'});expect(p.cover?.sharedSeries).toEqual({kind:'series',id:'s'});
+    }
+    expect(mergeRecords([{...a,volume:1},b],{},undefined,state).options.isbn).toHaveLength(1);
+    expect(()=>mergeRecords([a,b],{},undefined,{...state,series:{...state.series,oneshot:false}})).toThrow('整部作品和单卷');
+    for(const books of [[],[...state.books,...state.books],[{...state.books[0]!,seriesId:'foreign'}]]) expect(()=>mergeRecords([a,b],{},undefined,{...state,books})).toThrow('唯一实际关联书籍');
+  });
   it('merged values still respect every series/book lock and only update selected targets', () => {
     const m = mergeRecords([record(), record('anilist')]);
     const state = { series: { id: 's', oneshot: false, metadata: { title: 'Manual', titleLock: true, tags: ['keep'], tagsLock: true } }, books: [{ id: 'b', seriesId: 's', metadata: { authors: [], authorsLock: true } }] };

@@ -16,7 +16,7 @@ export interface CoverEdit {
   prepared?: { url: string; blob: Blob; hash: string };
   sharedSeries?: Target;
 }
-export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; skipped: string[] }
+export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; skipped: string[]; oneShotBookId?: string }
 export function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false;
@@ -64,20 +64,24 @@ export function mappedFields(r: MetadataRecord): Metadata {
 export function isVolumeRecord(record: MetadataRecord): boolean {
   return record.volume !== undefined || record.provider === 'viz' || record.provider === 'ehentai' || record.id.startsWith('4000-') || record.id.startsWith('/titles/');
 }
+export function isOneShotTarget(state?: State): boolean {
+  if (!state?.series.oneshot) return false;
+  if (state.books.length !== 1 || state.books[0]!.seriesId !== state.series.id) throw new MetadataError('invalid-response', 'One-shot 必须有唯一实际关联书籍');
+  return true;
+}
 export function buildPlan(state: State, record: MetadataRecord, selection: Selection): Plan {
   const plan: Plan = { seriesId: state.series.id, edits: [], skipped: [] };
   const incoming = selection.mergedFields ?? mappedFields(record);
   let chosen = selection.bookId ? state.books.find(b => b.id === validId(selection.bookId!)) : undefined;
   if (selection.bookId && !chosen) throw new MetadataError('invalid-id', '所选书籍不属于当前系列');
-  if (!chosen && selection.verifiedVolume !== undefined) {
+  if (isOneShotTarget(state)) {
+    chosen = state.books[0]; plan.oneShotBookId = chosen!.id;
+  } else if (!chosen && selection.verifiedVolume !== undefined) {
     const matched = state.books.filter(b => typeof b.metadata.number === 'string' && /^\d+(?:\.\d+)?$/.test(b.metadata.number) && Number(b.metadata.number) === selection.verifiedVolume);
     if (matched.length !== 1 || record.volume !== selection.verifiedVolume) throw new MetadataError('invalid-id', '卷号未验证或不唯一，请明确选择书籍 ID');
     chosen = matched[0];
   }
-  if (state.series.oneshot) {
-    if (state.books.length !== 1) throw new MetadataError('invalid-response', 'One-shot 必须有唯一实际关联书籍');
-    chosen = state.books[0];
-  }
+
   const add = (target: Target, old: Metadata, fields: readonly Field[]) => {
     const before: Metadata = {}, after: Metadata = {}, guards: Metadata = {};
     for (const field of fields) {

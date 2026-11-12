@@ -429,7 +429,7 @@ export class Panel {
     const next = [...this.selections];
     const existing = next.findIndex(s => sourceKey(s.record) === sourceKey(record));
     if (existing < 0) next.push({ record, provider }); else next[existing] = { record, provider };
-    mergeRecords(next.map(s => s.record)); // reject incompatible scopes before changing selection
+    mergeRecords(next.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
     // Direct links/associated volumes must also have a left-hand toggle card.
     if (![...this.results.querySelectorAll<HTMLElement>('.candidate')].some(e => e.dataset.key === sourceKey(record))) {
       let group = [...this.results.querySelectorAll<HTMLDetailsElement>('.result-group')].find(e => e.dataset.provider === record.provider);
@@ -454,7 +454,7 @@ export class Panel {
     this.cover.replaceChildren(); option(this.cover, '', '不修改封面');
     this.results.querySelectorAll<HTMLButtonElement>('.candidate').forEach(e => e.setAttribute('aria-pressed', String(this.selections.some(s => sourceKey(s.record) === e.dataset.key))));
     if (!this.selections.length) { this.selected = undefined; this.merged = undefined; this.previewButton.disabled = true; return; }
-    this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
+    this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
     this.selected = this.merged.record;
 
     for (const { record: r, provider } of this.selections) {
@@ -474,6 +474,7 @@ export class Panel {
     if (!this.selected || !this.seriesId) throw new MetadataError('verification', '先选择候选');
 
     if (currentSeries(location, document) !== this.seriesId) throw new MetadataError('conflict', '页面系列变化，请关闭后重新启动');
+    this.state = await this.client.state(this.seriesId, this.signal);
     let translationWarning: string | undefined;
     if (wantsChineseTags(this.settings.acceptedLanguages ?? allLanguages) && this.fields.get('tags')?.checked && this.selections.some(s => s.record.provider === 'ehentai' && s.record.tags.length)) {
       this.status.textContent = '正在准备中文标签词库…';
@@ -483,12 +484,11 @@ export class Panel {
         for (const [raw, translated] of projected.replacements) this.tagReplacements.set(raw, translated);
         return projected.record;
       });
-      this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages); this.selected = this.merged.record;
+      this.merged = mergeRecords(records, {}, this.settings.acceptedLanguages ?? allLanguages, this.state); this.selected = this.merged.record;
       translationWarning = loaded.warning;
       this.status.textContent = '';
-    } else this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages);
+    } else this.merged = mergeRecords(this.selections.map(s => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
     this.selected = this.merged.record;
-    this.state = await this.client.state(this.seriesId, this.signal);
     const [kind, id] = this.coverTarget.value.split(':');
     const plan = buildPlan(this.state, this.selected, {
       fields: [...this.fields].filter(([, i]) => i.checked).map(([f]) => f),

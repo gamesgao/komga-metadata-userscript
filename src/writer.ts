@@ -1,7 +1,7 @@
 import { cancelled, MetadataError } from './model';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { type KomgaClient, type Metadata, type Target } from './komga';
-import { equal, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
+import { equal, isOneShotTarget, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
 import type { Transport } from './transport';
 export interface Snapshot { target: Target; before: Metadata; after: Metadata }
 export interface CoverSnapshot { target: Target; previous?: string; previousHash?: string; uploaded: string; uploadedHash: string; sharedSeries?: Target }
@@ -101,6 +101,7 @@ export class Writer {
     try {
       // Preflight every target before writing any target, then reread each immediately before write.
       const fresh = await this.client.state(plan.seriesId, signal);
+      if (plan.oneShotBookId && (!isOneShotTarget(fresh) || fresh.books[0]!.id !== plan.oneShotBookId)) throw new MetadataError('conflict', 'One-shot 目标已变化，请重新预览');
       for (const e of plan.edits) {
         if (e.target.kind === 'books' && !fresh.books.some(b => b.id === e.target.id)) throw new MetadataError('conflict', '书籍归属已变化');
         await this.metadataGuard(e, signal);
