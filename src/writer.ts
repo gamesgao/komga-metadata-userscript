@@ -1,7 +1,7 @@
 import { cancelled, MetadataError } from './model';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { type KomgaClient, type Metadata, type Target } from './komga';
-import { equal, isOneShotTarget, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
+import { equal, isOneShotTarget, plannedCovers, normalizeWriteFields, type Plan, type Edit, type CoverEdit } from './plan';
 import type { Transport } from './transport';
 export interface Snapshot { target: Target; before: Metadata; after: Metadata }
 export interface CoverSnapshot { target: Target; previous?: string; previousHash?: string; uploaded: string; uploadedHash: string; sharedSeries?: Target }
@@ -68,8 +68,8 @@ export class Writer {
     if ((blob ? await hash(blob) : undefined) !== expected) throw new MetadataError('conflict', 'One-shot 系列与书籍封面读回不一致');
   }
   async prepare(plan: Plan, signal: AbortSignal): Promise<Plan> {
-    if (plan.cover) {
-      const cover = plan.cover; cover.prepared = undefined;
+    for (const cover of plannedCovers(plan)) {
+      cover.prepared = undefined;
       const blob = await this.image(cover.source.url, signal);
       const selected = (await this.client.thumbnails(cover.target, signal)).find(t => t.selected);
       cover.beforeSelected = selected?.id;
@@ -94,7 +94,9 @@ export class Writer {
   private seriesId = '';
   async apply(plan: Plan, signal: AbortSignal): Promise<Result> {
     if (this.busy) throw new MetadataError('unavailable', '写入任务进行中');
-    if (!plan.edits.length && !plan.cover) throw new MetadataError('verification', '没有选中可写变更');
+    const covers = plannedCovers(plan);
+    if (!plan.edits.length && !covers.length) throw new MetadataError('verification', '没有选中可写变更');
+    if (new Set(covers.map(c => `${c.target.kind}:${c.target.id}`)).size !== covers.length) throw new MetadataError('verification', '同一目标只能选择一张封面');
     for (const edit of plan.edits) edit.after = normalizeWriteFields(edit.after);
     this.busy = true; this.seriesId = plan.seriesId;
     const result: Result = { status: 'error', outcomes: [], snapshots: [], covers: [] };
@@ -106,8 +108,8 @@ export class Writer {
         if (e.target.kind === 'books' && !fresh.books.some(b => b.id === e.target.id)) throw new MetadataError('conflict', '书籍归属已变化');
         await this.metadataGuard(e, signal);
       }
-      if (plan.cover) {
-        const cover = plan.cover;
+      for (const cover of covers) {
+        if (cover.target.kind === 'series' && cover.target.id !== plan.seriesId) throw new MetadataError('conflict', '封面系列目标已变化');
         if (cover.target.kind === 'books' && !fresh.books.some(b => b.id === cover.target.id)) throw new MetadataError('conflict', '封面书籍归属已变化');
         const metadata = await this.client.read(cover.target, signal);
         if (metadata.thumbnailLock || fresh.series.metadata.thumbnailLock) throw new MetadataError('conflict', '封面已锁定');
@@ -126,8 +128,7 @@ export class Writer {
           outcome(result, e.target, 'metadata');
         } catch (error) { outcome(result, e.target, 'metadata', error); if (signal.aborted) break; }
       }
-      if (plan.cover) {
-        const edit = plan.cover;
+      for (const edit of covers) {
         let own: string | undefined;
         try {
           cancelled(signal);

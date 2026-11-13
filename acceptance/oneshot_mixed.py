@@ -29,8 +29,8 @@ def run():
      expect(panel.locator(f'.candidate[data-key="{provider}:{id}"]')).to_have_attribute('aria-pressed','true',timeout=90000)
     expect(panel.locator('.candidate[aria-pressed=true]')).to_have_count(2)
     flows.select_fields(panel,{'tags','title','summary'})
-    cover=panel.get_by_label('使用哪张封面',exact=True);value=cover.locator('option').filter(has_text='mangaupdates').first.get_attribute('value');cover.select_option(value)
     flows.preview(panel);expect(panel.locator('textarea[data-field=title],textarea[data-field=summary]')).to_have_count(0)
+    flows.select_cover(panel,'mangaupdates')
     expected=[]
     for index in range(2):
      row=panel.locator(f'.row:has(textarea[data-field=tags][data-edit="{index}"])');row.get_by_label('标签处理方式',exact=True).select_option('single');row.get_by_label('标签来源',exact=True).select_option('ehentai:373840:dd4812711c')

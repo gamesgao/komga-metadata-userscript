@@ -41,6 +41,15 @@ def preview(panel):
  panel.get_by_role('heading',name='确认更改',exact=True).wait_for(timeout=20000)
 
 
+def select_cover(panel,provider,target=None):
+ field=panel.locator(f'.cover-preview[data-cover-target="{target}"]') if target else panel.locator('.cover-preview')
+ source=field.get_by_label('封面来源',exact=True)
+ value=source.locator('option').filter(has_text=provider+' ·').first.get_attribute('value')
+ assert value
+ source.select_option(value)
+ field.get_by_role('img',name='替换为',exact=True).wait_for(state='visible',timeout=90000)
+ return field
+
 def wait_action(page,button,allow_partial=False):
  panel=page.locator('#komga-metadata-panel');panel.get_by_role('button',name=button,exact=True).click()
  deadline=time.monotonic()+35
@@ -92,21 +101,17 @@ def run():
    assert metadata(page,'series',series_id)['tags']==before['tags']
    assert metadata(page,'books',books[1])['authors']==old1['authors']
    report['checks'].append('Undo via actual UI restores only fields written by this run')
-   for sid,target,kind,tid in [(series_id,'series','series',series_id),(series_id,'book','books',books[1]),(oneshot_id,'book','books',one_book)]:
+   for sid,target,kind,tid in [(series_id,'series','series',series_id),(series_id,'book','books',books[1]),(series_id,'both','books',books[0]),(oneshot_id,'book','books',one_book)]:
     panel=source_record(page,sid);select_fields(panel,{'tags'} if sid==oneshot_id else set())
     if kind=='books' and sid!=oneshot_id:panel.get_by_role('combobox',name='同时更新哪本书',exact=True).select_option(tid)
-    cover=panel.get_by_role('combobox',name='使用哪张封面',exact=True)
-    cover.select_option(index=1)
-    targets=panel.get_by_role('combobox',name='替换哪个封面',exact=True)
-    options=targets.locator('option').evaluate_all('(es)=>es.map(e=>({v:e.value,t:e.textContent}))')
-    value='both' if sid==oneshot_id else f'{kind}:{tid}'
-    assert value in [x['v'] for x in options],options
-    targets.select_option(value)
-    pairs=[('series',sid),('books',tid)] if sid==oneshot_id else [(kind,tid)]
+
+    pairs=[('series',sid),('books',tid)] if sid==oneshot_id or target=='both' else [(kind,tid)]
     before_covers={(k,i):api(page,f'/{k}/{i}/thumbnails') for k,i in pairs}
     before_display={(k,i):displayed_hash(page,k,i) for k,i in pairs}
     before_tags={(k,i):metadata(page,k,i).get('tags',[]) for k,i in pairs}
-    preview(panel);wait_action(page,'应用')
+    preview(panel);select_cover(panel,'bangumi',f'{kind}:{tid}')
+    if target=='both':select_cover(panel,'bangumi',f'series:{sid}')
+    wait_action(page,'应用')
     for k,i in pairs:
      thumbnails=before_covers[k,i];selected=next((x['id'] for x in thumbnails if x['selected']),None)
      now=api(page,f'/{k}/{i}/thumbnails')
@@ -122,7 +127,7 @@ def run():
      assert next((x['id'] for x in restored if x['selected']),None)==selected
      assert displayed_hash(page,k,i)==before_display[k,i]
      if sid==oneshot_id:assert metadata(page,k,i)['tags']==before_tags[k,i]
-    report['checks'].append('Live cover download/upload/readback/select/undo: '+('One-Shot book upload -> BOTH displayed-cover SHA256 match; BOTH metadata targets updated and restored' if sid==oneshot_id else kind))
+    report['checks'].append('Live cover download/upload/readback/select/undo: '+('One-Shot book upload -> BOTH displayed-cover SHA256 match; BOTH metadata targets updated and restored' if sid==oneshot_id else 'series + book independently in one apply' if target=='both' else kind))
    # Real concurrent edit after preview must block overwriting newer data.
    panel=source_record(page,series_id);select_fields(panel,{'tags'});preview(panel)
    manual=['Concurrent:Owner'];patch_metadata(page,'series',series_id,{'tags':manual})

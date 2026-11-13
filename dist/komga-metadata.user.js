@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Komga 元数据
 // @namespace    https://github.com/gamesgao/komga-metadata-userscript
-// @version      0.9.3
+// @version      0.10.0
 // @description  桌面 Komga 多源元数据、离线目录、预览与读回验证
 // @downloadURL  https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.user.js
 // @updateURL    https://github.com/gamesgao/komga-metadata-userscript/releases/latest/download/komga-metadata.meta.js
@@ -120,11 +120,11 @@ SOFTWARE.
 
   // src/transport.ts
   var storage = {
-    get(key2, fallback) {
-      return GM_getValue(key2, fallback);
+    get(key3, fallback) {
+      return GM_getValue(key3, fallback);
     },
-    set(key2, value) {
-      GM_setValue(key2, value);
+    set(key3, value) {
+      GM_setValue(key3, value);
     }
   };
   function safeUrl(input2) {
@@ -938,14 +938,14 @@ SOFTWARE.
       if (this.id === "yenpress") {
         try {
           const source = await this.t.request({ url: `${this.base}/search` }, c.signal);
-          const key2 = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
-          if (!key2) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
+          const key3 = source.text.match(/"search_key"\s*:\s*"(search-[\w-]+)"/)?.[1];
+          if (!key3) throw new MetadataError("unavailable", "YenPress \u516C\u5F00\u641C\u7D22\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u53EF\u7C98\u8D34\u4F5C\u54C1\u94FE\u63A5");
           const x = await json(
             this.t,
             "https://enterprise-search.yenpress.com/api/as/v1/engines/yenpress/search.json",
             c.signal,
             { query: q, filters: { all: [{ type: "series" }] }, page: { size: 20, current: 1 } },
-            { Authorization: `Bearer ${key2}` }
+            { Authorization: `Bearer ${key3}` }
           );
           return Promise.all(arr(x.results).map(async (v) => {
             const row = obj(v), url2 = required(obj(row.url).raw), id = await this.resolveLink(url2);
@@ -1475,6 +1475,9 @@ SOFTWARE.
   // src/plan.ts
   var seriesFields = ["title", "summary", "publisher", "language", "status", "ageRating", "tags", "genres", "links", "alternateTitles"];
   var bookFields = ["title", "summary", "releaseDate", "isbn", "tags", "links", "authors"];
+  function plannedCovers(plan) {
+    return plan.covers ?? (plan.cover ? [plan.cover] : []);
+  }
   function equal(a, b) {
     if (a === b) return true;
     if (a == null || b == null || typeof a !== "object" || typeof b !== "object") return false;
@@ -1654,8 +1657,7 @@ SOFTWARE.
       if ((blob ? await hash(blob) : void 0) !== expected) throw new MetadataError("conflict", "One-shot \u7CFB\u5217\u4E0E\u4E66\u7C4D\u5C01\u9762\u8BFB\u56DE\u4E0D\u4E00\u81F4");
     }
     async prepare(plan, signal) {
-      if (plan.cover) {
-        const cover = plan.cover;
+      for (const cover of plannedCovers(plan)) {
         cover.prepared = void 0;
         const blob = await this.image(cover.source.url, signal);
         const selected = (await this.client.thumbnails(cover.target, signal)).find((t) => t.selected);
@@ -1682,7 +1684,9 @@ SOFTWARE.
     seriesId = "";
     async apply(plan, signal) {
       if (this.busy) throw new MetadataError("unavailable", "\u5199\u5165\u4EFB\u52A1\u8FDB\u884C\u4E2D");
-      if (!plan.edits.length && !plan.cover) throw new MetadataError("verification", "\u6CA1\u6709\u9009\u4E2D\u53EF\u5199\u53D8\u66F4");
+      const covers = plannedCovers(plan);
+      if (!plan.edits.length && !covers.length) throw new MetadataError("verification", "\u6CA1\u6709\u9009\u4E2D\u53EF\u5199\u53D8\u66F4");
+      if (new Set(covers.map((c) => `${c.target.kind}:${c.target.id}`)).size !== covers.length) throw new MetadataError("verification", "\u540C\u4E00\u76EE\u6807\u53EA\u80FD\u9009\u62E9\u4E00\u5F20\u5C01\u9762");
       for (const edit of plan.edits) edit.after = normalizeWriteFields(edit.after);
       this.busy = true;
       this.seriesId = plan.seriesId;
@@ -1694,8 +1698,8 @@ SOFTWARE.
           if (e.target.kind === "books" && !fresh.books.some((b) => b.id === e.target.id)) throw new MetadataError("conflict", "\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
           await this.metadataGuard(e, signal);
         }
-        if (plan.cover) {
-          const cover = plan.cover;
+        for (const cover of covers) {
+          if (cover.target.kind === "series" && cover.target.id !== plan.seriesId) throw new MetadataError("conflict", "\u5C01\u9762\u7CFB\u5217\u76EE\u6807\u5DF2\u53D8\u5316");
           if (cover.target.kind === "books" && !fresh.books.some((b) => b.id === cover.target.id)) throw new MetadataError("conflict", "\u5C01\u9762\u4E66\u7C4D\u5F52\u5C5E\u5DF2\u53D8\u5316");
           const metadata2 = await this.client.read(cover.target, signal);
           if (metadata2.thumbnailLock || fresh.series.metadata.thumbnailLock) throw new MetadataError("conflict", "\u5C01\u9762\u5DF2\u9501\u5B9A");
@@ -1717,8 +1721,7 @@ SOFTWARE.
             if (signal.aborted) break;
           }
         }
-        if (plan.cover) {
-          const edit = plan.cover;
+        for (const edit of covers) {
           let own;
           try {
             cancelled(signal);
@@ -1814,6 +1817,238 @@ SOFTWARE.
     }
   };
 
+  // src/cover-field.ts
+  var key = (r) => `${r.provider}:${r.id}`;
+  function node(tag, text2) {
+    const e = document.createElement(tag);
+    if (text2) e.textContent = text2;
+    return e;
+  }
+  var CoverField = class {
+    constructor(target, sharedSeries, seriesId, records, locked, client, writer, thumbnails, changed, save, initial) {
+      this.target = target;
+      this.sharedSeries = sharedSeries;
+      this.seriesId = seriesId;
+      this.records = records;
+      this.locked = locked;
+      this.client = client;
+      this.writer = writer;
+      this.thumbnails = thumbnails;
+      this.changed = changed;
+      this.save = save;
+      const section = this.element;
+      section.className = "cover-preview row";
+      section.dataset.coverTarget = `${target.kind}:${target.id}`;
+      const label = node("label", sharedSeries ? "\u5C01\u9762 \xB7 \u7CFB\u5217\u4E0E\u4E66\u7C4D\u5171\u7528" : "\u5C01\u9762");
+      this.check.type = "checkbox";
+      this.check.setAttribute("aria-label", "\u5C01\u9762");
+      label.prepend(this.check);
+      const controls = node("div");
+      controls.className = "field-compose";
+      this.source.setAttribute("aria-label", "\u5C01\u9762\u6765\u6E90");
+      const current = node("option", "\u5F53\u524D\u5C01\u9762");
+      current.value = "";
+      this.source.append(current);
+      for (const r of records) {
+        const o = node("option", `${r.provider} \xB7 ${nativeTitle(r)}`);
+        o.value = key(r);
+        this.source.append(o);
+      }
+      controls.append(this.source);
+      this.gallery.className = "cover-candidates candidate-grid";
+      this.gallery.hidden = true;
+      const comparison = node("div");
+      comparison.className = "cover-compare";
+      for (const [label2, frame] of [["\u5F53\u524D\u5C01\u9762", this.current], ["\u66FF\u6362\u4E3A", this.replacement]]) {
+        const figure = node("figure");
+        frame.className = "cover-frame";
+        frame.append(node("span", label2 === "\u5F53\u524D\u5C01\u9762" ? "\u52A0\u8F7D\u4E2D" : "\u2014"));
+        figure.append(node("figcaption", label2), frame);
+        comparison.append(figure);
+      }
+      const feedback = node("div");
+      feedback.className = "cover-feedback";
+      this.status.setAttribute("role", "status");
+      this.retry.type = "button";
+      this.retry.hidden = true;
+      this.retry.className = "ghost";
+      feedback.append(this.status, this.retry);
+      section.append(label, controls, this.gallery, comparison, feedback);
+      this.source.onchange = () => this.selectSource();
+      this.check.onchange = () => {
+        this.remember();
+        if (!this.check.checked) {
+          this.request?.abort();
+          if (this.loading) {
+            this.status.textContent = "";
+            this.clear(this.replacement, "\u2014");
+          }
+          this.loading = false;
+          this.changed();
+        } else if (this.selected && !this.prepared) void this.load();
+        else this.changed();
+      };
+      this.retry.onclick = () => void this.load();
+      if (locked) {
+        this.status.textContent = "\u5C01\u9762\u5DF2\u9501\u5B9A";
+        this.source.disabled = true;
+        this.source.dataset.boundaryDisabled = "true";
+      }
+      this.updateCheck();
+      void this.loadCurrent();
+      const record2 = records.find((r) => key(r) === initial?.source);
+      if (!locked && record2?.covers.some((c) => c.url === initial?.url)) {
+        this.source.value = initial.source;
+        this.selectSource(initial.url, initial.enabled);
+      }
+    }
+    element = node("section");
+    check = node("input");
+    source = node("select");
+    gallery = node("div");
+    current = node("div");
+    replacement = node("div");
+    status = node("span");
+    retry = node("button", "\u91CD\u8BD5");
+    life = new AbortController();
+    request;
+    urls = /* @__PURE__ */ new Map();
+    selected;
+    prepared;
+    loading = false;
+    get enabled() {
+      return this.check.checked && !this.locked;
+    }
+    get blocked() {
+      return this.enabled && (this.loading || !this.prepared);
+    }
+    get edit() {
+      return this.enabled && !this.blocked ? this.prepared : void 0;
+    }
+    updateCheck() {
+      this.check.disabled = this.locked || !this.selected;
+      this.check.dataset.boundaryDisabled = String(this.check.disabled);
+    }
+    remember() {
+      this.save(this.selected ? { source: this.source.value, url: this.selected.url, enabled: this.check.checked } : void 0);
+    }
+    selectSource(url2, enabled = true) {
+      this.request?.abort();
+      this.prepared = void 0;
+      this.loading = false;
+      this.selected = void 0;
+      this.gallery.replaceChildren();
+      this.gallery.hidden = true;
+      this.status.textContent = "";
+      this.retry.hidden = true;
+      this.clear(this.replacement, "\u2014");
+      const record2 = this.records.find((r) => key(r) === this.source.value);
+      const covers = record2?.covers.filter((c, i, all) => all.findIndex((x) => x.url === c.url) === i) ?? [];
+      this.check.checked = enabled && covers.length > 0;
+      if (record2 && !covers.length) this.status.textContent = "\u6B64\u6761\u76EE\u6682\u65E0\u5C01\u9762";
+      if (record2 && covers.length) {
+        this.gallery.hidden = false;
+        for (const [index, cover] of covers.entries()) {
+          const button3 = node("button");
+          button3.type = "button";
+          button3.className = "candidate cover-candidate";
+          const title = `${nativeTitle(record2)} \xB7 ${cover.volume === void 0 ? `\u5C01\u9762 ${index + 1}` : `\u7B2C ${cover.volume} \u5377`}${cover.language ? ` \xB7 ${cover.language}` : ""}`;
+          button3.setAttribute("aria-label", title);
+          button3.dataset.url = cover.url;
+          const caption = `${cover.volume === void 0 ? `\u5C01\u9762 ${index + 1}` : `\u7B2C ${cover.volume} \u5377`}${cover.language ? ` \xB7 ${cover.language}` : ""}`;
+          button3.append(this.thumbnails.add(nativeTitle(record2), async () => cover.url), node("span", caption));
+          button3.onclick = () => this.choose(cover, true);
+          this.gallery.append(button3);
+        }
+        this.choose(covers.find((c) => c.url === url2) ?? covers[0], enabled);
+      } else {
+        this.updateCheck();
+        this.remember();
+        this.changed();
+      }
+    }
+    choose(cover, enabled) {
+      this.selected = cover;
+      this.check.checked = enabled;
+      this.updateCheck();
+      this.gallery.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.url === cover.url)));
+      this.remember();
+      void this.load();
+    }
+    clear(frame, text2) {
+      const old = this.urls.get(frame);
+      if (old) URL.revokeObjectURL(old);
+      this.urls.delete(frame);
+      frame.replaceChildren(node("span", text2));
+    }
+    async show(frame, blob, label, signal) {
+      cancelled(signal);
+      if (!blob) {
+        this.clear(frame, "\u6682\u65E0\u5C01\u9762");
+        return;
+      }
+      const url2 = URL.createObjectURL(blob), image2 = node("img");
+      image2.alt = label;
+      image2.src = url2;
+      try {
+        await image2.decode();
+        cancelled(signal);
+      } catch (e) {
+        URL.revokeObjectURL(url2);
+        throw e;
+      }
+      this.clear(frame, "");
+      this.urls.set(frame, url2);
+      frame.replaceChildren(image2);
+    }
+    async loadCurrent() {
+      try {
+        const blob = await this.client.displayedThumbnail(this.target, this.life.signal);
+        if (!this.selected) await this.show(this.current, blob, "\u5F53\u524D\u5C01\u9762", this.life.signal);
+      } catch {
+        if (!this.life.signal.aborted && !this.selected) this.clear(this.current, "\u5F53\u524D\u5C01\u9762\u52A0\u8F7D\u5931\u8D25");
+      }
+    }
+    async load() {
+      if (this.locked || !this.selected || this.life.signal.aborted) return;
+      this.request?.abort();
+      const request2 = this.request = new AbortController();
+      this.loading = true;
+      this.prepared = void 0;
+      this.status.textContent = "\u52A0\u8F7D\u4E2D";
+      this.retry.hidden = true;
+      this.clear(this.replacement, "\u52A0\u8F7D\u4E2D");
+      this.changed();
+      const cover = { target: this.target, sharedSeries: this.sharedSeries, source: this.selected };
+      try {
+        await this.writer.prepare({ seriesId: this.seriesId, edits: [], skipped: [], cover }, request2.signal);
+        await this.show(this.current, cover.beforeBlob, "\u5F53\u524D\u5C01\u9762", request2.signal);
+        await this.show(this.replacement, cover.prepared.blob, "\u66FF\u6362\u4E3A", request2.signal);
+        cancelled(request2.signal);
+        this.prepared = cover;
+        this.status.textContent = "";
+      } catch (error) {
+        if (!request2.signal.aborted) {
+          this.status.textContent = error instanceof Error ? error.message : String(error);
+          this.retry.hidden = false;
+          this.clear(this.replacement, "\u52A0\u8F7D\u5931\u8D25");
+        }
+      } finally {
+        if (this.request === request2 && !this.life.signal.aborted) {
+          this.loading = false;
+          this.changed();
+        }
+      }
+    }
+    dispose() {
+      this.life.abort();
+      this.request?.abort();
+      this.prepared = void 0;
+      for (const url2 of this.urls.values()) URL.revokeObjectURL(url2);
+      this.urls.clear();
+    }
+  };
+
   // src/ui-style.ts
   var panelStyle = `
 :host{font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",system-ui,sans-serif;--bg:#fff;--surface:#f7f8fa;--hover:#eef0f4;--text:#20232b;--muted:#697180;--line:#e4e7ed;--accent:#4f46e5;--tint:#eeedff;--danger:#b42336;--positive:#14804a;color:var(--text);color-scheme:light}
@@ -1834,7 +2069,7 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted);font-size:12px
 .preview:empty{display:none}.preview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}.preview-head h3{font-size:18px;margin:0}.target-heading{font-size:12px;color:var(--muted);margin:20px 0 10px}.row{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:14px;margin:10px 0}.row>label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}.diff{display:grid;grid-template-columns:1fr 1fr;gap:14px}.diff-caption{font-size:10px;color:var(--muted);margin-bottom:5px}.diff pre{margin:0;padding:10px;background:var(--surface);border-radius:7px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:180px;overflow:auto}.diff textarea{display:block;width:100%;min-height:92px;resize:vertical;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.row:has(input[data-field]:not(:checked)){opacity:.55}
 .settings-card{max-width:660px;margin:0 auto}.settings-card>summary{font-size:15px;color:var(--text);font-weight:600}.settings-card>label:has(input[type=password]){display:grid;gap:5px;font-size:12px;margin:14px 0;color:var(--muted)}.settings-card input[type=password]{width:100%;color:var(--text)}.settings-card>label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px;margin:18px 0}
 section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:22px}section[data-km-catalog]>h3{font-size:16px;margin-bottom:18px}section[data-km-catalog] input[type=file]{display:block;width:100%;padding:14px;background:var(--surface);border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:12px}input[type=file]::file-selector-button{font:inherit;border:1px solid var(--line);padding:7px 10px;border-radius:6px;background:var(--bg);color:var(--text);margin-right:12px;cursor:pointer}section[data-km-catalog] details{border-top:1px solid var(--line);padding-top:10px}section[data-km-catalog] details button,section[data-km-catalog] details input,section[data-km-catalog] details select{margin:4px 4px 4px 0}section[data-km-catalog] details input[type=url]{display:block;width:100%;margin-top:16px}section[data-km-catalog] details p{font-size:12px;color:var(--muted)}section[data-km-catalog] a{color:var(--accent);text-decoration:none;font-size:12px;line-height:2}section[data-km-catalog] a:hover{text-decoration:underline}section[data-km-catalog] details>select{display:block;width:100%;margin-top:14px}section[data-km-catalog] details>div:last-child{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
-.cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
+.cover-candidates{max-height:170px;overflow:auto;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));margin:10px 0 14px}.cover-candidates .cover-candidate{min-width:0}.cover-preview .field-compose{grid-template-columns:minmax(0,1fr)}.cover-preview .cover-frame{height:min(28vh,210px)}.cover-feedback{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;margin-top:8px}.cover-preview{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:20px}.cover-preview>h3{font-size:13px;margin-bottom:14px}.cover-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.cover-compare figure{margin:0;min-width:0}.cover-compare figcaption{font-size:12px;font-weight:600;margin-bottom:8px;color:var(--muted)}.cover-compare figure:last-child figcaption{color:var(--accent)}.cover-frame{height:min(38vh,330px);display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;color:var(--muted);font-size:12px}.cover-frame img{display:block;width:100%;height:100%;object-fit:contain}
 .search-progress{margin-top:16px;display:grid;gap:7px;font-size:12px;color:var(--muted)}.search-progress progress{width:100%;height:7px;border:0;border-radius:4px;overflow:hidden;accent-color:var(--accent)}.search-progress progress::-webkit-progress-bar{background:var(--line)}.search-progress progress::-webkit-progress-value{background:var(--accent)}.result-group[data-state=error] .result-count{color:var(--danger)}.selected-source{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}.selected-source>span{flex:1;min-width:0;overflow-wrap:anywhere}.selected-source button{padding:4px 7px;font-size:11px}.merge-rules{border-top:1px solid var(--line);margin:12px 0;padding-top:4px}.merge-rules>p{font-size:12px;color:var(--muted)}.merge-rules .field-label{grid-template-columns:90px minmax(0,1fr);align-items:center}
 .field-compose{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;margin:10px 0}.field-source-picks{grid-column:1/-1}.field-source-picks label{display:flex;align-items:flex-start;gap:8px;margin-top:8px;overflow-wrap:anywhere;font-size:12px;line-height:1.5}.field-source-picks input{flex-shrink:0}.language-options p{font-size:12px;color:var(--muted);line-height:1.6}.language-list{display:grid;gap:6px;margin:12px 0}.language-row{display:flex;align-items:center;gap:6px}.language-row label{flex:1;display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.language-row button{padding:4px 10px;min-height:30px}
 @keyframes km-spin{to{transform:rotate(360deg)}}
@@ -2098,7 +2333,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
   var dictionaryKey = "eh-tag-dictionary-v1";
   var ttl = 24 * 60 * 60 * 1e3;
   var compactNamespaces = /* @__PURE__ */ new Set(["female", "male", "mixed", "location", "other", "tag"]);
-  var key = (s) => s.trim().toLowerCase();
+  var key2 = (s) => s.trim().toLowerCase();
   function object(v) {
     return Boolean(v && typeof v === "object" && !Array.isArray(v));
   }
@@ -2114,9 +2349,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     const names = /* @__PURE__ */ Object.create(null);
     for (const group of db.data) {
       if (!object(group) || typeof group.namespace !== "string" || !object(group.data)) throw new MetadataError("invalid-response", "\u6807\u7B7E\u8BCD\u5E93\u5206\u533A\u4E0D\u7B26");
-      const ns = key(group.namespace), entries = /* @__PURE__ */ Object.create(null);
+      const ns = key2(group.namespace), entries = /* @__PURE__ */ Object.create(null);
       for (const [tag, info] of Object.entries(group.data)) {
-        if (object(info) && typeof info.name === "string" && info.name.trim()) entries[key(tag)] = info.name.trim();
+        if (object(info) && typeof info.name === "string" && info.name.trim()) entries[key2(tag)] = info.name.trim();
       }
       if (ns && Object.keys(entries).length) names[ns] = entries;
     }
@@ -2168,14 +2403,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       const translatedTags = record2.tags.map((raw) => {
         const split = raw.indexOf(":");
         if (split < 1) return raw;
-        const ns = key(raw.slice(0, split)), tag = key(raw.slice(split + 1));
+        const ns = key2(raw.slice(0, split)), tag = key2(raw.slice(split + 1));
         const group = Object.hasOwn(this.cache.names, ns) ? this.cache.names[ns] : void 0;
         const name = group && Object.hasOwn(group, tag) ? group[tag] : void 0;
         if (!name) return raw;
         const text2 = compactNamespaces.has(ns) ? name.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "").trim() : name;
         if (!text2) return raw;
         const translated = compactNamespaces.has(ns) ? text2 : `${ns}:${text2}`;
-        replacements.set(key(raw), key(translated));
+        replacements.set(key2(raw), key2(translated));
         matched++;
         return translated;
       });
@@ -2183,7 +2418,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     }
   };
   function translateExisting(values, replacements) {
-    return values.map((v) => typeof v === "string" ? replacements.get(key(v)) ?? v : v);
+    return values.map((v) => typeof v === "string" ? replacements.get(key2(v)) ?? v : v);
   }
 
   // src/ui.ts
@@ -2416,15 +2651,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       searchCard.append(this.detail);
       choices.append(element("h3", "\u5199\u5165\u9009\u9879"));
       this.book.setAttribute("aria-label", "\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66");
-      this.cover.setAttribute("aria-label", "\u4F7F\u7528\u54EA\u5F20\u5C01\u9762");
-      this.coverTarget.setAttribute("aria-label", "\u66FF\u6362\u54EA\u4E2A\u5C01\u9762");
-      option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
-      for (const [label, select] of [["\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66", this.book], ["\u4F7F\u7528\u54EA\u5F20\u5C01\u9762", this.cover], ["\u66FF\u6362\u54EA\u4E2A\u5C01\u9762", this.coverTarget]]) {
-        const wrapper = element("label", label);
-        wrapper.className = "field-label";
-        wrapper.append(select);
-        choices.append(wrapper);
-      }
+      const bookLabel = element("label", "\u540C\u65F6\u66F4\u65B0\u54EA\u672C\u4E66");
+      bookLabel.className = "field-label";
+      bookLabel.append(this.book);
+      choices.append(bookLabel);
       const caption = element("div", "\u5199\u5165\u5B57\u6BB5");
       caption.className = "field-caption";
       choices.append(caption);
@@ -2440,7 +2670,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.propagate = input("\u5C06\u4F5C\u8005\u540C\u6B65\u5230\u7CFB\u5217\u5185\u6240\u6709\u4E66\u7C4D", choices, "checkbox");
       this.propagate.checked = false;
       this.propagate.parentElement.className = "check-label";
-      for (const e of [this.book, this.cover, this.coverTarget, this.propagate]) e.onchange = () => this.invalidate();
+      for (const e of [this.book, this.propagate]) e.onchange = () => this.invalidate();
       this.controls.append(searchCard, choices);
       this.applyButton = button("\u5E94\u7528", () => void this.run(async () => {
         if (!this.plan) throw new MetadataError("verification", "\u8BF7\u5148\u9884\u89C8");
@@ -2555,7 +2785,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     detail = element("div");
     thumbnails;
     collapsedSources = /* @__PURE__ */ new Set();
-    previewUrls = /* @__PURE__ */ new Set();
     preview = element("div");
     query = element("input");
     direct = element("input");
@@ -2565,8 +2794,9 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
     extension;
     catalogCleanup;
     book = element("select");
-    cover = element("select");
-    coverTarget = element("select");
+    coverFields = [];
+    coverChoices = /* @__PURE__ */ new Map();
+    coverThumbnails;
     fields = /* @__PURE__ */ new Map();
     propagate = element("input");
     applyButton;
@@ -2587,16 +2817,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.contextLabel.textContent = this.query.value;
         this.contextLabel.title = this.query.value;
         this.book.replaceChildren();
-        this.coverTarget.replaceChildren();
         if (!this.state.series.oneshot) {
           option(this.book, "", "\u4EC5\u66F4\u65B0\u7CFB\u5217\u8D44\u6599");
-          option(this.coverTarget, `series:${this.seriesId}`, "\u6574\u4E2A\u7CFB\u5217\u7684\u5C01\u9762");
         }
         for (const b of this.state.books) {
           option(this.book, b.id, `${this.state.series.oneshot ? "\u7CFB\u5217 + \u552F\u4E00\u4E66\u7C4D \xB7 " : ""}${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
-          if (!this.state.series.oneshot) option(this.coverTarget, `books:${b.id}`, `${b.metadata.number ?? "?"} \xB7 ${b.metadata.title}`);
         }
-        if (this.state.series.oneshot) option(this.coverTarget, "both", "\u7CFB\u5217\u4E0E\u552F\u4E00\u4E66\u7C4D\u5171\u7528\u5C01\u9762");
         this.status.textContent = "";
       });
     }
@@ -2605,12 +2831,14 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       return this.controller.signal;
     }
     updateApplyState() {
-      this.applyButton.disabled = this.busy || this.finishing || !this.plan || !this.plan.cover && !this.preview.querySelector("input[data-edit][data-field]:checked");
+      this.applyButton.disabled = this.busy || this.finishing || !this.plan || this.coverFields.some((f) => f.blocked) || !this.coverFields.some((f) => f.edit) && !this.preview.querySelector("input[data-edit][data-field]:checked");
     }
     invalidate() {
+      this.coverFields.forEach((f) => f.dispose());
+      this.coverFields = [];
+      this.coverThumbnails?.dispose();
+      this.coverThumbnails = void 0;
       this.tagReplacements.clear();
-      for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
-      this.previewUrls.clear();
       this.plan = void 0;
       this.applyButton.disabled = true;
       this.preview.replaceChildren();
@@ -2650,7 +2878,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.cancelButton.hidden = true;
         this.controls.querySelectorAll("input,button,select").forEach((e) => e.disabled = this.finishing || e.dataset.boundaryDisabled === "true");
         this.results.querySelectorAll("button").forEach((e) => e.disabled = this.finishing);
-        this.preview.querySelectorAll("input,select,textarea,button").forEach((e) => e.disabled = this.finishing);
+        this.preview.querySelectorAll("input,select,textarea,button").forEach((e) => e.disabled = this.finishing || e.dataset.boundaryDisabled === "true");
         this.previewButton.disabled = this.finishing || !this.selected || Boolean(this.plan);
         this.updateApplyState();
         this.undoButton.disabled = this.finishing || !this.undoData;
@@ -2670,8 +2898,7 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.detail.replaceChildren();
       this.results.replaceChildren();
       this.invalidate();
-      this.cover.replaceChildren();
-      option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
+      this.coverChoices.clear();
     }
     async search() {
       this.clearSearch();
@@ -2822,16 +3049,13 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       this.selections = next;
       this.renderSelection();
     }
-    removeSelection(key2) {
-      this.selections = this.selections.filter((s) => sourceKey(s.record) !== key2);
+    removeSelection(key3) {
+      this.selections = this.selections.filter((s) => sourceKey(s.record) !== key3);
       this.renderSelection();
     }
     renderSelection() {
       this.invalidate();
       this.detail.replaceChildren();
-      const previousCover = this.cover.value === "" ? void 0 : this.selected?.covers[Number(this.cover.value)]?.url;
-      this.cover.replaceChildren();
-      option(this.cover, "", "\u4E0D\u4FEE\u6539\u5C01\u9762");
       this.results.querySelectorAll(".candidate").forEach((e) => e.setAttribute("aria-pressed", String(this.selections.some((s) => sourceKey(s.record) === e.dataset.key))));
       if (!this.selections.length) {
         this.selected = void 0;
@@ -2849,11 +3073,6 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
           for (const b of r.books) volumes.append(button(`\u5355\u5377\uFF1A${nativeTitle(b)}`, () => void this.run(async () => this.choose(await provider.get(b.id, this.context()), provider))));
           this.detail.append(volumes);
         }
-      }
-      this.merged.covers.forEach(({ cover, provider }, i) => option(this.cover, String(i), `${provider} \xB7 ${cover.volume === void 0 ? `\u56FE\u7247 ${i + 1}` : `\u7B2C ${cover.volume} \u5377`} ${cover.language ?? ""}`));
-      if (previousCover) {
-        const index = this.merged.covers.findIndex((c) => c.cover.url === previousCover);
-        if (index >= 0) this.cover.value = String(index);
       }
       this.previewButton.disabled = this.busy;
     }
@@ -2877,17 +3096,13 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
         this.status.textContent = "";
       } else this.merged = mergeRecords(this.selections.map((s) => s.record), {}, this.settings.acceptedLanguages ?? allLanguages, this.state);
       this.selected = this.merged.record;
-      const [kind, id] = this.coverTarget.value.split(":");
       const plan = buildPlan(this.state, this.selected, {
         fields: [...this.fields].filter(([, i]) => i.checked).map(([f]) => f),
         bookId: this.book.value || void 0,
         propagateAuthors: this.propagate.checked,
         mergedFields: this.merged?.values,
-        includeUnchanged: true,
-        cover: this.cover.value === "" ? void 0 : this.selected.covers[Number(this.cover.value)],
-        coverTarget: id && (kind === "series" || kind === "books") ? { kind, id } : void 0
+        includeUnchanged: true
       });
-      await this.writer.prepare(plan, this.signal);
       const previewHead = element("div");
       previewHead.className = "preview-head";
       const back = button("\u8FD4\u56DE\u9009\u9879", () => {
@@ -2901,19 +3116,38 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       previewHead.append(element("h3", "\u786E\u8BA4\u66F4\u6539"), back);
       this.preview.append(previewHead);
       if (translationWarning) this.preview.append(element("p", translationWarning));
-      if (plan.cover) {
-        try {
-          await this.coverPreview(plan.cover);
-        } catch (error) {
-          this.invalidate();
-          throw error;
-        }
-      }
-      plan.edits.forEach((edit, index) => {
-        const target = edit.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === edit.target.id);
-        const targetHeading = element("h3", `${edit.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? edit.target.id}`);
+      const coverTargets = this.state.series.oneshot ? [{ kind: "books", id: this.state.books[0].id }] : [...!isVolumeRecord(this.selected) ? [{ kind: "series", id: this.seriesId }] : [], ...this.book.value ? [{ kind: "books", id: this.book.value }] : []];
+      const targets = [...plan.edits.map((e) => e.target)];
+      for (const t of coverTargets) if (!targets.some((x) => x.kind === t.kind && x.id === t.id)) targets.push(t);
+      this.coverThumbnails = new Thumbnails(this.viewport, (url2, signal) => this.writer.image(url2, signal));
+      targets.forEach((t) => {
+        const index = plan.edits.findIndex((e) => e.target.kind === t.kind && e.target.id === t.id), edit = plan.edits[index];
+        const target = t.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === t.id);
+        const targetHeading = element("h3", `${t.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? t.id}`);
         targetHeading.className = "target-heading";
         this.preview.append(targetHeading);
+        if (coverTargets.some((c) => c.kind === t.kind && c.id === t.id)) {
+          const id = `${t.kind}:${t.id}`;
+          const field = new CoverField(
+            t,
+            this.state.series.oneshot ? { kind: "series", id: this.seriesId } : void 0,
+            this.seriesId,
+            this.selections.map((s) => s.record),
+            Boolean(target?.metadata.thumbnailLock || this.state.series.metadata.thumbnailLock),
+            this.client,
+            this.writer,
+            this.coverThumbnails,
+            () => this.updateApplyState(),
+            (choice) => {
+              if (choice) this.coverChoices.set(id, choice);
+              else this.coverChoices.delete(id);
+            },
+            this.coverChoices.get(id)
+          );
+          this.coverFields.push(field);
+          this.preview.append(field.element);
+        }
+        if (!edit) return;
         for (const [field, value] of Object.entries(edit.after)) {
           const row = element("div");
           row.className = "row";
@@ -2989,39 +3223,10 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       row.append(controls);
       refresh();
     }
-    async coverPreview(cover) {
-      const target = cover.target.kind === "series" ? this.state.series : this.state.books.find((b) => b.id === cover.target.id);
-      const section = element("section");
-      section.className = "cover-preview";
-      section.append(element("h3", `\u5C01\u9762 \xB7 ${cover.sharedSeries ? "\u7CFB\u5217 + \u552F\u4E00\u4E66\u7C4D\uFF08\u5171\u7528\uFF09" : cover.target.kind === "series" ? "\u7CFB\u5217" : "\u4E66\u7C4D"} \xB7 ${target?.metadata.title ?? cover.target.id}`));
-      const comparison = element("div");
-      comparison.className = "cover-compare";
-      for (const [label, blob] of [["\u5F53\u524D\u5C01\u9762", cover.beforeBlob], ["\u66FF\u6362\u4E3A", cover.prepared.blob]]) {
-        const figure = element("figure"), frame = element("div");
-        frame.className = "cover-frame";
-        figure.append(element("figcaption", label), frame);
-        if (blob) {
-          const image2 = element("img");
-          image2.alt = label;
-          const url2 = URL.createObjectURL(blob);
-          this.previewUrls.add(url2);
-          image2.src = url2;
-          try {
-            await image2.decode();
-          } catch {
-            throw new MetadataError("verification", `${label}\u65E0\u6CD5\u663E\u793A\uFF0C\u8BF7\u68C0\u67E5\u56FE\u7247\u6216\u9875\u9762\u6743\u9650`);
-          }
-          cancelled(this.signal);
-          frame.append(image2);
-        } else frame.append(element("span", "\u6682\u65E0\u5C01\u9762"));
-        comparison.append(figure);
-      }
-      section.append(comparison);
-      this.preview.append(section);
-    }
     readPreview() {
       if (!this.plan) throw new MetadataError("verification", "\u8BF7\u5148\u9884\u89C8");
-      const plan = { ...this.plan, edits: structuredClone(this.plan.edits) };
+      if (this.coverFields.some((f) => f.blocked)) throw new MetadataError("verification", "\u9009\u4E2D\u7684\u5C01\u9762\u5C1A\u672A\u51C6\u5907\u597D");
+      const plan = { ...this.plan, edits: structuredClone(this.plan.edits), covers: this.coverFields.flatMap((f) => f.edit ? [f.edit] : []) };
       for (const i of this.preview.querySelectorAll("input[data-field]")) {
         const edit = plan.edits[Number(i.dataset.edit)], field = i.dataset.field;
         if (!i.checked) {
@@ -3110,10 +3315,12 @@ section[data-km-catalog]{max-width:800px;margin:0 auto;background:var(--bg);bord
       }
     }
     async close() {
+      this.coverFields.forEach((f) => f.dispose());
+      this.coverFields = [];
+      this.coverThumbnails?.dispose();
+      this.coverThumbnails = void 0;
       this.controller?.abort();
       this.thumbnails?.dispose();
-      for (const url2 of this.previewUrls) URL.revokeObjectURL(url2);
-      this.previewUrls.clear();
       this.plan = void 0;
       clearTimeout(this.fade);
       this.fade = void 0;

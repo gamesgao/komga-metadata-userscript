@@ -29,7 +29,7 @@ def run():
    expect(panel.locator('.candidate[data-key^="bangumi:"][aria-pressed=true]')).to_have_count(1,timeout=90000)
    bg.locator('summary').click();baka.get_by_role('button',name='葬送のフリーレン',exact=True).click()
    expect(panel.locator('.candidate[aria-pressed=true]')).to_have_count(2,timeout=90000)
-   expect(panel.get_by_label('使用哪张封面',exact=True)).to_have_value('')
+   expect(panel.get_by_label('使用哪张封面',exact=True)).to_have_count(0)
 
    flows.select_fields(panel,{'tags','links'})
    panel.locator('.viewport').evaluate('e=>e.scrollTop=0');capture('selected-sources.png')

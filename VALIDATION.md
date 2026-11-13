@@ -1,5 +1,12 @@
 # Validation ledger
 
+## v0.10.0 preview-native cover fields
+
+- 100 core tests, 29 bundled browser tests, typecheck and six release tests pass. Covers missing/HTML-image failures and retry/opt-out, late response cancellation, back navigation, lock retention, removed old dropdowns, all source identities despite identical image URLs, language-disabled availability, multi-cover preflight before any write, independent series/book upload and undo, and shared One-shot upload.
+- Real manager `acceptance/cover_languages.py`: all three MU/MangaBaka/AniList sources remain selectable in preview; respective source grids contain 1/108/1 images, and each main image is selected, decoded, written, both One-shot displays hash-verified and undone. This is not a claim that all 108 large scans upload under the server's size limit.
+- Updated `acceptance/real_flows.py` verifies actual ordinary series and book cover writes separately AND together in one apply, plus One-shot shared cover, scoped undo, locks, concurrent-change conflict and injected partial failure. `oneshot_mixed.py` verifies real MU/EH scope mixing in both orders using the preview cover field.
+- Native screenshots and raw reports remain under ignored `.runtime/acceptance/cover-languages/` and `.runtime/acceptance/`. Local synthetic Komga only; no user library accessed.
+
 ## v0.9.3 target-aware One-shot composition
 
 - 99 core tests, 26 bundled browser tests, typecheck and six release tests pass. Covers MU/EH selection in both orders, Chinese tag projection, both metadata targets, one cover upload, unchanged ordinary-series mixed-scope/different-volume rejection, invalid One-shot cardinality/ownership, locked fields and target changes before apply (zero writes).

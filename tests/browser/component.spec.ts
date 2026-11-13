@@ -137,9 +137,12 @@ async function readAndPreview(page: Page, cover = false, ready = true) {
   await page.getByRole('textbox', { name: '来源链接或 ID' }).fill('https://bgm.tv/subject/1');
   await page.getByRole('button', { name: '读取', exact: true }).click();
   await expect(page.locator('.candidate[data-key="bangumi:1"][aria-pressed=true]')).toBeVisible();
-  if (cover) await page.getByLabel('使用哪张封面', { exact: true }).selectOption('0');
   await page.getByRole('button', { name: '生成预览' }).click();
   if (ready) await expect(page.getByRole('heading', { name: '确认更改' })).toBeVisible();
+  if (cover) {
+    await page.getByLabel('封面来源', {exact:true}).selectOption('bangumi:1');
+    if (ready) await expect(page.getByRole('img', {name:'替换为',exact:true})).toBeVisible();
+  }
 }
 test('fixture browser: bundled UI, safe native rendering, locks, One-shot cover write/readback/undo', async ({ page }) => {
   await install(page); await readAndPreview(page, true);
@@ -385,23 +388,69 @@ test('cover UI: decoded current/new comparison and apply reuse the previewed dow
   });
   expect(await pixel(before)).toEqual([0, 0, 255, 255]); expect(await pixel(after)).toEqual([255, 0, 0, 255]);
   await expect(page.getByText('包含下载失败风险', { exact: false })).toHaveCount(0);
-  expect(patches).toEqual([]); expect(uploaded).toEqual([]); expect(coverDownloads).toBe(2); // left card thumbnail plus preview
+  await page.locator('.cover-candidates .cover-thumb').scrollIntoViewIfNeeded();
+  await expect(page.locator('.cover-candidates .cover-thumb')).toHaveAttribute('data-state','ready');
+  expect(patches).toEqual([]); expect(uploaded).toEqual([]); const downloaded=coverDownloads;
   await page.setViewportSize({ width: 390, height: 800 });
   expect(await page.locator('.viewport').evaluate(e => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
   coverFails = true; // source disappears AFTER preview: upload must use viewed bytes
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await expect(page.getByText('✓ 已读回确认', { exact: true })).toBeVisible();
-  expect(coverDownloads).toBe(2); expect(uploaded).toHaveLength(1); // apply reuses preview bytes
+  expect(coverDownloads).toBe(downloaded); expect(uploaded).toHaveLength(1); // apply reuses preview bytes
+});
+
+test('ordinary series: two preview cover fields write independently and undo both',async({page})=>{
+  series.oneshot=false;await install(page);await readAndPreview(page);await page.getByRole('button',{name:'返回选项'}).click();
+  for(const box of await page.locator('.field-grid input').all())await box.uncheck();
+  await page.getByLabel('同时更新哪本书',{exact:true}).selectOption('book-actual');await page.getByRole('button',{name:'生成预览'}).click();
+  await expect(page.locator('.cover-preview')).toHaveCount(2);
+  for(const field of await page.locator('.cover-preview').all()){
+    await expect(field.getByRole('checkbox',{name:'封面',exact:true})).not.toBeChecked();await field.getByLabel('封面来源').selectOption('bangumi:1');await expect(field.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
+  }
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(uploaded.sort()).toEqual(['/reader/api/v1/books/book-actual/thumbnails','/reader/api/v1/series/s-real/thumbnails']);expect(patches).toEqual([]);
+  await expect(page.locator('#komga-metadata-panel')).toHaveCount(0);await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByRole('button',{name:'撤销最近写入'}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
+  expect(covers).toEqual([{id:'original-user',selected:true,type:'USER_UPLOADED'}]);expect(seriesCovers).toEqual(covers);
+});
+
+test('cover opt-out is preserved on back; locked cover cannot be enabled',async({page})=>{
+  await install(page);await readAndPreview(page,true);const field=page.locator('.cover-preview');
+  await field.getByRole('checkbox',{name:'封面',exact:true}).uncheck();book.metadata.thumbnailLock=true;
+  await page.getByRole('button',{name:'返回选项'}).click();await page.getByRole('button',{name:'生成预览'}).click();
+  await expect(field.getByLabel('封面来源')).toBeDisabled();await expect(field.getByRole('checkbox',{name:'封面',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();expect(uploaded).toEqual([]);expect(patches.length).toBeGreaterThan(0);
+});
+
+test('latest preview cover wins; leaving preview cancels the request',async({page})=>{
+  await install(page);
+  await page.route('https://next.bgm.tv/p1/subjects/2**',route=>route.fulfill({json:route.request().url().includes('staffs')?{data:[],total:0}:{id:2,name:'日本語の別候補',images:{large:base+'/slow-cover.png'},series:false},headers:{'Access-Control-Allow-Origin':'*'}}));
+  let release!:()=>void;const gate=new Promise<void>(r=>release=r);let requests=0;
+  await page.route(base+'/slow-cover.png',async route=>{requests++;await gate;try{await route.fulfill({contentType:'image/png',body:oldPng});}catch{}});
+  await readAndPreview(page);await page.getByRole('button',{name:'返回选项'}).click();await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('2');await page.getByRole('button',{name:'读取',exact:true}).click();await expect(page.locator('.candidate[aria-pressed=true]')).toHaveCount(2);
+  await page.getByRole('button',{name:'生成预览'}).click();const source=page.getByLabel('封面来源',{exact:true});
+  await source.selectOption('bangumi:2');await expect(page.getByRole('button',{name:'应用',exact:true})).toBeDisabled();
+  await expect.poll(()=>requests).toBeGreaterThan(0);
+  const coverCheck=page.locator('.cover-preview').getByRole('checkbox',{name:'封面',exact:true});await coverCheck.uncheck();await expect(page.locator('.cover-feedback [role=status]')).toHaveText('');await expect(page.getByRole('button',{name:'应用',exact:true})).toBeEnabled();await coverCheck.check();
+  await source.selectOption('bangumi:1');await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();release();
+  await expect(source).toHaveValue('bangumi:1');await expect(page.getByRole('button',{name:'应用',exact:true})).toBeEnabled();
+  const pixel=await page.getByRole('img',{name:'替换为',exact:true}).evaluate(e=>{const c=document.createElement('canvas');c.width=c.height=1;const ctx=c.getContext('2d')!;ctx.drawImage(e as HTMLImageElement,0,0);return [...ctx.getImageData(0,0,1,1).data];});expect(pixel).toEqual([255,0,0,255]);
+  let leave!:()=>void;const leaving=new Promise<void>(r=>leave=r);
+  await page.unroute(base+'/slow-cover.png');await page.route(base+'/slow-cover.png',async route=>{await leaving;try{await route.fulfill({contentType:'image/png',body:oldPng});}catch{}});
+  await source.selectOption('bangumi:2');await expect(page.getByRole('button',{name:'应用',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'返回选项'}).click();leave();await expect(page.locator('.cover-preview')).toHaveCount(0);expect(uploaded).toEqual([]);
 });
 
 for (const failure of ['missing', 'html']) test(`cover UI: ${failure} source blocks preview/apply before all writes and allows retry`, async ({ page }) => {
   coverFails = failure === 'missing'; coverCorrupt = failure === 'html';
   await install(page); await readAndPreview(page, true, false);
-  await expect(page.locator('.status[data-state=error]')).toContainText(failure === 'missing' ? '404' : '有效图片');
+  await expect(page.locator('.cover-feedback')).toContainText(failure === 'missing' ? '404' : '有效图片');
   await expect(page.getByRole('button', { name: '应用', exact: true })).toBeDisabled();
   expect(patches).toEqual([]); expect(uploaded).toEqual([]);
+  const enabled=page.locator('.cover-preview').getByRole('checkbox',{name:'封面',exact:true});await enabled.uncheck();
+  await expect(page.getByRole('button',{name:'应用',exact:true})).toBeEnabled();await enabled.check();
+  await expect(page.locator('.cover-feedback')).toContainText(failure === 'missing' ? '404' : '有效图片');
   coverFails = coverCorrupt = false;
-  await page.getByRole('button', { name: '生成预览' }).click();
+  await page.locator('.cover-preview').getByRole('button', { name: '重试', exact:true }).click();
   await expect(page.getByRole('img', { name: '替换为', exact: true })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '应用', exact: true })).toBeEnabled();
 });
@@ -519,8 +568,8 @@ for(const reverse of [false,true])test(`One-shot mixed MU/EH selection and write
   const sources=[['mangaupdates','1'],['ehentai','1:aaaaaaaaaa']];if(reverse)sources.reverse();
   for(const [provider,id] of sources){await page.getByLabel('来源',{exact:true}).selectOption(provider!);await page.getByRole('textbox',{name:'来源链接或 ID'}).fill(id!);await page.getByRole('button',{name:'读取',exact:true}).click();await expect(page.locator(`.candidate[data-key="${provider}:${id}"]`)).toHaveAttribute('aria-pressed','true');}
   for(const box of await page.locator('.field-grid input').all())await box.setChecked(await box.getAttribute('aria-label')==='标签');
-  const cover=page.getByLabel('使用哪张封面',{exact:true});const value=await cover.locator('option').filter({hasText:'mangaupdates'}).getAttribute('value');await cover.selectOption(value!);
   await page.getByRole('button',{name:'生成预览'}).click();await expect(page.locator('textarea[data-field=tags]')).toHaveCount(2);
+  await page.getByLabel('封面来源',{exact:true}).selectOption('mangaupdates:1');await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
   for(const box of await page.locator('textarea[data-field=tags]').all())expect(JSON.parse(await box.inputValue())).toEqual(expect.arrayContaining(['source-tag','眼镜']));
   await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
   expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);expect(patches).toHaveLength(2);
@@ -534,24 +583,26 @@ test('One-shot target changed after mixed preview blocks all writes',async({page
 
 test('MU/Baka/AniList covers remain selectable with Other and all text languages disabled',async({page})=>{
   await install(page);
-  await page.route('https://api.mangaupdates.com/v1/series/1',route=>route.fulfill({json:{series_id:1,title:'日本語の作品',url:'https://www.mangaupdates.com/series/0000001',image:{url:{thumb:`${base}/fixture-cover.png?mu`}}},headers:{'Access-Control-Allow-Origin':'*'}}));
-  await page.route('https://api.mangabaka.org/v1/series/1**',route=>route.fulfill({json:route.request().url().includes('/images')?{data:[],pagination:{next:null}}:{data:{id:1,title:'日本語の作品',cover:{raw:{url:`${base}/fixture-cover.png?baka`}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
-  await page.route('https://graphql.anilist.co',route=>route.fulfill({json:{data:{Media:{id:1,siteUrl:'https://anilist.co/manga/1',title:{native:'日本語の作品'},coverImage:{large:`${base}/fixture-cover.png?ani`},startDate:{},staff:{edges:[],pageInfo:{hasNextPage:false}}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://api.mangaupdates.com/v1/series/1',route=>route.fulfill({json:{series_id:1,title:'日本語の作品',url:'https://www.mangaupdates.com/series/0000001',image:{url:{thumb:`${base}/fixture-cover.png?shared`}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://api.mangabaka.org/v1/series/1**',route=>route.fulfill({json:route.request().url().includes('/images')?{data:[],pagination:{next:null}}:{data:{id:1,title:'日本語の作品',cover:{raw:{url:`${base}/fixture-cover.png?shared`}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('https://graphql.anilist.co',route=>route.fulfill({json:{data:{Media:{id:1,siteUrl:'https://anilist.co/manga/1',title:{native:'日本語の作品'},coverImage:{large:`${base}/fixture-cover.png?shared`},startDate:{},staff:{edges:[],pageInfo:{hasNextPage:false}}}}},headers:{'Access-Control-Allow-Origin':'*'}}));
   await page.getByRole('button',{name:'元数据',exact:true}).click();await page.getByText('接受的资料语言',{exact:true}).click();await page.getByLabel('其他语言',{exact:true}).uncheck();
   await page.getByText('通过链接或 ID 读取',{exact:true}).click();
-  for(const [index,provider] of ['mangaupdates','mangabaka','anilist'].entries()){
+  for(const provider of ['mangaupdates','mangabaka','anilist']){
     await page.getByLabel('来源',{exact:true}).selectOption(provider);await page.getByRole('textbox',{name:'来源链接或 ID'}).fill('1');await page.getByRole('button',{name:'读取',exact:true}).click();
     await expect(page.locator(`.candidate[data-key="${provider}:1"]`)).toHaveAttribute('aria-pressed','true');
-    await expect(page.getByLabel('使用哪张封面',{exact:true}).locator('option')).toHaveCount(index+2);
+
   }
-  const cover=page.getByLabel('使用哪张封面',{exact:true});await cover.selectOption('1');
   for(const box of await page.locator('.language-options input').all())await box.uncheck();
-  await expect(cover.locator('option')).toHaveCount(4);await expect(cover).toHaveValue('1');
   for(const box of await page.locator('.field-grid input').all())await box.uncheck();
-  for(const value of ['0','1','2']){
-    await cover.selectOption(value);await page.getByRole('button',{name:'生成预览'}).click();await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
-    if(value!=='2')await page.getByRole('button',{name:'返回选项'}).click();
+  await expect(page.getByLabel('使用哪张封面',{exact:true})).toHaveCount(0);await expect(page.getByLabel('替换哪个封面',{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'生成预览'}).click();
+  const cover=page.getByLabel('封面来源',{exact:true});await expect(cover.locator('option')).toHaveCount(4);
+  await expect(page.locator('.cover-preview').getByRole('checkbox',{name:'封面',exact:true})).not.toBeChecked();
+  for(const provider of ['mangaupdates','mangabaka','anilist']){
+    await cover.selectOption(`${provider}:1`);await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
   }
+  await page.getByRole('button',{name:'返回选项'}).click();await page.getByRole('button',{name:'生成预览'}).click();await expect(cover).toHaveValue('anilist:1');await expect(page.getByRole('img',{name:'替换为',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'应用',exact:true}).click();await expect(page.getByText('✓ 已读回确认',{exact:true})).toBeVisible();
   expect(uploaded).toEqual(['/reader/api/v1/books/book-actual/thumbnails']);expect(patches).toEqual([]);
 });
@@ -634,7 +685,7 @@ test('multi-source UI: parallel incremental progress, primary/field merge, confi
   await bg.locator('.candidate').click(); await ani.locator('.candidate').click();
   await expect(page.locator('.candidate[aria-pressed=true]')).toHaveCount(2);
   await expect(bg.locator('.candidate')).toHaveAttribute('aria-pressed', 'true'); await expect(ani.locator('.candidate')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('使用哪张封面', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('使用哪张封面', { exact: true })).toHaveCount(0);
   await expect(page.getByText('系列状态未知', { exact: false })).toHaveCount(0);
   await expect(page.getByText('保留已锁定字段；作者仅写入未锁定书籍。')).toHaveCount(0);
   await expect(page.getByRole('checkbox', { name: '这些条目是同一作品／同一卷和版本' })).toHaveCount(0);

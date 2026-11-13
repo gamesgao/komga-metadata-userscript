@@ -60,6 +60,15 @@ function transport(blob = png()): Transport {
   return { request: async r => ({ status: 200, headers: {}, text: '', blob, finalUrl: r.url }) };
 }
 describe('real client/writer against in-memory HTTP fixture, not real Komga', () => {
+  it('preflights every cover before metadata or uploads; rejects duplicate targets',async()=>{
+    const s=new Server(),w=new Writer(s.client,transport());
+    const p=buildPlan(s.state,record(),{fields:['tags']});
+    p.covers=[{target:{kind:'series',id:'s'},source:record().covers[0]!},{target:{kind:'books',id:'actual-book'},source:record().covers[0]!}];
+    await w.prepare(p,signal());p.covers[1]!.prepared=undefined;
+    await expect(w.apply(p,signal())).rejects.toThrow('请先生成封面预览');
+    expect(s.requests.filter(r=>['PATCH','POST','PUT','DELETE'].includes(r.method))).toEqual([]);
+    p.covers=[p.covers[0]!,p.covers[0]!];await expect(w.apply(p,signal())).rejects.toThrow('同一目标');
+  });
   it('writes only planned fields, verifies readback, scoped undo preserves concurrent unrelated fields', async () => {
     const s = new Server(), w = new Writer(s.client, transport());
     const p = buildPlan(s.state, record(), { fields: ['tags', 'authors'], propagateAuthors: true });

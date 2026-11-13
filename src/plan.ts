@@ -16,7 +16,8 @@ export interface CoverEdit {
   prepared?: { url: string; blob: Blob; hash: string };
   sharedSeries?: Target;
 }
-export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; skipped: string[]; oneShotBookId?: string }
+export interface Plan { seriesId: string; edits: Edit[]; cover?: CoverEdit; covers?: CoverEdit[]; skipped: string[]; oneShotBookId?: string }
+export function plannedCovers(plan: Plan): CoverEdit[] { return plan.covers ?? (plan.cover ? [plan.cover] : []); }
 export function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return false;

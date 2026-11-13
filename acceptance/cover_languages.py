@@ -24,16 +24,23 @@ def run():
     for provider,id in sources:
      panel.get_by_label('来源',exact=True).select_option(provider);panel.get_by_role('textbox',name='来源链接或 ID').fill(id);panel.get_by_role('button',name='读取',exact=True).click()
      expect(panel.locator(f'.candidate[data-key="{provider}:{id}"]')).to_have_attribute('aria-pressed','true',timeout=90000)
-    cover=panel.get_by_label('使用哪张封面',exact=True)
-    options=cover.locator('option').evaluate_all('es=>es.map(e=>({value:e.value,label:e.textContent}))')
-    for provider,_ in sources:assert any(x['value'] and x['label'].startswith(provider+' ·') for x in options),options
-    candidates=[x for x in options if x['value'] and x['label'].startswith(target+' ·')]
-    # Prefer the source's main cover over a high-resolution specific-volume scan.
-    candidates.sort(key=lambda x:'图片' not in x['label'])
-    chosen=candidates[0];cover.select_option(chosen['value']);flows.select_fields(panel,set())
+    expect(panel.get_by_label('使用哪张封面',exact=True)).to_have_count(0);expect(panel.get_by_label('替换哪个封面',exact=True)).to_have_count(0)
+    flows.select_fields(panel,set())
     if target=='mangaupdates':
      panel.locator('.viewport').evaluate('e=>e.scrollTop=0');page.screenshot(path=str(out/'three-sources.png'))
-    flows.preview(panel);image=panel.get_by_role('img',name='替换为',exact=True);expect(image).to_be_visible(timeout=90000)
+    flows.preview(panel)
+    field=panel.locator('.cover-preview');expect(field).to_have_count(1);expect(field.get_by_role('checkbox',name='封面',exact=True)).not_to_be_checked()
+    cover=field.get_by_label('封面来源',exact=True)
+    options=cover.locator('option').evaluate_all('es=>es.map(e=>({value:e.value,label:e.textContent}))')
+    for provider,_ in sources:assert any(x['value'] and x['label'].startswith(provider+' ·') for x in options),options
+    field=flows.select_cover(panel,target)
+    candidate_count=field.locator('.cover-candidate').count()
+    assert candidate_count>0
+    slots=field.locator('.cover-thumb').all();first_y=slots[0].bounding_box()['y']
+    for slot in slots:
+     if abs(slot.bounding_box()['y']-first_y)>2:break
+     slot.scroll_into_view_if_needed();expect(slot).not_to_have_attribute('data-state','pending',timeout=90000)
+    image=field.get_by_role('img',name='替换为',exact=True);expect(image).to_be_visible(timeout=90000)
     dimensions=image.evaluate('i=>({width:i.naturalWidth,height:i.naturalHeight})');assert dimensions['width']>0
     expected=image.evaluate('''async i=>{const b=await(await fetch(i.src)).arrayBuffer();const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}''')
     page.screenshot(path=str(out/(target+'-preview.png')))
@@ -49,7 +56,7 @@ def run():
     for (kind,id),old in before.items():
      assert flows.displayed_hash(page,kind,id)==old['hash']
      assert flows.api(page,f'/{kind}/{id}/thumbnails')==old['thumbnails']
-    report['checks'].append({'provider':target,'available_covers':len(options)-1,'other_enabled':False,'decoded':dimensions,'one_shot_both_display_hash':expected,'written_read_back_and_undone':True})
+    report['checks'].append({'provider':target,'available_sources':len(options)-1,'source_images':candidate_count,'other_enabled':False,'decoded':dimensions,'one_shot_both_display_hash':expected,'written_read_back_and_undone':True})
    report['status']='PASS'
   finally:
    try:
